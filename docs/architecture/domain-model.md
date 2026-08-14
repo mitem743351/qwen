@@ -56,21 +56,56 @@ workflow dials (Phase 0.5).
   `ProviderCapabilities`, `NegotiationDecision` (in `inference.py`).
 - `NegotiationOutcome`: `APPLY`, `DEGRADE`, `EMULATE`, `REJECT`.
 - `negotiate(policy, capabilities)` intersects policy with capabilities,
-  returning an applied policy plus an explicit decision record — unsupported
-  capabilities never disappear silently.
+  returning an applied policy plus an explicit `NegotiationDecision` for
+  **every** requested capability (`requested`, `supported`, `outcome`,
+  `reason`, `effective_value`) — unsupported capabilities never disappear
+  silently.
+
+### Model-selection authority
+
+`InferencePolicy.model_requirement` is the **single authoritative**
+model-selection intent. `InferenceRequest` is a pure envelope (task/context
+reference + the policy) and carries no independent model requirement; no two
+model requirements can silently coexist (Phase 1.1).
+
+### InferencePolicy fields (capability-aligned, provider-neutral)
+
+```text
+model_requirement · reasoning · reasoning_budget · max_output_tokens
+temperature · top_p · preserved_thinking · tool_calling · structured_output
+streaming · parallel_generation · context_caching
+```
+
+A `None`/`False` value means "not requested"; a non-default value is a request
+that negotiation accounts for explicitly. `model_requirement` is not a
+capability and is not negotiated — a provider adapter later maps it to a
+provider-specific model identifier.
 
 ---
 
 ## State machine
 
-`TaskStatus` (14 states): `CREATED → CLASSIFIED → PLANNED → RETRIEVING →
-REASONING → EXECUTING → VERIFYING → SYNTHESIZING → COMPLETED`, plus `PAUSED`,
-`WAITING`, `FAILED`, `CANCELLED`, `NEEDS_INPUT`.
+`TaskStatus` (14 states) is categorized into three explicit sets
+(`domain/task.py`):
+
+```text
+EXECUTION_STATES  CREATED → CLASSIFIED → PLANNED → RETRIEVING → REASONING
+                  → EXECUTING → VERIFYING → SYNTHESIZING → COMPLETED,
+                  plus FAILED, CANCELLED
+CONTROL_STATES    PAUSED, WAITING, NEEDS_INPUT
+TERMINAL_STATES   COMPLETED, FAILED, CANCELLED  (⊂ EXECUTION_STATES)
+```
+
+`NEEDS_INPUT` (and the other control states) are **non-terminal**: a task may
+resume from them. Helper predicates `is_terminal_state`, `is_control_state`,
+and `is_execution_state` encode the categories.
 
 `validate_transition()` rejects illegal transitions with
-`InvalidTransitionError`. Terminal states (`COMPLETED`, `FAILED`, `CANCELLED`)
-admit no outgoing transitions. `VERIFYING → RETRIEVING` (evidence gap) and
-`EXECUTING → REASONING` (retry) are supported loops.
+`InvalidTransitionError`. Terminal states admit no outgoing transitions.
+`VERIFYING → RETRIEVING` (evidence gap) and `EXECUTING → REASONING` (retry) are
+supported loops; entering/leaving `PAUSED` and `WAITING` from `REASONING`/
+`EXECUTING` is a valid **domain** transition, but the runtime does not yet
+operate pause/resume (reserved in Phase 1.1).
 
 ---
 

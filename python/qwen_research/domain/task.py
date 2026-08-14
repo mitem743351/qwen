@@ -53,6 +53,45 @@ TERMINAL_STATES: frozenset[TaskStatus] = frozenset(
     {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}
 )
 
+#: States that participate in execution (including terminal outcomes).
+EXECUTION_STATES: frozenset[TaskStatus] = frozenset(
+    {
+        TaskStatus.CREATED,
+        TaskStatus.CLASSIFIED,
+        TaskStatus.PLANNED,
+        TaskStatus.RETRIEVING,
+        TaskStatus.REASONING,
+        TaskStatus.EXECUTING,
+        TaskStatus.VERIFYING,
+        TaskStatus.SYNTHESIZING,
+        TaskStatus.COMPLETED,
+        TaskStatus.FAILED,
+        TaskStatus.CANCELLED,
+    }
+)
+
+#: Control/suspension states. Supported as *domain* states, but not yet fully
+#: operated by the runtime (pause/resume is a reserved future capability).
+CONTROL_STATES: frozenset[TaskStatus] = frozenset(
+    {TaskStatus.PAUSED, TaskStatus.WAITING, TaskStatus.NEEDS_INPUT}
+)
+
+
+def is_terminal_state(status: TaskStatus) -> bool:
+    """Return ``True`` for terminal states (no outgoing transitions)."""
+    return status in TERMINAL_STATES
+
+
+def is_control_state(status: TaskStatus) -> bool:
+    """Return ``True`` for control/suspension states (PAUSED/WAITING/NEEDS_INPUT)."""
+    return status in CONTROL_STATES
+
+
+def is_execution_state(status: TaskStatus) -> bool:
+    """Return ``True`` for execution states (including terminal outcomes)."""
+    return status in EXECUTION_STATES
+
+
 _ALLOWED: dict[TaskStatus, frozenset[TaskStatus]] = {
     TaskStatus.CREATED: frozenset({TaskStatus.CLASSIFIED, TaskStatus.CANCELLED}),
     TaskStatus.CLASSIFIED: frozenset({TaskStatus.PLANNED, TaskStatus.CANCELLED}),
@@ -61,10 +100,24 @@ _ALLOWED: dict[TaskStatus, frozenset[TaskStatus]] = {
         {TaskStatus.REASONING, TaskStatus.NEEDS_INPUT, TaskStatus.FAILED, TaskStatus.CANCELLED}
     ),
     TaskStatus.REASONING: frozenset(
-        {TaskStatus.EXECUTING, TaskStatus.NEEDS_INPUT, TaskStatus.FAILED, TaskStatus.CANCELLED}
+        {
+            TaskStatus.EXECUTING,
+            TaskStatus.NEEDS_INPUT,
+            TaskStatus.PAUSED,
+            TaskStatus.WAITING,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELLED,
+        }
     ),
     TaskStatus.EXECUTING: frozenset(
-        {TaskStatus.VERIFYING, TaskStatus.REASONING, TaskStatus.FAILED, TaskStatus.CANCELLED}
+        {
+            TaskStatus.VERIFYING,
+            TaskStatus.REASONING,  # retry
+            TaskStatus.PAUSED,
+            TaskStatus.WAITING,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELLED,
+        }
     ),
     TaskStatus.VERIFYING: frozenset(
         {
@@ -93,7 +146,7 @@ _ALLOWED: dict[TaskStatus, frozenset[TaskStatus]] = {
 
 def validate_transition(current: TaskStatus, new: TaskStatus) -> None:
     """Raise :class:`InvalidTransitionError` if *current* → *new* is illegal."""
-    if current in TERMINAL_STATES:
+    if is_terminal_state(current):
         raise InvalidTransitionError(f"cannot leave terminal state {current.value!r}")
     if new not in _ALLOWED[current]:
         raise InvalidTransitionError(
@@ -166,4 +219,8 @@ class Task:
 
     @property
     def is_terminal(self) -> bool:
-        return self.status in TERMINAL_STATES
+        return is_terminal_state(self.status)
+
+    @property
+    def is_control_state(self) -> bool:
+        return is_control_state(self.status)

@@ -1,8 +1,13 @@
 """Provider-neutral inference value objects and capability negotiation.
 
 These are contracts only: no provider implementation, no network access, no
-Qwen-specific parameters. The negotiation layer is independent of any backend
-and never lets an unsupported capability silently disappear.
+Qwen-specific parameters. The negotiation layer is independent of any backend,
+accounts for **every** declared capability, and never lets an unsupported
+requirement silently disappear.
+
+Model selection has a single authority: ``InferencePolicy.model_requirement``.
+``InferenceRequest`` is a pure envelope and does not carry an independent model
+requirement (Phase 1.1).
 """
 
 from __future__ import annotations
@@ -17,18 +22,31 @@ from qwen_research.domain.errors import InferenceError, ValidationError
 
 
 class NegotiationOutcome(StrEnum):
-    """Outcome of intersecting an ``InferencePolicy`` with ``ProviderCapabilities``."""
+    """Outcome of intersecting an ``InferencePolicy`` with ``ProviderCapabilities``.
 
-    APPLY = "apply"        # supported: pass the parameter through.
-    DEGRADE = "degrade"    # unsupported: apply the closest supported behavior, record it.
-    EMULATE = "emulate"    # unsupported: reproduce the intent with supported primitives.
-    REJECT = "reject"      # required but impossible: fail explicitly.
+    - ``APPLY``   — the provider can directly satisfy the requested policy.
+    - ``DEGRADE`` — the provider cannot fully satisfy the request, but a weaker
+      valid behavior is accepted (e.g. a bounded lower output budget).
+    - ``EMULATE`` — the provider cannot natively satisfy the capability, but the
+      Research Runtime can approximate it via external workflow behavior.
+    - ``REJECT``  — the capability is required and cannot be satisfied or
+      safely approximated; negotiation fails explicitly.
+    """
+
+    APPLY = "apply"
+    DEGRADE = "degrade"
+    EMULATE = "emulate"
+    REJECT = "reject"
 
 
 @serializable
 @dataclasses.dataclass(frozen=True)
 class ProviderCapabilities:
-    """What an inference backend can actually do — advertised, never assumed."""
+    """What an inference backend can actually do — advertised, never assumed.
+
+    Every field defaults to ``False``: a capability is *unsupported* unless the
+    provider explicitly advertises it.
+    """
 
     supports_reasoning: bool = False
     supports_reasoning_budget: bool = False
@@ -58,32 +76,52 @@ class ModelInfo:
 class InferencePolicy:
     """A provider-neutral statement of *how* to call a model.
 
-    Contains only intents (sampling, budgets, structure, tool use, streaming);
-    provider-specific parameters are derived later, in the Inference Runtime.
+    Fields are capability-aligned intents (not provider parameters). A field
+    being ``None``/``False`` means "not requested"; a non-default value is a
+    request that negotiation must account for explicitly.
+
+    ``model_requirement`` is the **single authoritative** model-selection
+    intent. It is not a capability and is not negotiated here; a provider
+    adapter later translates it into a provider-specific model identifier.
     """
 
     model_requirement: str | None = None
-    sampling: str | None = None          # e.g. "deterministic", "balanced", "creative"
+    reasoning: bool = False
+    reasoning_budget: int | None = None
     max_output_tokens: int | None = None
-    require_structured_output: bool = False
-    allow_tool_calling: bool = False
-    prefer_streaming: bool = False
-    budget: int | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    preserved_thinking: bool = False
+    tool_calling: bool = False
+    structured_output: bool = False
+    streaming: bool = False
+    parallel_generation: bool = False
+    context_caching: bool = False
 
     def __post_init__(self) -> None:
-        if self.max_output_tokens is not None and self.max_output_tokens < 0:
-            raise ValidationError("max_output_tokens must be non-negative")
-        if self.budget is not None and self.budget < 0:
-            raise ValidationError("budget must be non-negative")
+        for field, value in (
+            ("reasoning_budget", self.reasoning_budget),
+            ("max_output_tokens", self.max_output_tokens),
+        ):
+            if value is not None and value < 0:
+                raise ValidationError(f"{field} must be non-negative, got {value}")
+        if self.temperature is not None and self.temperature < 0:
+            raise ValidationError("temperature must be non-negative")
+        if self.top_p is not None and not 0.0 < self.top_p <= 1.0:
+            raise ValidationError("top_p must be within (0.0, 1.0]")
 
 
 @serializable
 @dataclasses.dataclass(frozen=True)
 class InferenceRequest:
-    """A request from the Research Runtime to the Inference Runtime."""
+    """A request envelope from the Research Runtime to the Inference Runtime.
+
+    Carries the task/context reference and the ``InferencePolicy``. It does
+    **not** carry an independent model requirement — ``InferencePolicy`` is the
+    single authority (Phase 1.1).
+    """
 
     task_reference: TaskId
-    model_requirement: str | None
     inference_policy: InferencePolicy
     context: tuple[str, ...] = ()
     tools: tuple[str, ...] = ()
@@ -117,97 +155,181 @@ class InferenceResult:
 @serializable
 @dataclasses.dataclass(frozen=True)
 class NegotiationDecision:
-    """The outcome for a single negotiated policy element."""
+    """The outcome for a single requested capability.
+
+    Exposes everything a caller needs to reason about a decision:
+    the requested capability, whether the provider supports it, the decision,
+    the reason, and the effective value applied to the resulting policy.
+    """
 
     element: str
+    requested: bool
+    supported: bool
     outcome: NegotiationOutcome
-    detail: str
+    reason: str
+    effective_value: Any | None = None
 
 
 def negotiate(
     policy: InferencePolicy, capabilities: ProviderCapabilities
 ) -> tuple[InferencePolicy, tuple[NegotiationDecision, ...]]:
-    """Intersect *policy* with *capabilities*, returning an applied policy + decisions.
+    """Intersect *policy* with *capabilities*.
 
-    Every policy element that depends on a capability is either applied,
-    degraded, emulated, or rejected. The returned ``decisions`` record each
-    outcome so nothing disappears silently.
+    Returns ``(applied_policy, decisions)`` where ``decisions`` contains an
+    explicit record for **every** requested capability (``APPLY``, ``DEGRADE``,
+    ``EMULATE``, or ``REJECT``). If any requested capability is ``REJECT``,
+    raises :class:`InferenceError` — unsupported requirements never silently
+    disappear and never silently continue.
     """
     decisions: list[NegotiationDecision] = []
-    applied: dict[str, Any] = {
-        "model_requirement": policy.model_requirement,
-        "sampling": policy.sampling,
-        "max_output_tokens": policy.max_output_tokens,
-        "require_structured_output": policy.require_structured_output,
-        "allow_tool_calling": policy.allow_tool_calling,
-        "prefer_streaming": policy.prefer_streaming,
-        "budget": policy.budget,
-    }
+    applied: dict[str, Any] = {"model_requirement": policy.model_requirement}
 
-    if policy.max_output_tokens is not None and not capabilities.supports_max_output_tokens:
-        decisions.append(
-            NegotiationDecision(
-                "max_output_tokens",
-                NegotiationOutcome.DEGRADE,
-                "provider cannot cap output tokens",
-            )
-        )
-        applied["max_output_tokens"] = None
-
-    if policy.sampling is not None and not (
-        capabilities.supports_temperature or capabilities.supports_top_p
-    ):
-        decisions.append(
-            NegotiationDecision(
-                "sampling", NegotiationOutcome.DEGRADE, "provider exposes no sampling controls"
-            )
-        )
-        applied["sampling"] = None
-
-    if policy.require_structured_output:
-        if capabilities.supports_structured_output:
+    def decide(
+        element: str,
+        requested: bool,
+        supported: bool,
+        *,
+        apply: Any,
+        degrade: Any,
+        degrade_reason: str,
+        emulate: Any | None = None,
+        emulate_reason: str = "",
+        reject_reason: str = "",
+    ) -> None:
+        if not requested:
+            return
+        if supported:
             decisions.append(
                 NegotiationDecision(
-                    "require_structured_output", NegotiationOutcome.APPLY, "supported"
+                    element, True, True, NegotiationOutcome.APPLY, "supported", apply
+                )
+            )
+            applied[element] = apply
+        elif emulate is not None:
+            decisions.append(
+                NegotiationDecision(
+                    element, True, False, NegotiationOutcome.EMULATE, emulate_reason, emulate
+                )
+            )
+            applied[element] = emulate
+        elif reject_reason:
+            decisions.append(
+                NegotiationDecision(
+                    element, True, False, NegotiationOutcome.REJECT, reject_reason, None
                 )
             )
         else:
-            # Structured output can be emulated via prompt-constrained JSON + validation.
             decisions.append(
                 NegotiationDecision(
-                    "require_structured_output",
-                    NegotiationOutcome.EMULATE,
-                    "emulated via constrained prompt + post-validation",
+                    element, True, False, NegotiationOutcome.DEGRADE, degrade_reason, degrade
                 )
             )
+            applied[element] = degrade
 
-    if policy.allow_tool_calling and not capabilities.supports_tool_calling:
-        # Tool calling is required semantics; emulation is not generally safe.
-        decisions.append(
-            NegotiationDecision(
-                "allow_tool_calling",
-                NegotiationOutcome.REJECT,
-                "provider does not support tool calling",
-            )
-        )
-        applied["allow_tool_calling"] = False
-
-    if policy.prefer_streaming and not capabilities.supports_streaming:
-        decisions.append(
-            NegotiationDecision(
-                "prefer_streaming",
-                NegotiationOutcome.DEGRADE,
-                "streaming unsupported; one-shot used",
-            )
-        )
-        applied["prefer_streaming"] = False
+    decide(
+        "reasoning",
+        policy.reasoning,
+        capabilities.supports_reasoning,
+        apply=True,
+        degrade=False,  # unreachable: emulate takes precedence for reasoning
+        degrade_reason="",
+        emulate=True,
+        emulate_reason="reasoning approximated via workflow (multi-pass/critique)",
+    )
+    decide(
+        "reasoning_budget",
+        policy.reasoning_budget is not None,
+        capabilities.supports_reasoning_budget,
+        apply=policy.reasoning_budget,
+        degrade=None,
+        degrade_reason="reasoning budget not controllable by provider",
+    )
+    decide(
+        "max_output_tokens",
+        policy.max_output_tokens is not None,
+        capabilities.supports_max_output_tokens,
+        apply=policy.max_output_tokens,
+        degrade=None,
+        degrade_reason="provider cannot cap output tokens",
+    )
+    decide(
+        "temperature",
+        policy.temperature is not None,
+        capabilities.supports_temperature,
+        apply=policy.temperature,
+        degrade=None,
+        degrade_reason="provider exposes no temperature control",
+    )
+    decide(
+        "top_p",
+        policy.top_p is not None,
+        capabilities.supports_top_p,
+        apply=policy.top_p,
+        degrade=None,
+        degrade_reason="provider exposes no top_p control",
+    )
+    decide(
+        "preserved_thinking",
+        policy.preserved_thinking,
+        capabilities.supports_preserved_thinking,
+        apply=True,
+        degrade=False,
+        degrade_reason="",
+        reject_reason=(
+            "preserved thinking requested but not supported and cannot be safely approximated"
+        ),
+    )
+    decide(
+        "tool_calling",
+        policy.tool_calling,
+        capabilities.supports_tool_calling,
+        apply=True,
+        degrade=False,
+        degrade_reason="",
+        reject_reason="tool calling requested but not supported by provider",
+    )
+    decide(
+        "structured_output",
+        policy.structured_output,
+        capabilities.supports_structured_output,
+        apply=True,
+        degrade=False,
+        degrade_reason="",
+        emulate=True,
+        emulate_reason="structured output emulated via constrained prompt + post-validation",
+    )
+    decide(
+        "streaming",
+        policy.streaming,
+        capabilities.supports_streaming,
+        apply=True,
+        degrade=False,
+        degrade_reason="streaming unsupported; one-shot generation used",
+    )
+    decide(
+        "parallel_generation",
+        policy.parallel_generation,
+        capabilities.supports_parallel_generation,
+        apply=True,
+        degrade=False,
+        degrade_reason="",
+        emulate=True,
+        emulate_reason="parallel research emulated via sequential trajectories in the workflow",
+    )
+    decide(
+        "context_caching",
+        policy.context_caching,
+        capabilities.supports_context_caching,
+        apply=True,
+        degrade=False,
+        degrade_reason="context caching unsupported; accepted without caching",
+    )
 
     rejected = [d for d in decisions if d.outcome is NegotiationOutcome.REJECT]
     if rejected:
         raise InferenceError(
             "inference policy cannot be satisfied: "
-            + "; ".join(f"{d.element} → {d.detail}" for d in rejected)
+            + "; ".join(f"{d.element} → {d.reason}" for d in rejected)
         )
 
-    result = InferencePolicy(**applied)
-    return result, tuple(decisions)
+    return InferencePolicy(**applied), tuple(decisions)

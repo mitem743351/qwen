@@ -75,25 +75,41 @@ This is the load-bearing abstraction. Four explicit objects:
 | Object | Meaning | Owned by |
 |--------|---------|----------|
 | **ReasoningProfile** | *What behavior* we want (critique passes, retrieval depth, budgets…) | Reasoning Policy Engine (Research Runtime) |
-| **InferencePolicy** | *How to call* a model, provider-neutrally (sampling intent, budget, structured output, tool use, streaming) | Reasoning Policy Engine → Inference Runtime |
+| **InferencePolicy** | *How to call* a model, provider-neutrally (capability-aligned intents, see below) | Reasoning Policy Engine → Inference Runtime |
 | **ProviderCapabilities** | *What the backend can actually do* (advertised, not assumed) | Inference Runtime (queried from provider) |
 | **Provider parameters** | *What to send* to a specific backend (temperature, top_p, max_tokens, specific reasoning flags) | Inference Runtime |
 
+`InferencePolicy` represents each intent as a capability-aligned,
+provider-neutral field (Phase 1.1):
+
+```text
+model_requirement · reasoning · reasoning_budget · max_output_tokens
+temperature · top_p · preserved_thinking · tool_calling · structured_output
+streaming · parallel_generation · context_caching
+```
+
+`model_requirement` is the **single authoritative** model-selection intent and
+is not a capability; `InferenceRequest` is a pure envelope that references the
+policy and carries no independent model requirement.
+
 **Capability negotiation:** the adapter intersects the `InferencePolicy` with
-`ProviderCapabilities` and assigns each element an explicit outcome:
+`ProviderCapabilities` and assigns **every** requested capability an explicit
+outcome, recorded as a typed `NegotiationDecision` (`requested`, `supported`,
+`outcome`, `reason`, `effective_value`):
 
 ```text
 APPLY    — supported: pass the parameter through
 DEGRADE  — unsupported: apply closest supported behavior, record the reduction
-EMULATE  — unsupported: reproduce the intent with supported primitives
+EMULATE  — unsupported: reproduce the intent via external workflow behavior
 REJECT   — required but impossible: fail the policy explicitly
 ```
 
-Every non-`APPLY` outcome is recorded in workflow state and the audit log;
-no intent is silently dropped. This is what keeps `XHIGH` meaningful across
-backends: the *workflow* behavior (more passes, more verification) is
-provider-independent; only the low-level sampling hints are provider-specific —
-and where even those are unavailable, the system says so instead of pretending.
+Every non-`APPLY` outcome is recorded; a `REJECT` raises a typed
+`InferenceError` — no intent is silently dropped and nothing silently
+continues. This is what keeps `XHIGH` meaningful across backends: the
+*workflow* behavior (more passes, more verification) is provider-independent;
+only the low-level sampling hints are provider-specific — and where even those
+are unavailable, the system says so instead of pretending.
 
 ---
 

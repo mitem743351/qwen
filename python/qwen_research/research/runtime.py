@@ -139,6 +139,27 @@ class InMemoryResearchRuntime:
     def verify_claim(self, claim_id: ClaimId) -> VerificationResult:
         raise UnsupportedOperationError("verification is not implemented until Phase 6")
 
+    # -- reserved lifecycle operations (contract only) --------------------
+    # The domain supports PAUSED / WAITING / NEEDS_INPUT / CANCELLED as valid
+    # states, but the runtime does not yet operate a pause/resume engine. These
+    # operations raise UnsupportedOperationError rather than returning fake
+    # success (Phase 1.1).
+
+    def pause_task(self, task_id: TaskId) -> Task:
+        raise UnsupportedOperationError("pause_task is not implemented (reserved lifecycle)")
+
+    def resume_task(self, task_id: TaskId) -> Task:
+        raise UnsupportedOperationError("resume_task is not implemented (reserved lifecycle)")
+
+    def wait_for_input(self, task_id: TaskId) -> Task:
+        raise UnsupportedOperationError("wait_for_input is not implemented (reserved lifecycle)")
+
+    def provide_input(self, task_id: TaskId, input_data: Any) -> Task:
+        raise UnsupportedOperationError("provide_input is not implemented (reserved lifecycle)")
+
+    def cancel_task(self, task_id: TaskId) -> Task:
+        raise UnsupportedOperationError("cancel_task is not implemented (reserved lifecycle)")
+
     # -- helpers ----------------------------------------------------------
 
     def _require_task(self, task_id: TaskId) -> Task:

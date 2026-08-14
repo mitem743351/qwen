@@ -113,9 +113,11 @@ ReasoningProfile ──▶ InferencePolicy ──▶ Capability negotiation ─�
 
 - The **Reasoning Policy Engine** resolves a `ReasoningProfile` (plus the task's
   complexity assessment) into an **`InferencePolicy`**: a provider-neutral
-  statement of *how* to call the model (temperature/top-p intent, sampling
-  budget, structured-output requirements, max tokens, whether tool-calling is
-  allowed, whether streaming is used).
+  statement of *how* to call the model, expressed as capability-aligned intents
+  (`reasoning`, `reasoning_budget`, `max_output_tokens`, `temperature`, `top_p`,
+  `preserved_thinking`, `tool_calling`, `structured_output`, `streaming`,
+  `parallel_generation`, `context_caching`) plus the single authoritative
+  `model_requirement` (Phase 1.1).
 - The **capability-negotiation layer** (in the Inference Runtime) intersects the
   `InferencePolicy` with the provider's `capabilities()` and assigns each
   element an outcome — `APPLY` / `DEGRADE` / `EMULATE` / `REJECT` (see

@@ -69,18 +69,27 @@ Provider-specific parameters
 ```
 
 The negotiation layer intersects the `InferencePolicy` with
-`ProviderCapabilities` and assigns one of four outcomes to every policy
-element:
+`ProviderCapabilities` and assigns one of four outcomes to **every requested**
+policy element, recorded as a typed `NegotiationDecision` (`requested`,
+`supported`, `outcome`, `reason`, `effective_value`):
 
 | Policy | Meaning | Example |
 |--------|---------|---------|
 | **APPLY** | Provider supports it; pass the parameter through. | `max_output_tokens` honored |
-| **DEGRADE** | Provider lacks it; apply the closest supported behavior and record the reduction. | native reasoning budget → emulate via more passes |
-| **EMULATE** | Provider lacks it; reproduce the intent with supported primitives. | no structured output → prompt-constrained JSON + validation |
-| **REJECT** | Cannot honor even approximately and it is required; fail the policy explicitly. | required tool-calling on a non-tool backend |
+| **DEGRADE** | Provider lacks it; apply the closest supported behavior and record the reduction. | `max_output_tokens` → no cap; `streaming` → one-shot |
+| **EMULATE** | Provider lacks it; reproduce the intent via external workflow behavior. | reasoning effort, parallel research, structured output |
+| **REJECT** | Cannot honor even approximately and it is required; fail the policy explicitly. | required tool-calling / preserved-thinking on a non-supporting backend |
 
-Every non-`APPLY` outcome is **recorded** in workflow state and audit log. The
-system never silently drops an intent.
+Every non-`APPLY` outcome is **recorded**; a `REJECT` raises the typed
+`InferenceError`. The system never silently drops an intent and never silently
+continues past a rejected requirement.
+
+### Model selection is not a capability
+
+`model_requirement` is the **single authoritative** model-selection intent and
+is **not** negotiated here: a provider adapter later translates it into a
+provider-specific model identifier (Phase 1.1). `InferenceRequest` carries no
+independent model requirement.
 
 ---
 

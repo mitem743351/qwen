@@ -10,26 +10,45 @@ contracts, the Inference Provider protocol, and the persistence interfaces.
 
 ```text
 ResearchRuntime (protocol, research/interfaces.py)
-    execute_task()
-    continue_task()
-    inspect_task()
-    retrieve_context()      # UnsupportedOperationError until Phase 3
-    verify_claim()          # UnsupportedOperationError until Phase 6
-    run_workflow()
-    get_state()
-    save_artifact()
-    create_session()
+    create_session(*, project_id="default", mode=STUDIO_NATIVE) -> Session
+    execute_task(description, *, profile=None, session_id=None) -> Task
+    continue_task(task_id) -> Task
+    inspect_task(task_id) -> Task
+    retrieve_context(task_id)   # UnsupportedOperationError until Phase 3
+    verify_claim(claim_id)      # UnsupportedOperationError until Phase 6
+    run_workflow(workflow_id, task_id) -> WorkflowResult
+    get_state(task_id) -> ResearchState
+    save_artifact(artifact) -> Artifact
+
+    # Reserved lifecycle operations (contract only; Phase 1.1)
+    pause_task(task_id)           # UnsupportedOperationError
+    resume_task(task_id)          # UnsupportedOperationError
+    wait_for_input(task_id)       # UnsupportedOperationError
+    provide_input(task_id, data)  # UnsupportedOperationError
+    cancel_task(task_id)          # UnsupportedOperationError
 ```
 
 `InMemoryResearchRuntime` (`research/runtime.py`) implements this over
-in-memory stores. The API is transport-independent: MCP, CLI, API, and
-dashboard will adapt onto the same surface.
+in-memory stores. The **protocol and implementation agree exactly** on every
+signature (statically enforced by mypy via a conformance test).
 
-- `execute_task` creates a task, classifies and plans it, and creates a
-  `ResearchState`.
-- `continue_task` advances one step along the active progression.
+- `create_session` accepts an operating `mode` (first-class since Phase 0.5)
+  and a `project_id`.
+- `execute_task` accepts an optional `session_id` to run within an existing
+  session; otherwise it auto-creates one. It creates, classifies, and plans the
+  task and creates a `ResearchState`.
+- `continue_task` advances one step along the active execution progression.
 - `retrieve_context` / `verify_claim` raise `UnsupportedOperationError` (no
   fabricated results — B23).
+
+### Reserved lifecycle operations
+
+`pause_task`, `resume_task`, `wait_for_input`, `provide_input`, and
+`cancel_task` are declared on the protocol for contract completeness. The
+domain model supports `PAUSED` / `WAITING` / `NEEDS_INPUT` / `CANCELLED` as
+valid states, but **Phase 1 does not implement a pause/resume engine** — these
+operations raise `UnsupportedOperationError` rather than returning fake
+success.
 
 ---
 

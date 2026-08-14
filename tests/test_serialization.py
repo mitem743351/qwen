@@ -6,6 +6,12 @@ import pytest
 
 from qwen_research.common.ids import TaskId
 from qwen_research.common.serialization import SCHEMA_VERSION, dumps, loads
+from qwen_research.domain.inference import (
+    InferencePolicy,
+    InferenceRequest,
+    InferenceResult,
+    ProviderCapabilities,
+)
 from qwen_research.domain.reasoning import DEEP
 from qwen_research.domain.research import Hypothesis, ResearchState
 from qwen_research.domain.session import Session
@@ -44,6 +50,67 @@ def test_roundtrip_enums_and_optional_datetimes() -> None:
 def test_roundtrip_reasoning_objects() -> None:
     assert loads(dumps(DEEP)) == DEEP
     assert loads(dumps(DEEP.budget())) == DEEP.budget()
+
+
+def test_roundtrip_inference_objects() -> None:
+    capabilities = ProviderCapabilities(
+        supports_reasoning=True,
+        supports_tool_calling=True,
+        supports_structured_output=True,
+    )
+    policy = InferencePolicy(
+        model_requirement="reasoning",
+        reasoning=True,
+        reasoning_budget=100,
+        max_output_tokens=500,
+        temperature=0.7,
+        top_p=0.9,
+        tool_calling=True,
+        structured_output=True,
+    )
+    request = InferenceRequest(
+        task_reference=TaskId("task_1"),
+        inference_policy=policy,
+        context=("evidence-1", "evidence-2"),
+        tools=("retrieve",),
+    )
+    result = InferenceResult(
+        status="ok",
+        model="qwen-xyz",
+        content="answer",
+        structured_output={"summary": "x"},
+        usage={"input": 10, "output": 20},
+        warnings=("degraded-streaming",),
+    )
+    for obj in (capabilities, policy, request, result):
+        assert loads(dumps(obj)) == obj
+
+
+def test_roundtrip_runtime_contracts() -> None:
+    from qwen_research.research.interfaces import MCPRequest, MCPResult
+
+    request = MCPRequest(
+        tool="get_research_state",
+        arguments={"task_id": "task_1"},
+        session_reference="session_1",
+        permission_context=("read",),
+    )
+    result = MCPResult(
+        status="ok",
+        result={"status": "planned"},
+        citations=("source_1",),
+        provenance={"workflow": "placeholder"},
+        errors=(),
+    )
+    assert loads(dumps(request)) == request
+    assert loads(dumps(result)) == result
+
+
+def test_serialization_has_no_chain_of_thought() -> None:
+    result = InferenceResult(status="ok", model="m", content="answer")
+    serialized = dumps(result)
+    assert "chain_of_thought" not in serialized
+    assert "thinking" not in serialized.lower()
 
 
 def test_schema_version_present() -> None:

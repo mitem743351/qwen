@@ -11,9 +11,10 @@ from __future__ import annotations
 import dataclasses
 from typing import Any, Protocol, runtime_checkable
 
-from qwen_research.common.ids import ArtifactId, ClaimId, TaskId, WorkflowId
+from qwen_research.common.ids import ArtifactId, ClaimId, SessionId, TaskId, WorkflowId
 from qwen_research.common.serialization import serializable
 from qwen_research.domain.artifact import Artifact
+from qwen_research.domain.modes import OperatingMode
 from qwen_research.domain.reasoning import ReasoningProfile
 from qwen_research.domain.research import ResearchState
 from qwen_research.domain.session import Session
@@ -51,13 +52,25 @@ class MCPResult:
 
 @runtime_checkable
 class ResearchRuntime(Protocol):
-    """The public, provider- and transport-independent application contract."""
+    """The public, provider- and transport-independent application contract.
+
+    The concrete implementation (``InMemoryResearchRuntime``) and this protocol
+    must agree exactly on every signature.
+    """
+
+    def create_session(
+        self,
+        *,
+        project_id: str = "default",
+        mode: OperatingMode = OperatingMode.STUDIO_NATIVE,
+    ) -> Session: ...
 
     def execute_task(
         self,
         description: str,
         *,
         profile: ReasoningProfile | None = None,
+        session_id: SessionId | None = None,
     ) -> Task: ...
 
     def continue_task(self, task_id: TaskId) -> Task: ...
@@ -74,4 +87,17 @@ class ResearchRuntime(Protocol):
 
     def save_artifact(self, artifact: Artifact) -> Artifact: ...
 
-    def create_session(self, *, project_id: str = "default") -> Session: ...
+    # -- reserved lifecycle operations (contract only) ---------------------
+    # These are declared for contract completeness. The InMemoryResearchRuntime
+    # raises UnsupportedOperationError for each — Phase 1 does not implement a
+    # pause/resume engine (Phase 1.1).
+
+    def pause_task(self, task_id: TaskId) -> Task: ...
+
+    def resume_task(self, task_id: TaskId) -> Task: ...
+
+    def wait_for_input(self, task_id: TaskId) -> Task: ...
+
+    def provide_input(self, task_id: TaskId, input_data: Any) -> Task: ...
+
+    def cancel_task(self, task_id: TaskId) -> Task: ...

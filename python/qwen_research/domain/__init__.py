@@ -51,7 +51,16 @@ from qwen_research.domain.research import (
 )
 from qwen_research.domain.session import Session
 from qwen_research.domain.source import Source, SourceType
-from qwen_research.domain.task import Task, TaskStatus
+from qwen_research.domain.task import (
+    CONTROL_STATES,
+    EXECUTION_STATES,
+    TERMINAL_STATES,
+    Task,
+    TaskStatus,
+    is_control_state,
+    is_execution_state,
+    is_terminal_state,
+)
 from qwen_research.domain.verification import VerificationResult, VerificationStatus
 from qwen_research.domain.workflow import Workflow
 
@@ -62,10 +71,12 @@ __all__ = [
     "Claim",
     "ClaimStatus",
     "ConfigurationError",
+    "CONTROL_STATES",
     "ContinuationPolicy",
     "DEEP",
     "Decision",
     "DomainError",
+    "EXECUTION_STATES",
     "EXTREME",
     "Evidence",
     "FAST",
@@ -75,6 +86,9 @@ __all__ = [
     "InferenceRequest",
     "InferenceResult",
     "InvalidTransitionError",
+    "is_control_state",
+    "is_execution_state",
+    "is_terminal_state",
     "ModelInfo",
     "NORMAL",
     "NegotiationOutcome",
@@ -92,6 +106,7 @@ __all__ = [
     "SourceType",
     "Task",
     "TaskStatus",
+    "TERMINAL_STATES",
     "ToolError",
     "UnresolvedQuestion",
     "UnsupportedOperationError",
