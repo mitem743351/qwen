@@ -59,17 +59,23 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
 - **Not yet:** MCP server, retrieval, embeddings, real providers, sandbox,
   real persistence.
 
-## Phase 2 — MCP Server
+## Phase 2 — MCP Server foundation ✅ (complete)
 
 - **Objective:** STUDIO_NATIVE mode is real — the MCP Server adapter is live.
-- **Dependencies:** Phase 1.
-- **Components:** MCP Server (façade over SDK); MCP schema adapters; tool
-  registry (MCP view over the Internal Tool Registry); permission boundary;
-  audit logging; `CapabilityMode` binding to STUDIO_NATIVE.
-- **Acceptance criteria:** tools callable; permissions enforced; domain objects
-  adapt to/from MCP without leaking MCP types; **no Inference Runtime on the
-  path**.
-- **Not yet:** GATEWAY_INFERENCE/HYBRID; dashboard; auth.
+- **Dependencies:** Phase 1 (and 1.1/1.2 hardening).
+- **Components:** MCP Server over the official `mcp` SDK (stdio transport);
+  `MCPTransport` abstraction; schema adapters (MCP ↔ domain); permission model
+  (`ToolPermissionPolicy`); error normalization (`map_error`); six tools
+  (`get_session`, `create_session`, `execute_task`, `continue_task`,
+  `get_task_state`, `get_research_state`); lifecycle + diagnostics; a real
+  stdio integration test.
+- **Acceptance criteria:** server starts/stops cleanly; client initializes and
+  discovers tools; all six tools work through MCP; errors are safely
+  normalized; permissions enforced; session/task isolation enforced;
+  local-only default; Research Runtime and Domain remain MCP-free.
+- **Not yet:** `search_corpus`/`retrieve_evidence`/`verify_claim`/`run_analysis`
+  tools; MCP resources; SSE/HTTP transports; remote transport/auth;
+  GATEWAY_INFERENCE/HYBRID; dashboard.
 
 ## Phase 3 — Corpus + retrieval
 

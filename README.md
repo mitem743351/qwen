@@ -7,11 +7,11 @@ persistent research memory, verification/citation/provenance, and deterministic
 computation — while Qwen Studio keeps its native conversational and web-search
 capabilities.
 
-> **Current status: Phase 1 — Core Domain and Runtime Contracts.**
-> The architecture (Phases 0, 0.5, 0.75) is the approved baseline. Phase 1
-> implements the stable domain objects, runtime interfaces, state machine,
-> error model, and testable in-memory contracts in `python/qwen_research/` —
-> still **no** MCP server, Qwen API, retrieval, database, or dashboard.
+> **Current status: Phase 2 — MCP Server Foundation.**
+> The architecture (Phases 0, 0.5, 0.75) is the approved baseline; Phase 1
+> established the core domain and runtime contracts and Phase 1.1/1.2 hardened
+> them. Phase 2 adds a real, testable MCP server (stdio) exposing the Research
+> Runtime. Still **no** Qwen API, retrieval, real persistence, or dashboard.
 
 ## What this is
 
@@ -69,6 +69,11 @@ Phase 1 implementation:
 - [`docs/architecture/domain-model.md`](docs/architecture/domain-model.md) — the domain objects
 - [`docs/architecture/runtime-contracts.md`](docs/architecture/runtime-contracts.md) — the runtime interfaces
 
+Phase 2 (MCP server):
+
+- [`docs/architecture/mcp-implementation.md`](docs/architecture/mcp-implementation.md) — what Phase 2 delivers
+- [`docs/setup/mcp.md`](docs/setup/mcp.md) — running the MCP server
+
 Full architecture docs:
 
 | Area | Document |
@@ -93,23 +98,25 @@ Full architecture docs:
 | Phase 1 contracts | [`phase-1-contracts.md`](docs/architecture/phase-1-contracts.md) |
 | Domain model | [`domain-model.md`](docs/architecture/domain-model.md) |
 | Runtime contracts | [`runtime-contracts.md`](docs/architecture/runtime-contracts.md) |
+| MCP implementation | [`mcp-implementation.md`](docs/architecture/mcp-implementation.md) |
+| MCP setup | [`setup/mcp.md`](docs/setup/mcp.md) |
 | Decisions (ADRs) | [`decisions/`](docs/architecture/decisions/) |
 | Mermaid diagrams | [`diagrams/`](docs/architecture/diagrams/) |
 
 ## Status
 
-Phase 0.75 (architecture) is **complete** and is the approved baseline.
-Phase 1 (core domain and runtime contracts) is **complete**: the domain model,
-runtime interfaces, state machine, error model, and in-memory contracts are
-implemented and tested. See
-[`implementation-phases.md`](docs/architecture/implementation-phases.md) and
-[`phase-1-contracts.md`](docs/architecture/phase-1-contracts.md).
+Phase 0.75 (architecture) is the approved baseline. Phase 1 (core domain and
+runtime contracts), Phase 1.1 (contract hardening), Phase 1.2 (capability
+semantics), and Phase 2 (MCP server foundation) are **complete**. The Research
+Runtime remains provider- and transport-independent; the MCP server is a thin
+adapter over it. See
+[`implementation-phases.md`](docs/architecture/implementation-phases.md).
 
 ### Develop
 
 ```text
 pip install -e ".[dev]"
-pytest            # unit + contract + vertical-slice tests
+pytest            # unit + contract + vertical-slice + MCP integration tests
 ruff check .      # lint
 mypy              # type check
 ```

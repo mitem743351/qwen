@@ -63,7 +63,10 @@ class ResearchRuntime(Protocol):
         *,
         project_id: str = "default",
         mode: OperatingMode = OperatingMode.STUDIO_NATIVE,
+        metadata: dict[str, str] | None = None,
     ) -> Session: ...
+
+    def get_session(self, session_id: SessionId) -> Session: ...
 
     def execute_task(
         self,

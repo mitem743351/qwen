@@ -55,9 +55,16 @@ class InMemoryResearchRuntime:
         *,
         project_id: str = "default",
         mode: OperatingMode = OperatingMode.STUDIO_NATIVE,
+        metadata: dict[str, str] | None = None,
     ) -> Session:
-        session = Session.create(project_id=project_id, mode=mode)
+        session = Session.create(project_id=project_id, mode=mode, metadata=metadata)
         self._session_store.save(session)
+        return session
+
+    def get_session(self, session_id: SessionId) -> Session:
+        session = self._session_store.get(session_id)
+        if session is None:
+            raise PersistenceError(f"no session with id {session_id!r}")
         return session
 
     # -- tasks ------------------------------------------------------------
@@ -73,6 +80,9 @@ class InMemoryResearchRuntime:
         profile = profile or DEEP
         if session_id is None:
             session_id = self.create_session().session_id
+        else:
+            # Validate that the requested session exists (session/task isolation).
+            self.get_session(session_id)
 
         task = Task.create(description, session_id, profile.name)
         self._task_store.save(task)

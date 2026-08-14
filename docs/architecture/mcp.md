@@ -3,6 +3,12 @@
 The MCP layer is the **only** surface the model (via Qwen Studio) can touch.
 It is deliberately narrow, semantic, and permission-gated.
 
+> **Implemented in Phase 2.** The MCP **foundation** is now implemented in
+> `python/qwen_research/mcp/` (stdio transport, six Research-Runtime tools,
+> permissions, error normalization). See
+> [`mcp-implementation.md`](mcp-implementation.md) for what exists vs. future
+> capability.
+
 > ### MCP ≠ Inference Control
 >
 > MCP extends a model with **capabilities**; it does **not** grant the MCP

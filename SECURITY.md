@@ -39,6 +39,21 @@ provider adapter and never appear in MCP arguments, tool output, model-visible
 context, research state, logs, or artifacts. See
 [`docs/architecture/security.md#inference-ownership-as-a-boundary`](docs/architecture/security.md#inference-ownership-as-a-boundary).
 
+## MCP server boundary (Phase 2)
+
+The MCP server is an **external adapter** that defaults to secure operation:
+
+- **Local-only transport** — stdio only; no public network binding.
+- **Minimal permissions** — only `read` and `analyze` are enabled by default;
+  `write`/`execute`/`destructive` are disabled.
+- **Safe error normalization** — internal errors are mapped to safe external
+  messages; no stack traces, secrets, API keys, filesystem internals, provider
+  credentials, or hidden chain-of-thought are exposed in MCP responses.
+- **Session/task isolation** — requests validate that referenced sessions and
+  tasks exist; unknown ids map to a safe error.
+
+See [`docs/architecture/mcp-implementation.md`](docs/architecture/mcp-implementation.md).
+
 ## Hidden chain-of-thought
 
 The system **never** stores, transmits, logs, or exposes hidden

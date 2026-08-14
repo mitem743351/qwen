@@ -1,8 +1,9 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 1 — Core Domain and Runtime Contracts (complete).
-> The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phase 1
-> implements the domain model and runtime contracts in `python/qwen_research/`.
+> **Status:** Phase 2 — MCP Server Foundation.
+> The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1,
+> 1.1, and 1.2 established and hardened the core domain and runtime contracts;
+> Phase 2 adds the MCP server adapter (`python/qwen_research/mcp/`).
 > **Audience:** Implementers, code agents, reviewers
 > **Scope:** This document is the stable, binding architecture contract for the
 > "local AI research infrastructure" that extends **Qwen Studio** through MCP.
@@ -582,6 +583,7 @@ Rust library.
 | [security](docs/architecture/security.md) | Threat model, boundaries, sandboxing |
 | [architecture-review](docs/architecture/architecture-review.md) | Risks, failure modes, Rust-value analysis |
 | [implementation-phases](docs/architecture/implementation-phases.md) | Phase 0–12 roadmap |
+| [mcp-implementation](docs/architecture/mcp-implementation.md) | Phase 2 MCP server foundation |
 | [phase-1-contracts](docs/architecture/phase-1-contracts.md) | Phase 1 deliverables and non-goals |
 | [domain-model](docs/architecture/domain-model.md) | Domain objects, state machine, errors, serialization |
 | [runtime-contracts](docs/architecture/runtime-contracts.md) | Research Runtime, tools, workflows, inference, persistence |

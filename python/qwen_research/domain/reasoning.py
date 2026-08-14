@@ -191,3 +191,20 @@ EXTREME = ReasoningProfile(
     continuation_policy=ContinuationPolicy.CONTINUE,
     parallelism=ParallelismMode.EXPECTED,
 )
+
+#: Built-in profiles by name.
+PROFILES: dict[str, ReasoningProfile] = {p.name: p for p in (FAST, NORMAL, DEEP, XHIGH, EXTREME)}
+
+
+def get_profile(name: str) -> ReasoningProfile:
+    """Return the built-in profile named *name* (case-sensitive).
+
+    Raises :class:`ValidationError` for an unknown name. Used by adapters that
+    accept a profile *name* (e.g. the MCP tool argument ``reasoning_profile``).
+    """
+    try:
+        return PROFILES[name]
+    except KeyError:
+        raise ValidationError(
+            f"unknown reasoning profile {name!r}; expected one of {sorted(PROFILES)}"
+        ) from None
