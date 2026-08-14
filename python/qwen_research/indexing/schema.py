@@ -7,7 +7,7 @@ revision; no sophisticated migration framework is introduced in Phase 3.
 
 from __future__ import annotations
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 #: DDL statements, executed in order during initialization.
 SCHEMA_DDL: tuple[str, ...] = (
@@ -25,7 +25,7 @@ SCHEMA_DDL: tuple[str, ...] = (
         document_id   TEXT PRIMARY KEY,
         source_id     TEXT NOT NULL,
         root_id       TEXT NOT NULL,
-        relative_path TEXT NOT NULL UNIQUE,
+        relative_path TEXT NOT NULL,
         media_type    TEXT NOT NULL,
         title         TEXT NOT NULL,
         metadata      TEXT NOT NULL DEFAULT '{}',
@@ -33,7 +33,8 @@ SCHEMA_DDL: tuple[str, ...] = (
         size_bytes    INTEGER NOT NULL,
         modified_at   TEXT,
         stale         INTEGER NOT NULL DEFAULT 0,
-        indexed_at    TEXT NOT NULL
+        indexed_at    TEXT NOT NULL,
+        UNIQUE (root_id, relative_path)
     )
     """,
     """

@@ -122,7 +122,9 @@ class IndexManager:
             r for r in scan.records if r.status in (FileStatus.NEW, FileStatus.MODIFIED)
         ]
         missing_paths = [
-            r.relative_path for r in scan.records if r.status is FileStatus.MISSING
+            (r.root_id, r.relative_path)
+            for r in scan.records
+            if r.status is FileStatus.MISSING
         ]
 
         documents_indexed = 0

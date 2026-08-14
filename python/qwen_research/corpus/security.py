@@ -48,14 +48,42 @@ def resolve_root(root: CorpusRoot) -> Path:
 def resolve_file(root: CorpusRoot, relative: str, *, follow_symlinks: bool) -> Path:
     """Resolve *relative* under *root* for a concrete file.
 
-    When *follow_symlinks* is False, a symlink anywhere in the resolved path is
-    rejected (the strict containment check via ``resolve`` already collapses
-    symlinks, so we additionally refuse symlink components explicitly).
+    When *follow_symlinks* is False, any symlink component below the root is
+    rejected **before** resolution (``Path.resolve`` follows symlinks, so a
+    post-resolve check could never observe them).
     """
-    path = resolve_within_root(root, relative)
-    if not follow_symlinks and path.is_symlink():
-        raise PathSecurityError("symlink escape rejected")
-    return path
+    root_path = _normalize(root.path)
+    candidate = Path(relative)
+    if candidate.is_absolute():
+        raise PathSecurityError("absolute path outside corpus root")
+    joined = root_path / candidate
+    if not follow_symlinks:
+        _reject_symlink_below(root_path, joined)
+    resolved = joined.resolve(strict=False)
+    try:
+        resolved.relative_to(root_path)
+    except ValueError:
+        raise PathSecurityError("path escapes corpus root") from None
+    return resolved
+
+
+def _reject_symlink_below(root_path: Path, path: Path) -> None:
+    """Raise :class:`PathSecurityError` if any component below *root_path* is a symlink."""
+    try:
+        parts = path.relative_to(root_path).parts
+    except ValueError:
+        return  # not lexically under the root; the containment check handles it
+    current = root_path
+    for part in parts:
+        if part == "..":
+            if current != root_path:
+                current = current.parent
+            continue
+        if part == ".":
+            continue
+        current = current / part
+        if current.is_symlink():
+            raise PathSecurityError("symlink escape rejected")
 
 
 def is_safe_relative(relative: str) -> bool:

@@ -54,8 +54,8 @@ class ScanResult:
     unsupported: int
     too_large: int
     errors: int
-    #: All discovered (path, hash) pairs for the current scan.
-    discovered: dict[str, str]
+    #: All discovered ``(root_id, relative_path) → hash`` pairs for the scan.
+    discovered: dict[tuple[str, str], str]
 
 
 class Scanner:
@@ -67,18 +67,19 @@ class Scanner:
     def scan(
         self,
         *,
-        known_hashes: dict[str, str] | None = None,
+        known_hashes: dict[tuple[str, str], str] | None = None,
         root_ids: tuple[str, ...] | None = None,
     ) -> ScanResult:
         """Scan configured roots, classifying each discovered file.
 
-        *known_hashes* maps a *relative path* to its previously indexed content
-        hash (used to classify NEW/UNCHANGED/MODIFIED). *root_ids* restricts the
-        scan to a subset of roots.
+        *known_hashes* maps ``(root_id, relative_path)`` to its previously
+        indexed content hash (used to classify NEW/UNCHANGED/MODIFIED). The key
+        includes ``root_id`` so the same relative path under two roots is never
+        conflated. *root_ids* restricts the scan to a subset of roots.
         """
         known = known_hashes or {}
         records: list[FileRecord] = []
-        discovered: dict[str, str] = {}
+        discovered: dict[tuple[str, str], str] = {}
         counts = {
             "scanned": 0,
             "new": 0,
@@ -95,7 +96,7 @@ class Scanner:
             for r in self._config.roots
             if r.enabled and (root_ids is None or r.root_id in root_ids)
         ]
-        seen_paths: set[str] = set()
+        seen_keys: set[tuple[str, str]] = set()
 
         for root in roots:
             root_path = resolve_root(root)
@@ -116,6 +117,10 @@ class Scanner:
                 for filename in filenames:
                     full = Path(dirpath) / filename
                     counts["scanned"] += 1
+                    # When symlinks are not followed, refuse symlinked files:
+                    # hashing/reading them could escape the corpus root.
+                    if not self._config.follow_symlinks and full.is_symlink():
+                        continue
                     try:
                         rel = str(full.relative_to(root_path))
                     except ValueError:
@@ -133,16 +138,16 @@ class Scanner:
                         counts["errors"] += 1
                         continue
                     records.append(record)
-                    discovered[rel] = record.content_hash
-                    seen_paths.add(rel)
+                    discovered[(root.root_id, rel)] = record.content_hash
+                    seen_keys.add((root.root_id, rel))
 
         # Files previously indexed but no longer present are "missing".
-        for rel in sorted(set(known) - seen_paths):
+        for root_id, rel in sorted(set(known) - seen_keys):
             counts["missing"] += 1
             records.append(
                 FileRecord(
                     path="",
-                    root_id="",
+                    root_id=root_id,
                     relative_path=rel,
                     extension=Path(rel).suffix,
                     media_type=media_type_for(Path(rel).suffix),
@@ -183,7 +188,7 @@ class Scanner:
         root: CorpusRoot,
         full: Path,
         rel: str,
-        known: dict[str, str],
+        known: dict[tuple[str, str], str],
         counts: dict[str, int],
     ) -> FileRecord:
         size = full.stat().st_size
@@ -202,10 +207,11 @@ class Scanner:
                 status=FileStatus.TOO_LARGE,
             )
         content_hash = hash_file(full)
-        if rel not in known:
+        key = (root.root_id, rel)
+        if key not in known:
             status = FileStatus.NEW
             counts["new"] += 1
-        elif known[rel] == content_hash:
+        elif known[key] == content_hash:
             status = FileStatus.UNCHANGED
             counts["unchanged"] += 1
         else:

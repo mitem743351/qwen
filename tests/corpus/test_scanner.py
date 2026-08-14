@@ -29,7 +29,7 @@ def test_unchanged_file(tmp_path: Path) -> None:
     scanner = Scanner(_config(tmp_path))
     first = scanner.scan(known_hashes={})
     rel = first.records[0].relative_path
-    known = {rel: first.records[0].content_hash}
+    known = {("r", rel): first.records[0].content_hash}
     second = scanner.scan(known_hashes=known)
     assert second.unchanged == 1
     assert second.records[0].status is FileStatus.UNCHANGED
@@ -42,16 +42,17 @@ def test_modified_file(tmp_path: Path) -> None:
     first = scanner.scan(known_hashes={})
     rel = first.records[0].relative_path
     f.write_text("content two, longer")
-    second = scanner.scan(known_hashes={rel: "0" * 64})
+    second = scanner.scan(known_hashes={("r", rel): "0" * 64})
     assert second.changed == 1
     assert second.records[0].status is FileStatus.MODIFIED
 
 
 def test_missing_file(tmp_path: Path) -> None:
     scanner = Scanner(_config(tmp_path))
-    scan = scanner.scan(known_hashes={"gone.txt": "0" * 64})
+    scan = scanner.scan(known_hashes={("r", "gone.txt"): "0" * 64})
     assert scan.missing == 1
     assert scan.records[0].status is FileStatus.MISSING
+    assert scan.records[0].root_id == "r"
 
 
 def test_unsupported_file(tmp_path: Path) -> None:

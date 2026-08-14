@@ -47,8 +47,12 @@ class CorpusIndex(Protocol):
         """Insert or replace a document, its sections, and its chunks."""
         ...
 
-    def mark_missing(self, relative_paths: Iterable[str]) -> int:
-        """Mark documents whose files are no longer present as stale."""
+    def mark_missing(self, paths: Iterable[tuple[str, str]]) -> int:
+        """Mark documents whose files are no longer present as stale.
+
+        Each item is a ``(root_id, relative_path)`` pair so the same relative
+        path under two different roots is never conflated.
+        """
         ...
 
     def remove_document(self, document_id: str) -> None:
@@ -86,8 +90,8 @@ class CorpusIndex(Protocol):
         """Return all indexed document metadata."""
         ...
 
-    def document_hash_map(self) -> dict[str, str]:
-        """Return {relative_path: content_hash} for incremental scanning."""
+    def document_hash_map(self) -> dict[tuple[str, str], str]:
+        """Return ``{(root_id, relative_path): content_hash}`` for incremental scanning."""
         ...
 
     def stats(self) -> CorpusStats:

@@ -36,9 +36,20 @@ def _parse_dt(value: str | None) -> datetime | None:
 
 
 def _fts_query(query: str) -> str:
-    """Build a safe FTS5 query by quoting each token as a phrase."""
+    """Build a safe FTS5 query by quoting each whitespace token as a phrase.
+
+    Each token is wrapped in double quotes and any embedded ``"`` is doubled
+    (FTS5's escape for a literal quote), so a user query can never inject FTS5
+    syntax (``AND``/``OR``/``NEAR``/``*``/``^``/parentheses) — every token is
+    searched as a literal phrase.
+    """
     tokens = [t for t in query.split() if t]
-    return " ".join(f'"{t}"' for t in tokens)
+    return " ".join('"' + t.replace('"', '""') + '"' for t in tokens)
+
+
+def _escape_like(prefix: str) -> str:
+    """Escape LIKE wildcards so *prefix* is matched literally."""
+    return prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 class SqliteCorpusIndex:
@@ -74,6 +85,22 @@ class SqliteCorpusIndex:
         with self._write_lock, db:
             for ddl in SCHEMA_DDL:
                 db.execute(ddl)
+            # Minimal schema-version migration: v1 indexed ``relative_path`` as
+            # globally unique, which breaks multi-root identity. v2 keys on
+            # ``(root_id, relative_path)``. The index is a rebuildable cache, so
+            # migrating drops and recreates the document tables (forcing a
+            # re-index on the next run) rather than preserving stale rows.
+            row = db.execute(
+                "SELECT value FROM index_metadata WHERE key = 'schema_version'"
+            ).fetchone()
+            current = int(row["value"]) if row else 0
+            if current == 1:
+                for trigger in ("chunks_ai", "chunks_ad", "chunks_au"):
+                    db.execute(f"DROP TRIGGER IF EXISTS {trigger}")
+                for table in ("chunks_fts", "chunks", "document_sections", "documents"):
+                    db.execute(f"DROP TABLE IF EXISTS {table}")
+                for ddl in SCHEMA_DDL:
+                    db.execute(ddl)
             for trigger in SCHEMA_TRIGGERS:
                 db.execute(trigger)
             db.execute(
@@ -181,14 +208,15 @@ class SqliteCorpusIndex:
                     ),
                 )
 
-    def mark_missing(self, relative_paths: Iterable[str]) -> int:
+    def mark_missing(self, paths: Iterable[tuple[str, str]]) -> int:
         db = self._db()
         count = 0
         with self._write_lock, db:
-            for rel in relative_paths:
+            for root_id, rel in paths:
                 cur = db.execute(
-                    "UPDATE documents SET stale = 1 WHERE relative_path = ? AND stale = 0",
-                    (rel,),
+                    "UPDATE documents SET stale = 1 "
+                    "WHERE root_id = ? AND relative_path = ? AND stale = 0",
+                    (root_id, rel),
                 )
                 count += cur.rowcount
         return count
@@ -246,8 +274,17 @@ class SqliteCorpusIndex:
             )
             params.extend(filters.document_types)
         if filters.path_prefix:
-            clauses.append("d.relative_path LIKE ?")
-            params.append(f"{filters.path_prefix}%")
+            prefix = filters.path_prefix.rstrip("/")
+            if prefix:
+                # Boundary semantics: match the prefix itself or any child under
+                # it (``prefix/...``), as a *literal* prefix — ``%``/``_`` are
+                # escaped so the value is never treated as a LIKE pattern.
+                escaped = _escape_like(prefix)
+                clauses.append(
+                    "(d.relative_path = ? OR d.relative_path LIKE ? ESCAPE '\\')"
+                )
+                params.append(prefix)
+                params.append(f"{escaped}/%")
         where = " AND ".join(clauses)
         sql = f"""
             SELECT c.chunk_id, c.document_id, c.source_id, c.text, c.page, c.section,
@@ -345,11 +382,11 @@ class SqliteCorpusIndex:
             for r in rows
         ]
 
-    def document_hash_map(self) -> dict[str, str]:
+    def document_hash_map(self) -> dict[tuple[str, str], str]:
         rows = self._db().execute(
-            "SELECT relative_path, content_hash FROM documents"
+            "SELECT root_id, relative_path, content_hash FROM documents"
         ).fetchall()
-        return {r["relative_path"]: r["content_hash"] for r in rows}
+        return {(r["root_id"], r["relative_path"]): r["content_hash"] for r in rows}
 
     def stats(self) -> CorpusStats:
         db = self._db()
