@@ -1,6 +1,7 @@
 # ADR 0003 — Reasoning profile as workflow/inference policy
 
 - **Status:** Accepted
+- **Amended by:** 0014, 0015
 
 ## Decision
 

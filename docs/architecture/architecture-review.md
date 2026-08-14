@@ -17,6 +17,9 @@ strategy genuinely pays off — versus where it would be overengineering.
 | Where Rust actually earns its place | Risk of premature Rust | Decide per-capability at Phase 3/7 based on profiling (see §5) |
 | Checkpoint granularity | Affects resumability cost | Stage-level checkpoints (not token-level) as the default |
 | Whether the dashboard shares a process | Affects TypeScript coupling | Separate read-only observability process; never a core dependency |
+| Who owns inference in each mode | Over-claiming inference control is the #1 correctness risk | `CapabilityMode` makes ownership explicit; STUDIO_NATIVE claims **no** inference control |
+| When/how hybrid escalation triggers | Risk of premature auto-escalation logic | Contract only; escalation stays explicit until Phase 9 |
+| How negotiation outcomes are surfaced | Silent degradation must be impossible | Every non-`APPLY` outcome is recorded in workflow state + audit |
 
 These are not open-ended; each has a stated default that later phases confirm
 or overturn **via a decision record**, not silently.
@@ -85,8 +88,19 @@ or overturn **via a decision record**, not silently.
 ### Provider lock-in
 
 - The only provider-specific code is inside adapters. The translation layer
-  (`ReasoningProfile → InferencePolicy → params`) is the seam that absorbs
-  backend changes.
+  (`ReasoningProfile → InferencePolicy → capability negotiation → params`) is
+  the seam that absorbs backend changes.
+
+### Inference-ownership risks
+
+- **Over-claiming control** → capability matrix states what each mode
+  guarantees; `STUDIO_NATIVE` rows are `client-dependent`, never "Yes".
+- **Credential bleed between modes** → gateway-owned API credentials are never
+  exposed to `STUDIO_NATIVE` MCP tool payloads or model-visible context.
+- **MCP grant ⇒ backend access** → MCP permissions and inference ownership are
+  separate boundaries; tool access grants no backend-invocation rights.
+- **Silent XHIGH degradation** → negotiation outcomes (`DEGRADE`/`EMULATE`/
+  `REJECT`) are recorded and surfaced, not hidden.
 
 ---
 
@@ -148,6 +162,8 @@ algorithms — everything model-adjacent or fast-changing.
 | New verification checks | Registered `Verifier` |
 | PostgreSQL | New repository implementations |
 | Parallel trajectories | `Trajectory` interface (established now) |
+| New operating mode | `CapabilityMode` value + capability-matrix row |
+| Automatic escalation | Escalation contract (established now); heuristics deferred |
 | Dashboard | Read-only observability interface |
 | Distributed workers | Later; the gateway's manager interfaces are the boundary |
 
@@ -155,8 +171,11 @@ algorithms — everything model-adjacent or fast-changing.
 
 ## 9. Verdict
 
-The architecture is **internally consistent** for Phase 0: concerns are
+The architecture is **internally consistent** for Phase 0.5: concerns are
 separated, layers are decoupled, the inference seam absorbs provider risk, the
-memory/context/verification split prevents reasoning-from-prompt-only, and the
-polyglot strategy is bounded by a "profile first" rule. The remaining work is
-to lock the few Phase-0 ambiguities (§1) into defaults and proceed to Phase 1.
+memory/context/verification split prevents reasoning-from-prompt-only, the
+polyglot strategy is bounded by a "profile first" rule, and — critically —
+**inference ownership is now explicit** through `CapabilityMode`, so the system
+can no longer imply that an MCP server controls Qwen Studio's inference. The
+remaining work is to lock the few Phase-0 ambiguities (§1) into defaults and
+proceed to Phase 1.

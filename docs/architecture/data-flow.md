@@ -2,35 +2,61 @@
 
 How data moves through the system: the request path, the ingest path, the
 persistence path, and state transitions. Every flow obeys the downward
-dependency rule.
+dependency rule. **The request path is mode-dependent** — there is no single
+universal "Qwen Studio → gateway → inference" path.
 
 ---
 
 ## 1. Request Path (research request)
 
+### 1.1 STUDIO_NATIVE (tool augmentation — the default)
+
 ```text
-Qwen Studio ──MCP tool call──▶ MCP Entrypoint
-    │ permission check + arg validation
+Qwen Studio ──▶ Qwen model ──▶ Qwen decides to call MCP
+    │                                │
+    │                                ▼
+    │                         MCP Entrypoint
+    │                            │ permission check + arg validation
+    │                            ▼
+    │                    capability handler (retrieve / verify / compute / memory)
+    │                            │
+    │◀────────── typed result ───┘
+    ▼
+Qwen continues reasoning (its own inference loop)
+```
+
+The gateway provides **capabilities**; it never touches the model's inference
+loop, parameters, thinking budget, or generation limits.
+
+### 1.2 GATEWAY_INFERENCE (orchestration-owned)
+
+```text
+Client (Studio or other) ──▶ Gateway
     ▼
 Task Router ──▶ intent + complexity
     ▼
-Reasoning Policy Engine ──▶ ReasoningProfile
+Reasoning Policy Engine ──▶ ReasoningProfile (+ ReasoningBudget)
     ▼
 Task Decomposer ──▶ tasks[]
     ▼
 Workflow Engine ──▶ stage loop
-    │        ┌──────────────────────────────────────────┐
-    │        │  stage: retrieve  ──▶ Retrieval pipeline  │
-    │        │  stage: reason    ──▶ Inference Adapter   │
-    │        │  stage: compute   ──▶ Computation/Tools   │
-    │        │  stage: verify    ──▶ Verification Engine │
-    │        │  stage: persist   ──▶ Memory/Artifact Mgr │
-    │        └──────────────────────────────────────────┘
+    │        ┌──────────────────────────────────────────────┐
+    │        │  stage: retrieve  ──▶ Retrieval pipeline       │
+    │        │  stage: reason    ──▶ Inference Adapter        │
+    │        │                       └─▶ capability negotiation
+    │        │                           └─▶ InferenceProvider
+    │        │  stage: compute   ──▶ Computation/Tools        │
+    │        │  stage: verify    ──▶ Verification Engine      │
+    │        │  stage: persist   ──▶ Memory/Artifact Mgr      │
+    │        └──────────────────────────────────────────────┘
     ▼
-Context Engine (assemble final) ──▶ final response
-    ▼
-MCP Entrypoint ──▶ Qwen Studio
+Context Engine (assemble final) ──▶ final response ──▶ client
 ```
+
+### 1.3 HYBRID (escalation)
+
+Normal tasks follow §1.1. A deep task crosses the **escalation boundary** via
+an `EscalationRequest`, then follows §1.2 and returns an `EscalationResult`.
 
 Each stage produces a **typed stage result** that is (a) persisted as workflow
 state and (b) available to subsequent stages. Nothing flows between stages as
@@ -122,9 +148,10 @@ independent enablement and, where configured, confirmation.
 
 | Data | Direction | Notes |
 |------|-----------|-------|
-| User request | Studio → MCP → Gateway | Downward |
+| User request | Studio → MCP → Gateway (STUDIO_NATIVE) or Client → Gateway (GATEWAY_INFERENCE) | Mode-dependent |
 | Tool result | Tools → Gateway → (context) | Upward, typed |
-| Model output | Inference → Workflow Engine | Never to storage raw except as structured state |
+| Model output | Inference → Workflow Engine | **Gateway-owned modes only**; never to storage raw except as structured state |
+| Escalation handoff | Studio → Gateway (`EscalationRequest` → `EscalationResult`) | HYBRID only |
 | Corpus content | RAW → INDEXED → STRUCTURED → DERIVED | One-way, immutable source |
 | Retrieval results | Retrieval → Context Engine | Only via typed evidence records |
 | Observability events | All layers → log/telemetry | Redacted of chain-of-thought |

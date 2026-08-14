@@ -2,8 +2,18 @@
 
 The roadmap from architecture (Phase 0) to optimization (Phase 11). Each phase
 lists objective, dependencies, major components, acceptance criteria, and
-explicit **not-yet** items. Phase 1 must not begin until Phase 0 is internally
-consistent.
+explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
+Phase 0.5 corrections) are internally consistent.
+
+### Operating-mode prerequisites (what each mode requires)
+
+| Mode | Requires | Delivered by |
+|------|----------|--------------|
+| `STUDIO_NATIVE` | MCP, local capability tools, retrieval, memory, verification, artifact handling | Phases 2–7 (no inference adapter) |
+| `GATEWAY_INFERENCE` | All of the above **plus** `InferenceProvider`, provider adapters, capability negotiation, policy translation, workflow execution, continuation | Phase 8 |
+| `HYBRID` | All of the above **plus** escalation contract, session handoff, context transfer, state synchronization | Phase 9 |
+
+None of these are implemented yet.
 
 ---
 
@@ -13,8 +23,9 @@ consistent.
 - **Dependencies:** none.
 - **Components:** all documents in this directory, ADRs, diagrams.
 - **Acceptance criteria:** every concern separated; provider seam defined;
-  retrieval/reasoning/computation/memory boundaries unambiguous; ADRs for major
-  decisions; review identifies and resolves ambiguities.
+  retrieval/reasoning/computation/memory boundaries unambiguous; inference
+  ownership modeled (`STUDIO_NATIVE`/`GATEWAY_INFERENCE`/`HYBRID`); ADRs for
+  major decisions; review identifies and resolves ambiguities.
 - **Not yet:** any runtime code.
 
 ---
@@ -34,17 +45,20 @@ consistent.
 
 ---
 
-## Phase 2 — MCP foundation
+## Phase 2 — MCP foundation (⇒ STUDIO_NATIVE mode becomes real)
 
-- **Objective:** the narrow semantic tool surface is live and permission-gated.
+- **Objective:** the narrow semantic tool surface is live and permission-gated,
+  delivering **STUDIO_NATIVE** mode.
 - **Dependencies:** Phase 1.
 - **Components:** MCP entrypoint (façade over SDK); tool registry; permission
   boundary (`read/analyze/write/execute/destructive`); argument/result schemas;
-  audit logging.
+  audit logging; `CapabilityMode` + mode selector (binding to `STUDIO_NATIVE`
+  only at this phase).
 - **Acceptance criteria:** tools registered and callable; permission classes
   enforced; a denied `write`/`destructive` call returns a structured denial and
-  is audited.
-- **Not yet:** tool implementations beyond stubs; dashboard; auth.
+  is audited; **no inference adapter is exercised** (Studio owns inference).
+- **Not yet:** tool implementations beyond stubs; dashboard; auth;
+  `GATEWAY_INFERENCE`/`HYBRID` modes.
 
 ---
 
@@ -120,29 +134,38 @@ consistent.
 
 ---
 
-## Phase 8 — Inference abstraction
+## Phase 8 — Inference abstraction (⇒ GATEWAY_INFERENCE mode becomes real)
 
-- **Objective:** provider seam fully realized.
+- **Objective:** provider seam fully realized, delivering **GATEWAY_INFERENCE**
+  mode.
 - **Dependencies:** Phase 1–4.
 - **Components:** `QwenProvider`, `QwenCompatProvider` adapters;
-  `ReasoningProfile → InferencePolicy → params` translation; `capability_info`
-  degradation; token usage capture.
+  `ReasoningProfile → InferencePolicy → capability negotiation → params`
+  translation; `ProviderCapabilities` + `APPLY`/`DEGRADE`/`EMULATE`/`REJECT`
+  outcomes; token usage capture.
 - **Acceptance criteria:** swapping providers changes no reasoning/workflow
-  code; unsupported capabilities degrade gracefully and are recorded.
+  code; unsupported capabilities are negotiated and recorded; the gateway now
+  genuinely owns the inference loop **and no other mode claims to**.
 - **Not yet:** local Qwen / alternative providers (interfaces are ready).
 
 ---
 
-## Phase 9 — Advanced XHigh / EXTREME workflows
+## Phase 9 — Advanced XHigh / EXTREME workflows (⇒ HYBRID escalation)
 
-- **Objective:** the high-effort profiles behave as designed.
+- **Objective:** the high-effort profiles behave as designed, and **HYBRID**
+  mode becomes real via the escalation contract.
 - **Dependencies:** Phase 4–6, 8.
 - **Components:** iterative multi-pass reasoning; critique→correct→verify
   loops; counterargument generation; optional parallel trajectories
-  (A–E) behind the `Trajectory` interface; long-output assembly at scale.
+  (A–E) behind the `Trajectory` interface; long-output assembly at scale;
+  `EscalationRequest`/`EscalationResult` handoff, session handoff, context
+  transfer, and state synchronization.
 - **Acceptance criteria:** `XHIGH`/`EXTREME` produce verifiably deeper,
-  cited, contradiction-checked output than `DEEP`, within budgeted cost.
-- **Not yet:** distributed agents (trajectories remain in-process).
+  cited, contradiction-checked output than `DEEP`, within budgeted cost;
+  an escalated task moves cleanly from Studio-native context into
+  gateway-owned workflow and back.
+- **Not yet:** distributed agents (trajectories remain in-process);
+  automatic escalation heuristics (escalation stays explicit).
 
 ---
 

@@ -14,6 +14,13 @@ exposing hidden chain-of-thought.
 Workflow Engine and the Inference Adapter jointly enact. The same profile
 produces consistent *behavior* regardless of which backend is underneath.
 
+> **Ownership caveat.** A `ReasoningProfile` is an abstract resource-allocation
+> and workflow policy. It does **not** guarantee a specific model reasoning
+> budget unless the active inference owner/provider exposes the required
+> controls. In `STUDIO_NATIVE` mode the workflow engine can only *influence*
+> the model through tool outputs and structured capabilities; it cannot
+> directly set thinking budget, temperature, `top_p`, or max generation tokens.
+
 ---
 
 ## 2. ReasoningProfile Model
@@ -49,15 +56,58 @@ configuration change, not a code change.
 | parallelism | off | off | off | optional | expected |
 
 These are **workflow dials**. They do **not** map one-to-one to Qwen API
-parameters; the Inference Adapter performs that mapping (see
-[`inference.md`](inference.md)).
+parameters; the Inference Adapter performs that mapping through explicit
+**capability negotiation** (see [`capability-negotiation.md`](capability-negotiation.md)).
+
+---
+
+## 2a. ReasoningBudget (resource profile)
+
+Every `ReasoningProfile` implies a `ReasoningBudget` — the resource-allocation
+facet of the profile:
+
+```text
+ReasoningBudget
+    inference_budget       # total inference passes/tokens
+    retrieval_budget       # corpus queries / evidence items
+    tool_budget            # tool call count/cost
+    context_budget         # model context allocation
+    verification_budget    # verification passes
+    output_budget          # response/report length
+    time_budget            # wall-clock ceiling
+    parallelism_budget     # concurrent trajectories
+```
+
+`XHIGH` and `EXTREME` are **resource profiles** — larger allocations across
+these dimensions — not merely "more prompt." The scheduler may later allocate
+these dynamically; adaptive scheduling is not implemented in this phase.
+
+### What XHIGH/EXTREME mean per mode
+
+```text
+XHIGH / EXTREME
+├── deeper planning
+├── more retrieval
+├── more evidence
+├── more critique
+├── more verification
+├── more context
+├── more output budget
+└── more inference passes  ← only when gateway-owned inference is available
+```
+
+- **GATEWAY_INFERENCE:** all of the above, including actual provider-specific
+  inference parameters where the provider supports them.
+- **STUDIO_NATIVE:** XHIGH/EXTREME translate primarily into richer tool usage,
+  better retrieval, stronger evidence, verification tools, and structured
+  workflow — **not** direct control over hidden model thinking tokens.
 
 ---
 
 ## 3. Profile → Policy Translation
 
 ```text
-ReasoningProfile ──▶ InferencePolicy ──▶ Provider-specific parameters
+ReasoningProfile ──▶ InferencePolicy ──▶ Capability negotiation ──▶ Provider-specific parameters
 ```
 
 - The **Reasoning Policy Engine** resolves a `ReasoningProfile` (plus the task's
@@ -65,15 +115,24 @@ ReasoningProfile ──▶ InferencePolicy ──▶ Provider-specific parameter
   statement of *how* to call the model (temperature/top-p intent, sampling
   budget, structured-output requirements, max tokens, whether tool-calling is
   allowed, whether streaming is used).
-- The **Inference Adapter** translates the `InferencePolicy` into concrete
-  parameters for the selected `InferenceProvider`, using the provider's
-  `capability_info()` to decide what is actually controllable.
+- The **capability-negotiation layer** intersects the `InferencePolicy` with the
+  provider's `capabilities()` and assigns each element an outcome —
+  `APPLY` / `DEGRADE` / `EMULATE` / `REJECT` (see
+  [`capability-negotiation.md`](capability-negotiation.md)).
+- The **Inference Adapter** then emits concrete provider-specific parameters.
 
-No Qwen API parameter name appears anywhere in the reasoning engine.
+No Qwen API parameter name appears anywhere in the reasoning engine. In
+`STUDIO_NATIVE` mode this translation is **not performed at all** — the gateway
+has no inference ownership.
 
 ---
 
 ## 4. Canonical Deep Workflow
+
+This workflow **runs under the Workflow Engine only when the gateway owns
+inference** (`GATEWAY_INFERENCE`, or escalated `HYBRID` tasks). In
+`STUDIO_NATIVE` mode the same stages exist as *tools the model may invoke*, but
+the model (Qwen Studio) retains control of the overall loop.
 
 ```text
 User Request
@@ -138,6 +197,13 @@ logged, or exposed by any tool or log. Only the structured *outcomes* of
 reasoning are persisted. This is enforced structurally (the persistence layer
 has no field for raw reasoning text) rather than by convention.
 
+> **`workflow state ≠ hidden model chain-of-thought`.** The structured state
+> above (`task`, `plan`, `hypotheses`, `claims`, `evidence references`, `tool
+> results`, `decisions`, `unresolved questions`, `verification results`,
+> `section state`, `artifact state`) is *our* orchestration record, and it is
+> equally useful in `STUDIO_NATIVE` and `GATEWAY_INFERENCE` modes. It contains
+> nothing the model "thought" internally.
+
 ---
 
 ## 6. Task Decomposition & Planning
@@ -176,6 +242,13 @@ with each section checked for coherence against prior sections and the
 `claims_used`/`citations_used` ledger updated so the final assembly audit is
 consistent.
 
+> **Generation limit ≠ document length.** MCP does not bypass Qwen Studio's
+> generation limits. Long-output *as a gateway-owned workflow* (sectioned
+> generation, continuation, state persistence, incremental synthesis, artifact
+> assembly) is available in `GATEWAY_INFERENCE` mode. In `STUDIO_NATIVE` mode
+> long output is **client-dependent** — the system can persist partial sections
+> and artifacts but cannot extend the host model's own response length.
+
 ---
 
 ## 8. Failure Modes the Design Must Handle
@@ -186,7 +259,9 @@ consistent.
 | Verification finds a contradiction | Loop to `retrieve → reason` or record an `unresolved_question` and proceed explicitly |
 | Task exceeds context budget | Context Engine compacts and prioritizes; never silently truncates the middle |
 | Session interrupted mid-workflow | Checkpoint after every stage; resume from last completed stage |
-| Profile fields unsupported by backend | Inference Adapter degrades gracefully via `capability_info()` and records the degradation |
+| Profile fields unsupported by backend | Capability negotiation assigns `DEGRADE`/`EMULATE`/`REJECT` and records the outcome |
+| Backend lacks reasoning-budget control | XHIGH degrades to workflow-only depth (more retrieval/verification); never silently claimed |
+| Studio-native mode asked to "increase thinking" | Explicitly unsupported; system refuses to claim inference control it does not have |
 
 ---
 

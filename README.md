@@ -7,7 +7,7 @@ persistent research memory, verification/citation/provenance, and deterministic
 computation — while Qwen Studio keeps its native conversational and web-search
 capabilities.
 
-> **Current status: Phase 0 — Architecture.** This repository currently
+> **Current status: Phase 0.5 — Architecture.** This repository currently
 > contains **architecture documentation only**. No runtime code, servers, or
 > databases exist yet.
 
@@ -28,6 +28,23 @@ modeled as an explicit **workflow/inference policy**, not a longer prompt, and
 all model access goes through a provider-independent **inference abstraction**
 so the system survives a Qwen backend change.
 
+### Inference ownership (Phase 0.5)
+
+The architecture distinguishes **tool augmentation** from **inference
+control**, with three operating modes:
+
+- **`STUDIO_NATIVE`** — Qwen Studio owns inference; the local system provides
+  MCP tools, corpus, retrieval, memory, computation, verification, artifacts.
+- **`GATEWAY_INFERENCE`** — the gateway owns the workflow and invokes an
+  inference backend through the `InferenceProvider`.
+- **`HYBRID`** — normal interaction stays in Qwen Studio; selected tasks
+  escalate to the gateway.
+
+MCP extends a model with **capabilities**; it does not grant control over the
+host client's inference parameters. Direct XHIGH-style inference control exists
+only where the backend exposes it. See
+[`operating-modes.md`](docs/architecture/operating-modes.md).
+
 ## Documentation
 
 Start here:
@@ -41,6 +58,8 @@ Full architecture docs:
 | Area | Document |
 |------|----------|
 | System overview | [`system-overview.md`](docs/architecture/system-overview.md) |
+| Operating modes / inference ownership | [`operating-modes.md`](docs/architecture/operating-modes.md) |
+| Capability negotiation | [`capability-negotiation.md`](docs/architecture/capability-negotiation.md) |
 | Component boundaries | [`component-boundaries.md`](docs/architecture/component-boundaries.md) |
 | Polyglot (language) boundaries | [`polyglot-boundaries.md`](docs/architecture/polyglot-boundaries.md) |
 | Data flow | [`data-flow.md`](docs/architecture/data-flow.md) |
@@ -57,7 +76,8 @@ Full architecture docs:
 
 ## Status
 
-Phase 0 is complete when the architecture is **internally consistent** and
-ready to serve as a stable contract for later implementation prompts. Phase 1
-(core skeleton) must not begin until then — see
-[`implementation-phases.md`](docs/architecture/implementation-phases.md).
+Phase 0.5 is complete when the architecture is **internally consistent** —
+including the explicit modeling of inference ownership (`STUDIO_NATIVE` /
+`GATEWAY_INFERENCE` / `HYBRID`) — and ready to serve as a stable contract for
+later implementation prompts. Phase 1 (core skeleton) must not begin until
+then — see [`implementation-phases.md`](docs/architecture/implementation-phases.md).

@@ -18,6 +18,10 @@ Alternatives considered, Trade-offs, Reversibility.**
 | 0011 | Local-first, in-process orchestration (no microservices) | Accepted |
 | 0012 | Artifacts as first-class, provenance-tracked objects | Accepted |
 | 0013 | Least-privilege security model | Accepted |
+| 0014 | Inference ownership and operating modes (CapabilityMode) | Accepted |
+| 0015 | Capability negotiation (APPLY/DEGRADE/EMULATE/REJECT) | Accepted |
+| 0016 | Gateway as capability/orchestration boundary | Accepted |
+| 0017 | Hybrid escalation contract | Accepted |
 
 New ADRs are appended with the next number and a status (`Proposed` →
 `Accepted` / `Superseded by NNNN`).

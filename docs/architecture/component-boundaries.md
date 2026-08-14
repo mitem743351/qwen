@@ -21,7 +21,19 @@ Gateway ──▶ Subsystems ──▶ Storage/Corpus
   Documents ↔ Tools) except through the gateway or explicitly defined
   interfaces.
 - Nothing below the gateway calls the model; nothing below the gateway calls
-  Qwen Studio.
+  Qwen Studio. (The model backend — the **model plane** — is *outside* the
+  gateway and is only reached by the Inference Adapter, and only in
+  gateway-owned modes.)
+
+**Control-plane reminder.** The word "gateway" is unambiguous only because we
+always state which plane it is acting on:
+
+| Plane | Who controls it | Gateway's role |
+|-------|-----------------|----------------|
+| Model plane | Qwen Studio (STUDIO_NATIVE) **or** the gateway (GATEWAY_INFERENCE/HYBRID) | Conditional inference ownership |
+| Agent plane | Gateway (orchestration) | Always |
+| Knowledge plane | Gateway | Always |
+| Interface plane | Qwen Studio / CLI / API / dashboard | Client, not owned |
 
 Violations to watch for during implementation:
 
@@ -39,8 +51,25 @@ Violations to watch for during implementation:
 
 ### 2.1 Local Research Gateway (L3)
 
-The single orchestration component. All of the following are **gateway-internal
-components**; they are not separate services.
+> **Definition.** The gateway is the local **capability and orchestration
+> boundary** that exposes research infrastructure to clients and, in
+> gateway-owned inference mode, additionally owns model orchestration.
+> Inference ownership is **conditional on operating mode** — the gateway does
+> not "control Qwen" in `STUDIO_NATIVE` mode.
+
+```text
+Gateway responsibilities
+├── MCP
+├── tool registry
+├── permissions
+├── local capabilities
+├── workflow execution
+├── persistent state access
+└── optional inference ownership   ← conditional on mode
+```
+
+All of the following are **gateway-internal components**; they are not separate
+services.
 
 | Component | Owns | Key operations | Must not |
 |-----------|------|----------------|----------|
@@ -53,7 +82,8 @@ components**; they are not separate services.
 | **Memory Manager** | Fronts all memory stores | `store_claim`, `get_project_context`, `record_decision`, `get_research_state` | Expose raw DB handles |
 | **Verification Engine** | Claim/evidence/citation checks | `verify_claim`, `find_contradictions`, `audit_citations` | Modify RAW sources |
 | **Artifact Manager** | Artifact creation, versioning, provenance | `create_artifact`, `get_artifact`, `version` | Generate content itself |
-| **Inference Adapter** | Profile→policy→provider translation; holds `InferenceProvider`s | `generate`, `stream`, `structured_output`, `tool_call` | Hard-code any provider's parameters |
+| **Inference Adapter** | Profile→policy→provider translation + **capability negotiation**; holds `InferenceProvider`s | `capabilities`, `generate`, `stream`, `structured_output`, `tool_call` | Hard-code any provider's parameters; assume capabilities |
+| **Mode Selector** | Binds a session/client to a `CapabilityMode`; enforces mode-appropriate capability claims | `resolve_mode`, `assert_capability` | Escalate automatically (hybrid escalation logic is future) |
 
 ### 2.2 Subsystems (L4)
 
@@ -120,6 +150,8 @@ Raw mutable objects and live DB cursors never cross a boundary.
 | New storage backend | New repository implementation |
 | New workflow profile | New `ReasoningProfile` entry (data, not code) |
 | New trajectory type | New `Trajectory` implementation (interface-only for now) |
+| New operating mode | New `CapabilityMode` value + capability-matrix row (contract change) |
+| New negotiation policy | New outcome handler behind the negotiation layer |
 
 Each is a **closed extension**: you add a conforming implementation, you do not
 edit existing orchestration code.

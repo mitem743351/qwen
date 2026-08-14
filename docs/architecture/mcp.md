@@ -3,6 +3,15 @@
 The MCP layer is the **only** surface the model (via Qwen Studio) can touch.
 It is deliberately narrow, semantic, and permission-gated.
 
+> ### MCP ≠ Inference Control
+>
+> MCP extends a model with **capabilities**; it does **not** grant the MCP
+> server control over the host client's model inference parameters, reasoning
+> budget, hidden thinking, max generation tokens, temperature, or `top_p`.
+> Providing tools is **Tool Control**, which is distinct from **Inference
+> Control**. The MCP layer makes no claim about the host model's inference
+> loop, and must never be documented as if it could.
+
 ---
 
 ## 1. Position in the Stack
@@ -70,6 +79,13 @@ get_project_context     # retrieve project-scoped memory and context
 ---
 
 ## 4. Permission Model
+
+> **Two separate boundaries.** MCP tool permissions and inference ownership are
+> **distinct** security boundaries. A client granted MCP `read`/`analyze`
+> access does **not** thereby gain permission to invoke arbitrary model
+> backends; that requires gateway-owned inference to be configured and the
+> relevant credentials scoped to it (see
+> [`security.md`](security.md#inference-ownership-as-a-boundary)).
 
 Permissions are **classes**, independently controllable per tool and per
 session:

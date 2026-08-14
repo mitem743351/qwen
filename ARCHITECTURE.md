@@ -9,6 +9,14 @@ This phase produces architecture documentation only. No application code, no
 database migrations, no servers. Everything in this document is a decision that
 later implementation prompts must follow.
 
+> ### Foundational statement (binding)
+>
+> **Qwen Studio can be enhanced by local MCP capabilities without giving the
+> local system direct control of Studio's inference. Direct XHIGH-style
+> inference control exists only where the active inference backend exposes that
+> control. Gateway-owned and hybrid modes provide the architectural path to
+> true API-grade orchestration.**
+
 ---
 
 ## 1. Purpose
@@ -59,6 +67,39 @@ Local Data                       (5) Storage and corpus
 A change in any layer must not force a redesign of the others. The contract
 between layers is defined by **interfaces and schemas**, not by implementation.
 
+### Inference Ownership Rule
+
+> **MCP extends a model with capabilities; it does not inherently grant the MCP
+> server control over the host client's model inference parameters or reasoning
+> loop.**
+
+```text
+Tool Control        ≠   Inference Control
+Workflow Influence  ≠   Direct Model-Inference Control
+```
+
+The system must never claim a capability the selected interface does not
+expose. There are **three operating modes** (see
+[`docs/architecture/operating-modes.md`](docs/architecture/operating-modes.md)):
+
+| Mode | Inference owner | What the local system provides |
+|------|-----------------|-------------------------------|
+| `STUDIO_NATIVE` | Qwen Studio | MCP tools, corpus, retrieval, memory, computation, verification, artifacts |
+| `GATEWAY_INFERENCE` | Local gateway | All of the above **plus** direct workflow/inference orchestration via `InferenceProvider` |
+| `HYBRID` | Both (escalation boundary) | Studio-native for normal tasks; gateway-owned for escalated deep tasks |
+
+### The Four Control Planes
+
+To avoid ambiguity in the word "gateway", the system is described in four
+**control planes**:
+
+| Plane | Owns | Examples |
+|-------|------|----------|
+| **Model plane** | The actual inference backend | model, reasoning, generation, context window, provider parameters |
+| **Agent plane** | The orchestration system | planning, tool selection, workflow, iteration, parallelism, retry, continuation |
+| **Knowledge plane** | The persistent research infrastructure | documents, retrieval, memory, claims, evidence, datasets |
+| **Interface plane** | The user-facing interaction | Qwen Studio, CLI, API, dashboard, future clients |
+
 ### The Eight Concerns
 
 The system must keep the following concerns distinct at all times. They are
@@ -67,7 +108,7 @@ solved by "a longer prompt" alone**:
 
 | # | Concern | Owned by |
 |---|---------|----------|
-| 1 | Model capability | Inference abstraction (`capability_info`) |
+| 1 | Model capability | Inference abstraction (`capabilities()`) |
 | 2 | Inference configuration | Inference Adapter (`InferencePolicy`) |
 | 3 | Reasoning workflow | Workflow Engine + Reasoning Policy Engine |
 | 4 | Tool execution | Tools subsystem (behind permissions) |
@@ -142,7 +183,14 @@ Subsystems (Retrieval, Documents, Computation, Tools) are capabilities it
 calls — they do not call each other except through explicit interfaces, and
 they never call Qwen Studio.
 
-See [`docs/architecture/component-boundaries.md`](docs/architecture/component-boundaries.md).
+> **Inference ownership is conditional.** The gateway always provides local
+> capabilities and orchestration; it **owns model inference only in
+> `GATEWAY_INFERENCE` (and escalated `HYBRID`) mode.** In `STUDIO_NATIVE` mode
+> the `Inference Adapter` shown above is dormant — Qwen Studio owns inference
+> and merely calls the gateway's MCP tools.
+
+See [`docs/architecture/component-boundaries.md`](docs/architecture/component-boundaries.md)
+and [`docs/architecture/operating-modes.md`](docs/architecture/operating-modes.md).
 
 ---
 
@@ -168,16 +216,31 @@ ReasoningProfile
 
 Conceptual profiles: `FAST`, `NORMAL`, `DEEP`, `XHIGH`, `EXTREME`.
 
+> A `ReasoningProfile` is an abstract **resource-allocation and workflow
+> policy**. It does **not** guarantee a specific model reasoning budget unless
+> the active inference owner/provider exposes the required controls. Each
+> profile implies a [`ReasoningBudget`](docs/architecture/capability-negotiation.md#2-reasoningbudget)
+> (`inference_budget`, `retrieval_budget`, `tool_budget`, `context_budget`,
+> `verification_budget`, `output_budget`, `time_budget`, `parallelism_budget`).
+
 These names map to **workflow behavior** (how many passes, how much retrieval,
 how many critiques) and are translated by the Inference Adapter into whatever
-concrete controls the selected Qwen backend actually exposes.
+concrete controls the selected Qwen backend actually exposes — through an
+explicit **capability negotiation** step.
 
 ```
-ReasoningProfile → InferencePolicy → Provider-specific parameters
+ReasoningProfile → InferencePolicy → Capability negotiation → Provider-specific parameters
 ```
 
-See [`docs/architecture/reasoning-engine.md`](docs/architecture/reasoning-engine.md) and
-[`docs/architecture/inference.md`](docs/architecture/inference.md).
+In `STUDIO_NATIVE` mode, `XHIGH`/`EXTREME` translate primarily into richer tool
+usage, better retrieval, stronger evidence, and verification tools — **not**
+direct control over hidden model thinking tokens. In `GATEWAY_INFERENCE` mode
+they may additionally control provider-specific inference parameters where
+supported.
+
+See [`docs/architecture/reasoning-engine.md`](docs/architecture/reasoning-engine.md),
+[`docs/architecture/inference.md`](docs/architecture/inference.md), and
+[`docs/architecture/capability-negotiation.md`](docs/architecture/capability-negotiation.md).
 
 ---
 
@@ -315,7 +378,13 @@ save_artifact · get_project_context
 Permissions distinguish `read`, `analyze`, `write`, `execute`, `destructive`.
 `write` and `destructive` are independently controllable.
 
-See [`docs/architecture/mcp.md`](docs/architecture/mcp.md).
+> **MCP ≠ inference control.** MCP exposes *capabilities*; it does not grant
+> the gateway control over the host client's inference parameters, reasoning
+> budget, or generation limits. Tool permissions and inference ownership are
+> **separate** security boundaries.
+
+See [`docs/architecture/mcp.md`](docs/architecture/mcp.md) and
+[`docs/architecture/operating-modes.md`](docs/architecture/operating-modes.md).
 
 ---
 
@@ -363,20 +432,23 @@ Provider-independent interface:
 
 ```text
 InferenceProvider
+    capabilities()        # ProviderCapabilities — what this backend can do
+    model_info()
     generate()
     stream()
     structured_output()
     tool_call()
-    model_info()
-    capability_info()
 ```
 
 Adapters: Qwen API, Qwen-compatible endpoint, future local Qwen, future
 alternative providers. Qwen API parameters are **not** hard-coded into the
 reasoning engine; a translation layer maps `ReasoningProfile → InferencePolicy
-→ provider-specific parameters`.
+→ capability negotiation → provider-specific parameters`. Unsupported
+parameters are handled explicitly (`APPLY` / `DEGRADE` / `EMULATE` / `REJECT`),
+never silently assumed.
 
-See [`docs/architecture/inference.md`](docs/architecture/inference.md).
+See [`docs/architecture/inference.md`](docs/architecture/inference.md) and
+[`docs/architecture/capability-negotiation.md`](docs/architecture/capability-negotiation.md).
 
 ---
 
@@ -459,6 +531,8 @@ This is a **logical structure**, not an instruction to create every directory no
 | Document | Covers |
 |----------|--------|
 | [system-overview](docs/architecture/system-overview.md) | End-to-end picture, layer responsibilities |
+| [operating-modes](docs/architecture/operating-modes.md) | Inference ownership, CapabilityMode, escalation contract |
+| [capability-negotiation](docs/architecture/capability-negotiation.md) | ProviderCapabilities, ReasoningBudget, APPLY/DEGRADE/EMULATE/REJECT |
 | [component-boundaries](docs/architecture/component-boundaries.md) | Interfaces, ownership, dependency rules |
 | [polyglot-boundaries](docs/architecture/polyglot-boundaries.md) | Language responsibilities, FFI policy |
 | [data-flow](docs/architecture/data-flow.md) | Request → response, persistence, state transitions |
@@ -466,7 +540,7 @@ This is a **logical structure**, not an instruction to create every directory no
 | [mcp](docs/architecture/mcp.md) | Tool surface, permissions, protocol |
 | [retrieval](docs/architecture/retrieval.md) | Pipeline, ranking, corpus, document pipeline |
 | [memory](docs/architecture/memory.md) | Stores, entity model, lifecycle |
-| [inference](docs/architecture/inference.md) | Provider abstraction, policy translation |
+| [inference](docs/architecture/inference.md) | Provider abstraction, policy translation, capability negotiation |
 | [security](docs/architecture/security.md) | Threat model, boundaries, sandboxing |
 | [architecture-review](docs/architecture/architecture-review.md) | Risks, failure modes, Rust-value analysis |
 | [implementation-phases](docs/architecture/implementation-phases.md) | Phase 0–11 roadmap |

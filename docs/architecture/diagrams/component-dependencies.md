@@ -15,7 +15,8 @@ flowchart TD
         MM["Memory Manager"]
         VE["Verification Engine"]
         AM["Artifact Manager"]
-        IA["Inference Adapter"]
+        IA["Inference Adapter (conditional on mode)"]
+        MS["Mode Selector (CapabilityMode)"]
     end
 
     subgraph RET["Retrieval"]
@@ -59,13 +60,15 @@ flowchart TD
     end
 
     QS --> MCP --> GW
+    MS --> IA
+    MS --> WE
     TR --> RPE
     TR --> TD
     WE --> CE
     WE --> MM
     WE --> VE
     WE --> AM
-    WE --> IA
+    WE -.->|"gateway-owned modes only"| IA
     WE --> RET
     WE --> CMP
     WE --> TOL
@@ -96,6 +99,8 @@ flowchart TD
 
 - The gateway orchestrates; subsystems are leaves with respect to orchestration.
 - `WE` (Workflow Engine) is the hub inside the gateway — it fans out to context,
-  memory, verification, artifacts, inference, retrieval, computation, and tools.
+  memory, verification, artifacts, retrieval, computation, and tools.
+- The `WE → IA` edge is **dashed**: the Inference Adapter is exercised only in
+  `GATEWAY_INFERENCE`/`HYBRID` modes (enforced by the Mode Selector).
 - Subsystems never point back at the gateway or at each other.
 - Storage is reached only through repository interfaces (`REPO`).

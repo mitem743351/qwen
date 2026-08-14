@@ -1,6 +1,7 @@
 # ADR 0009 — Small semantic MCP surface with class-based permissions
 
 - **Status:** Accepted
+- **Amended by:** 0014 (MCP permissions ≠ inference ownership)
 
 ## Decision
 

@@ -93,6 +93,21 @@ Audit events cover: tool calls (args hashes, result hashes, permissions),
 destructive operations, workflow stage transitions, verification outcomes,
 and configuration changes. Logs never contain chain-of-thought or secrets.
 
+### 3.7 Inference ownership as a boundary
+
+MCP permissions and **inference ownership** are **separate** security
+boundaries:
+
+- A client granted MCP tool access does **not** automatically gain permission
+  to invoke arbitrary model backends.
+- `STUDIO_NATIVE` mode must **not** implicitly gain access to gateway-owned API
+  credentials.
+- Credentials are isolated from tool payloads and model-visible context; the
+  inference adapter's credentials never cross the MCP boundary.
+
+The Mode Selector enforces this: in `STUDIO_NATIVE` the Inference Adapter is
+not exercised, so there is no path for tool calls to reach model backends.
+
 ---
 
 ## 4. What the Model Can Never Do (by default)
@@ -117,6 +132,8 @@ and configuration changes. Logs never contain chain-of-thought or secrets.
 | Code execution escapes sandbox | Defense in depth: OS-level sandbox (Rust-process boundary), no-network default, resource limits |
 | Secrets in model output | Redaction on the persist path |
 | Corpus tampering | RAW immutability + content hashing + index versioning |
+| MCP grant ⇒ backend access | Separate boundaries: tool permissions ≠ inference ownership |
+| Credential bleed into Studio-native tools | Credentials isolated; never in tool payloads or model context |
 
 ---
 

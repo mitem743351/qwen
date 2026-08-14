@@ -1,6 +1,7 @@
 # ADR 0011 — Local-first, in-process orchestration (no microservices)
 
 - **Status:** Accepted
+- **Amended by:** 0016 (gateway scope redefined)
 
 ## Decision
 
