@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qwen-research"
+version = "0.1.0"
+description = "Local AI research infrastructure (Phase 1: core domain and runtime contracts)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.10"]
+
+[tool.setuptools]
+package-dir = { "" = "python" }
+
+[tool.setuptools.packages.find]
+where = ["python"]
+include = ["qwen_research*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["python"]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["python", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "N", "C4", "SIM"]
+ignore = ["B008"]  # allow dataclass field default factories without functools.partial noise
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "python"
+files = ["python", "tests"]
+disallow_untyped_defs = true
+check_untyped_defs = true
+warn_return_any = true
+warn_unused_configs = true
+no_implicit_optional = true
+warn_unused_ignores = true

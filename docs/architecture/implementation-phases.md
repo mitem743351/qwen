@@ -39,20 +39,25 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
 
 ---
 
-## Phase 1 — Core domain/runtime contracts
+## Phase 1 — Core domain/runtime contracts ✅ (complete)
 
 - **Objective:** transport-neutral domain model and runtime contracts, defined
   and testable.
 - **Dependencies:** Phase 0.75.
-- **Components:** domain objects (`Task`, `Session`, `ReasoningProfile`,
-  `InferencePolicy`, …); `ResearchRuntime` API protocol;
-  `InferenceRequest`/`InferenceResult`; `MCPRequest`/`MCPResult`; `Tool`
-  abstraction; repository interfaces (SQLite default); config; structured
-  logging.
-- **Acceptance criteria:** a Research Runtime unit test runs with a fake
-  Inference Runtime; no MCP or Qwen Studio required; domain model has no MCP
-  types.
-- **Not yet:** MCP server, retrieval, embeddings, real providers, sandbox.
+- **Components:** domain objects (`Task`, `Session`, `ResearchState`, `Source`,
+  `Evidence`, `Claim`, `Artifact`, `Workflow`, `ReasoningProfile`,
+  `ReasoningBudget`, `InferencePolicy`/`Request`/`Result`, `ProviderCapabilities`,
+  `VerificationResult`); `ResearchRuntime` API protocol + `InMemoryResearchRuntime`;
+  `MCPRequest`/`MCPResult`; internal `Tool` abstraction + `ToolRegistry`;
+  `Workflow` contracts + `WorkflowRegistry`; `InferenceProvider` protocol;
+  repository protocols + in-memory stores; task state machine; typed errors;
+  deterministic version-aware serialization; configuration model.
+- **Acceptance criteria:** 58 tests pass (unit + contract + vertical slice);
+  `ruff` and `mypy` clean; domain model has no MCP/Qwen/HTTP/database imports;
+  `retrieve_context`/`verify_claim` raise `UnsupportedOperationError` (no
+  fabricated results).
+- **Not yet:** MCP server, retrieval, embeddings, real providers, sandbox,
+  real persistence.
 
 ## Phase 2 — MCP Server
 

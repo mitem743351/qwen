@@ -1,8 +1,8 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 0.75 — Runtime Boundary and Execution Architecture
-> (complete; stable baseline). Phase 1 (core domain/runtime contracts) is in
-> progress.
+> **Status:** Phase 1 — Core Domain and Runtime Contracts (complete).
+> The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phase 1
+> implements the domain model and runtime contracts in `python/qwen_research/`.
 > **Audience:** Implementers, code agents, reviewers
 > **Scope:** This document is the stable, binding architecture contract for the
 > "local AI research infrastructure" that extends **Qwen Studio** through MCP.
@@ -582,5 +582,8 @@ Rust library.
 | [security](docs/architecture/security.md) | Threat model, boundaries, sandboxing |
 | [architecture-review](docs/architecture/architecture-review.md) | Risks, failure modes, Rust-value analysis |
 | [implementation-phases](docs/architecture/implementation-phases.md) | Phase 0–12 roadmap |
+| [phase-1-contracts](docs/architecture/phase-1-contracts.md) | Phase 1 deliverables and non-goals |
+| [domain-model](docs/architecture/domain-model.md) | Domain objects, state machine, errors, serialization |
+| [runtime-contracts](docs/architecture/runtime-contracts.md) | Research Runtime, tools, workflows, inference, persistence |
 | [decisions/](docs/architecture/decisions/) | ADRs for major architectural decisions |
 | [diagrams/](docs/architecture/diagrams/) | Mermaid diagrams |

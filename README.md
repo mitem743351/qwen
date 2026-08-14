@@ -7,10 +7,11 @@ persistent research memory, verification/citation/provenance, and deterministic
 computation — while Qwen Studio keeps its native conversational and web-search
 capabilities.
 
-> **Current status: Phase 0.75 — Architecture complete; Phase 1 starting.**
-> The architecture (Phases 0, 0.5, 0.75) is the approved baseline. This
-> repository contains architecture documentation; Phase 1 (core domain and
-> runtime contracts) is being implemented.
+> **Current status: Phase 1 — Core Domain and Runtime Contracts.**
+> The architecture (Phases 0, 0.5, 0.75) is the approved baseline. Phase 1
+> implements the stable domain objects, runtime interfaces, state machine,
+> error model, and testable in-memory contracts in `python/qwen_research/` —
+> still **no** MCP server, Qwen API, retrieval, database, or dashboard.
 
 ## What this is
 
@@ -62,6 +63,12 @@ Start here:
 - [`SECURITY.md`](SECURITY.md) — security posture
 - [`docs/architecture/system-overview.md`](docs/architecture/system-overview.md)
 
+Phase 1 implementation:
+
+- [`docs/architecture/phase-1-contracts.md`](docs/architecture/phase-1-contracts.md) — what Phase 1 delivers
+- [`docs/architecture/domain-model.md`](docs/architecture/domain-model.md) — the domain objects
+- [`docs/architecture/runtime-contracts.md`](docs/architecture/runtime-contracts.md) — the runtime interfaces
+
 Full architecture docs:
 
 | Area | Document |
@@ -83,13 +90,26 @@ Full architecture docs:
 | Security | [`security.md`](docs/architecture/security.md) |
 | Architecture review | [`architecture-review.md`](docs/architecture/architecture-review.md) |
 | Implementation roadmap | [`implementation-phases.md`](docs/architecture/implementation-phases.md) |
+| Phase 1 contracts | [`phase-1-contracts.md`](docs/architecture/phase-1-contracts.md) |
+| Domain model | [`domain-model.md`](docs/architecture/domain-model.md) |
+| Runtime contracts | [`runtime-contracts.md`](docs/architecture/runtime-contracts.md) |
 | Decisions (ADRs) | [`decisions/`](docs/architecture/decisions/) |
 | Mermaid diagrams | [`diagrams/`](docs/architecture/diagrams/) |
 
 ## Status
 
-Phase 0.75 (architecture) is **complete** and is the approved baseline:
-inference ownership (`STUDIO_NATIVE` / `GATEWAY_INFERENCE` / `HYBRID`) and
-runtime boundaries (MCP Server / Research Runtime / Inference Runtime) are
-modeled and internally consistent. Phase 1 (core domain/runtime contracts) is
-in progress — see [`implementation-phases.md`](docs/architecture/implementation-phases.md).
+Phase 0.75 (architecture) is **complete** and is the approved baseline.
+Phase 1 (core domain and runtime contracts) is **complete**: the domain model,
+runtime interfaces, state machine, error model, and in-memory contracts are
+implemented and tested. See
+[`implementation-phases.md`](docs/architecture/implementation-phases.md) and
+[`phase-1-contracts.md`](docs/architecture/phase-1-contracts.md).
+
+### Develop
+
+```text
+pip install -e ".[dev]"
+pytest            # unit + contract + vertical-slice tests
+ruff check .      # lint
+mypy              # type check
+```
