@@ -7,9 +7,10 @@ persistent research memory, verification/citation/provenance, and deterministic
 computation — while Qwen Studio keeps its native conversational and web-search
 capabilities.
 
-> **Current status: Phase 0.75 — Architecture.** This repository currently
-> contains **architecture documentation only**. No runtime code, servers, or
-> databases exist yet.
+> **Current status: Phase 0.75 — Architecture complete; Phase 1 starting.**
+> The architecture (Phases 0, 0.5, 0.75) is the approved baseline. This
+> repository contains architecture documentation; Phase 1 (core domain and
+> runtime contracts) is being implemented.
 
 ## What this is
 
@@ -87,9 +88,8 @@ Full architecture docs:
 
 ## Status
 
-Phase 0.75 is complete when the architecture is **internally consistent** —
-including inference ownership (`STUDIO_NATIVE` / `GATEWAY_INFERENCE` /
-`HYBRID`) and the runtime boundaries (MCP Server / Research Runtime /
-Inference Runtime) — and ready to serve as a stable contract for later
-implementation prompts. Phase 1 (core domain/runtime contracts) must not begin
-until then — see [`implementation-phases.md`](docs/architecture/implementation-phases.md).
+Phase 0.75 (architecture) is **complete** and is the approved baseline:
+inference ownership (`STUDIO_NATIVE` / `GATEWAY_INFERENCE` / `HYBRID`) and
+runtime boundaries (MCP Server / Research Runtime / Inference Runtime) are
+modeled and internally consistent. Phase 1 (core domain/runtime contracts) is
+in progress — see [`implementation-phases.md`](docs/architecture/implementation-phases.md).

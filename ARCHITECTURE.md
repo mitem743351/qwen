@@ -1,6 +1,8 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 0.75 — Architecture Contract (documentation only)
+> **Status:** Phase 0.75 — Runtime Boundary and Execution Architecture
+> (complete; stable baseline). Phase 1 (core domain/runtime contracts) is in
+> progress.
 > **Audience:** Implementers, code agents, reviewers
 > **Scope:** This document is the stable, binding architecture contract for the
 > "local AI research infrastructure" that extends **Qwen Studio** through MCP.

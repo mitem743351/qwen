@@ -7,7 +7,7 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
 
 ---
 
-## Phase 0 — Architecture
+## Phase 0 — Architecture ✅ (complete)
 
 - **Objective:** stable architecture contract.
 - **Dependencies:** none.
@@ -17,7 +17,7 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
   decisions.
 - **Not yet:** any runtime code.
 
-## Phase 0.5 — Inference ownership
+## Phase 0.5 — Inference ownership ✅ (complete)
 
 - **Objective:** explicit inference ownership and operating modes.
 - **Dependencies:** Phase 0.
@@ -27,7 +27,7 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
   XHIGH/EXTREME qualified per mode.
 - **Not yet:** any runtime code.
 
-## Phase 0.75 — Runtime boundaries
+## Phase 0.75 — Runtime boundaries ✅ (complete)
 
 - **Objective:** MCP Server / Research Runtime / Inference Runtime separation.
 - **Dependencies:** Phase 0.5.
