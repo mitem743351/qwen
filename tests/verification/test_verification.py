@@ -12,19 +12,19 @@ from verification_helpers import build_service, search_evidence
 def test_verify_no_evidence_is_insufficient(tmp_path: Path) -> None:
     service, store, _ = build_service(tmp_path)
     claim = service.create_claim("p", "threshold claim")
-    report = service.verify_claim(claim.claim_id)
+    report = service.verify_claim("p", claim.claim_id)
     assert report.status is VerificationStatus.INSUFFICIENT_EVIDENCE
     assert report.coverage.claims_with_evidence == 0
-    # Report persisted.
-    assert store.get_report(report.report_id) is not None
+    # Report persisted (project-scoped lookup).
+    assert store.get_report("p", report.report_id) is not None
 
 
 def test_verify_single_source_supported(tmp_path: Path) -> None:
     service, _, stack = build_service(tmp_path)
     claim = service.create_claim("p", "surface code threshold")
     evidence = search_evidence(stack, "surface code threshold", limit=1)[0]
-    service.link_claim_evidence(claim.claim_id, evidence, ClaimEvidenceRelationship.SUPPORTS)
-    report = service.verify_claim(claim.claim_id)
+    service.link_claim_evidence("p", claim.claim_id, evidence, ClaimEvidenceRelationship.SUPPORTS)
+    report = service.verify_claim("p", claim.claim_id)
     assert report.status is VerificationStatus.SUPPORTED
     assert report.coverage.claims_with_evidence == 1
     assert report.coverage.claims_with_independent_corroboration == 0
@@ -47,8 +47,8 @@ def test_verify_two_independent_sources_corroborated(tmp_path: Path) -> None:
         if len(picked) == 2:
             break
     for e in picked:
-        service.link_claim_evidence(claim.claim_id, e, ClaimEvidenceRelationship.SUPPORTS)
-    report = service.verify_claim(claim.claim_id)
+        service.link_claim_evidence("p", claim.claim_id, e, ClaimEvidenceRelationship.SUPPORTS)
+    report = service.verify_claim("p", claim.claim_id)
     assert report.status is VerificationStatus.VERIFIED_WITHIN_CORPUS
     assert report.coverage.claims_with_independent_corroboration == 1
 
@@ -57,9 +57,13 @@ def test_verify_contradicting_evidence_contested(tmp_path: Path) -> None:
     service, _, stack = build_service(tmp_path)
     claim = service.create_claim("p", "surface code threshold")
     evidence = search_evidence(stack, "surface code", limit=2)
-    service.link_claim_evidence(claim.claim_id, evidence[0], ClaimEvidenceRelationship.SUPPORTS)
-    service.link_claim_evidence(claim.claim_id, evidence[1], ClaimEvidenceRelationship.CONTRADICTS)
-    report = service.verify_claim(claim.claim_id)
+    service.link_claim_evidence(
+        "p", claim.claim_id, evidence[0], ClaimEvidenceRelationship.SUPPORTS
+    )
+    service.link_claim_evidence(
+        "p", claim.claim_id, evidence[1], ClaimEvidenceRelationship.CONTRADICTS
+    )
+    report = service.verify_claim("p", claim.claim_id)
     assert report.status is VerificationStatus.CONTESTED
 
 
@@ -69,9 +73,9 @@ def test_verify_updates_claim_status(tmp_path: Path) -> None:
     service, store, stack = build_service(tmp_path)
     claim = service.create_claim("p", "surface code threshold")
     evidence = search_evidence(stack, "surface code threshold", limit=1)[0]
-    service.link_claim_evidence(claim.claim_id, evidence, ClaimEvidenceRelationship.SUPPORTS)
-    service.verify_claim(claim.claim_id)
-    updated = store.get_claim(claim.claim_id)
+    service.link_claim_evidence("p", claim.claim_id, evidence, ClaimEvidenceRelationship.SUPPORTS)
+    service.verify_claim("p", claim.claim_id)
+    updated = store.get_claim("p", claim.claim_id)
     assert updated is not None
     assert updated.status is ClaimStatus.SUPPORTED
 
@@ -82,7 +86,7 @@ def test_verify_missing_evidence_issue(tmp_path: Path) -> None:
     # Link to a bogus evidence id is rejected at link time, so instead verify a
     # claim whose evidence was later removed from the corpus is hard to simulate;
     # here we verify the "no evidence" issue code appears.
-    report = service.verify_claim(claim.claim_id)
+    report = service.verify_claim("p", claim.claim_id)
     codes = {i.code for i in report.issues}
     assert "claim_has_no_evidence" in codes
 
@@ -94,4 +98,4 @@ def test_get_verification_report_missing_raises(tmp_path: Path) -> None:
 
     service, _, _ = build_service(tmp_path)
     with pytest.raises(VerificationReportNotFoundError):
-        service.get_verification_report("report_missing")
+        service.get_verification_report("p", "report_missing")

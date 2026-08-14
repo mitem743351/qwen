@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from qwen_research.sources.independence import SourceIndependence, assess_independence
+from qwen_research.sources.independence import (
+    SourceIdentity,
+    SourceIndependence,
+    assess_independence,
+    count_independent_sources,
+)
 from qwen_research.sources.quality import SourceQualityAssessor, SourceTier
 
 
@@ -87,3 +92,49 @@ def test_independence_unknown() -> None:
         publisher_a=None, publisher_b=None, root_a=None, root_b=None,
     )
     assert r is SourceIndependence.UNKNOWN
+
+
+def test_independence_distinct_docs_same_root() -> None:
+    # Two different papers under one corpus root are still independent.
+    r = assess_independence(
+        document_a="d1", document_b="d2", source_a="s1", source_b="s2",
+        publisher_a=None, publisher_b=None, root_a="corpus", root_b="corpus",
+    )
+    assert r is SourceIndependence.INDEPENDENT
+
+
+def test_count_independent_sources_same_document() -> None:
+    # Two chunks from the same document collapse into one source.
+    ids = [
+        SourceIdentity("d1", "s1", None, "root"),
+        SourceIdentity("d1", "s1", None, "root"),
+    ]
+    assert count_independent_sources(ids) == 1
+
+
+def test_count_independent_sources_distinct_documents() -> None:
+    ids = [
+        SourceIdentity("d1", "s1", None, "root"),
+        SourceIdentity("d2", "s2", None, "root"),
+    ]
+    assert count_independent_sources(ids) == 2
+
+
+def test_count_independent_sources_same_publisher() -> None:
+    # Different documents but the same publisher are NOT independent.
+    ids = [
+        SourceIdentity("d1", "s1", "acme", "root"),
+        SourceIdentity("d2", "s2", "acme", "root"),
+    ]
+    assert count_independent_sources(ids) == 1
+
+
+def test_count_independent_sources_mixed() -> None:
+    # Two independent sources + a same-publisher duplicate + a same-document chunk.
+    ids = [
+        SourceIdentity("d1", "s1", "acme", "root"),
+        SourceIdentity("d2", "s2", "acme", "root"),  # dependent on d1 (publisher)
+        SourceIdentity("d3", "s3", "beta", "root"),  # independent
+        SourceIdentity("d3", "s3", "beta", "root"),  # dependent on d3 (same doc)
+    ]
+    assert count_independent_sources(ids) == 2

@@ -38,7 +38,11 @@ from qwen_research.research.state import (
 )
 from qwen_research.retrieval.interface import Retriever
 from qwen_research.retrieval.models import DocumentView, SearchOptions, SearchResult
-from qwen_research.verification.models import EvidenceAssessment, VerificationReport
+from qwen_research.verification.models import (
+    EvidenceAssessment,
+    VerificationReport,
+    VerificationSummary,
+)
 from qwen_research.verification.service import EvidenceIntegrityService
 from qwen_research.workflows.base import WorkflowContext, WorkflowResult
 from qwen_research.workflows.registry import WorkflowRegistry
@@ -240,11 +244,15 @@ class InMemoryResearchRuntime:
             questions = self._memory.get_open_questions(
                 project_id, limit=budget.max_open_questions
             )
+        verification: list[VerificationSummary] = []
+        if self._verification is not None:
+            verification = self._verification.get_project_verification_summaries(project_id)
         return build_context(
             query,
             evidence=evidence,
             memories=memories,
             open_questions=questions,
+            verification=verification,
             budget=budget,
         )
 
@@ -276,23 +284,29 @@ class InMemoryResearchRuntime:
 
     def link_claim_evidence(
         self,
+        project_id: str,
         claim_id: ClaimId,
         evidence_id: EvidenceId,
         relationship: ClaimEvidenceRelationship,
         rationale: str = "",
     ) -> ClaimEvidenceLink:
         return self._require_verification().link_claim_evidence(
-            claim_id, evidence_id, relationship, rationale
+            project_id, claim_id, evidence_id, relationship, rationale
         )
 
-    def assess_evidence(self, claim_id: ClaimId, evidence_id: EvidenceId) -> EvidenceAssessment:
-        return self._require_verification().assess_evidence(claim_id, evidence_id)
+    def assess_evidence(
+        self, project_id: str, claim_id: ClaimId, evidence_id: EvidenceId
+    ) -> EvidenceAssessment:
+        return self._require_verification().assess_evidence(project_id, claim_id, evidence_id)
 
-    def verify_claim(self, claim_id: ClaimId) -> VerificationReport:
-        return self._require_verification().verify_claim(claim_id)
+    def verify_claim(self, project_id: str, claim_id: ClaimId) -> VerificationReport:
+        return self._require_verification().verify_claim(project_id, claim_id)
 
-    def get_verification_report(self, report_id: str) -> VerificationReport:
-        return self._require_verification().get_verification_report(report_id)
+    def get_verification_report(self, project_id: str, report_id: str) -> VerificationReport:
+        return self._require_verification().get_verification_report(project_id, report_id)
+
+    def get_project_verification_summaries(self, project_id: str) -> list[VerificationSummary]:
+        return self._require_verification().get_project_verification_summaries(project_id)
 
     def get_contradictions(self, project_id: str) -> list[Contradiction]:
         return self._require_verification().get_contradictions(project_id)

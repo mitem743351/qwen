@@ -222,9 +222,10 @@ class SqliteVerificationStore:
                 ),
             )
 
-    def get_claim(self, claim_id: str) -> Claim | None:
+    def get_claim(self, project_id: str, claim_id: str) -> Claim | None:
         row = self._db().execute(
-            "SELECT * FROM claims WHERE claim_id = ?", (claim_id,)
+            "SELECT * FROM claims WHERE project_id = ? AND claim_id = ?",
+            (project_id, claim_id),
         ).fetchone()
         return _claim_from_row(row) if row else None
 
@@ -388,9 +389,10 @@ class SqliteVerificationStore:
                 ),
             )
 
-    def get_report(self, report_id: str) -> VerificationReport | None:
+    def get_report(self, project_id: str, report_id: str) -> VerificationReport | None:
         row = self._db().execute(
-            "SELECT * FROM verification_reports WHERE report_id = ?", (report_id,)
+            "SELECT * FROM verification_reports WHERE project_id = ? AND report_id = ?",
+            (project_id, report_id),
         ).fetchone()
         return _report_from_row(row) if row else None
 

@@ -91,12 +91,17 @@ INDEPENDENT · DEPENDENT · UNKNOWN
 ```
 
 - same document / same source / same publisher → `DEPENDENT`
-- same corpus root (weak signal) → `UNKNOWN`
-- distinct document **and** distinct source → `INDEPENDENT`
+- distinct document **and** distinct source → `INDEPENDENT` (even under one
+  corpus root — the normal "two papers in one corpus" case)
+- same corpus root with undecidable identity (weak signal) → `UNKNOWN`
 - otherwise → `UNKNOWN`
 
-The engine counts distinct document-or-source identity units among
-`SUPPORTS` links; `no_independent_corroboration` fires below 2.
+The engine derives a `SourceIdentity` per supporting evidence item (document,
+source, publisher, corpus root) and runs `count_independent_sources`, which
+collapses items joined by a `DEPENDENT` relationship (transitively) and counts
+the remaining groups. Corroboration therefore respects same-publisher and
+same-document ties, not merely distinct document ids; `no_independent_corroboration`
+fires below 2.
 
 ---
 

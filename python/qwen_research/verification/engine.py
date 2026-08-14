@@ -19,6 +19,7 @@ from qwen_research.corpus.records import Document
 from qwen_research.evidence.models import EvidenceRecord, ExtractionQuality, SupportType
 from qwen_research.indexing.interface import CorpusIndex
 from qwen_research.retrieval.models import RetrievedChunk
+from qwen_research.sources.independence import SourceIdentity, count_independent_sources
 from qwen_research.sources.quality import SourceQuality, SourceQualityAssessor
 from qwen_research.verification.models import (
     Coverage,
@@ -179,12 +180,12 @@ class VerificationEngine:
             link for link in links
             if link.relationship is ClaimEvidenceRelationship.SUPPORTS
         ]
-        independence_units = {
-            evidence[link.evidence_id].document_id or evidence[link.evidence_id].source_id
+        identities = [
+            _source_identity(evidence[link.evidence_id], docs)
             for link in supporting
             if link.evidence_id in evidence
-        }
-        independent_source_count = len(independence_units)
+        ]
+        independent_source_count = count_independent_sources(identities)
         same_source_evidence_count = max(0, len(supporting) - independent_source_count)
 
         facts = VerificationFacts(
@@ -251,9 +252,22 @@ def _document_as_dict(doc: Document) -> dict:
     return {
         "source_id": doc.source_id,
         "document_id": doc.document_id,
+        "root_id": doc.root_id,
         "media_type": doc.media_type,
         "metadata": dict(doc.metadata),
         "content_hash": doc.content_hash,
         "modified_at": doc.modified_at,
         "relative_path": doc.relative_path,
     }
+
+
+def _source_identity(record: EvidenceRecord, docs: dict[str, dict]) -> SourceIdentity:
+    """Derive a :class:`SourceIdentity` for an evidence record from corpus docs."""
+    doc = docs.get(record.source_id, {})
+    metadata = doc.get("metadata", {}) or {}
+    return SourceIdentity(
+        document_id=record.document_id,
+        source_id=record.source_id,
+        publisher=metadata.get("publisher") or metadata.get("authority"),
+        root_id=doc.get("root_id"),
+    )

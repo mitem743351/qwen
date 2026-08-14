@@ -81,26 +81,34 @@ def test_mcp_verification_roundtrip(tmp_path: Path) -> None:
             # link_claim_evidence
             r = await session.call_tool(
                 "link_claim_evidence",
-                {"claim_id": claim_id, "evidence_id": evidence_id, "relationship": "supports"},
+                {
+                    "project_id": "p1",
+                    "claim_id": claim_id,
+                    "evidence_id": evidence_id,
+                    "relationship": "supports",
+                },
             )
             link = json.loads(_text(r))
             assert link["relationship"] == "supports"
 
             # assess_evidence
             r = await session.call_tool(
-                "assess_evidence", {"claim_id": claim_id, "evidence_id": evidence_id}
+                "assess_evidence",
+                {"project_id": "p1", "claim_id": claim_id, "evidence_id": evidence_id},
             )
             assessment = json.loads(_text(r))
             assert assessment["support_type"] == "direct_support"
 
             # verify_claim
-            r = await session.call_tool("verify_claim", {"claim_id": claim_id})
+            r = await session.call_tool("verify_claim", {"project_id": "p1", "claim_id": claim_id})
             report = json.loads(_text(r))
             report_id = report["report_id"]
             assert report["status"] in ("supported", "verified_within_corpus")
 
             # get_verification_report
-            r = await session.call_tool("get_verification_report", {"report_id": report_id})
+            r = await session.call_tool(
+                "get_verification_report", {"project_id": "p1", "report_id": report_id}
+            )
             assert json.loads(_text(r))["report_id"] == report_id
 
             # get_contradictions

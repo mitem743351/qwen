@@ -15,7 +15,7 @@ ResearchRuntime (protocol, research/interfaces.py)
     continue_task(task_id) -> Task
     inspect_task(task_id) -> Task
     retrieve_context(task_id)   # UnsupportedOperationError until Phase 3
-    verify_claim(claim_id) -> VerificationReport
+    verify_claim(project_id, claim_id) -> VerificationReport
     run_workflow(workflow_id, task_id) -> WorkflowResult
     get_state(task_id) -> ResearchState
     save_artifact(artifact) -> Artifact
@@ -55,7 +55,8 @@ metadata. No SQLite/FTS/vector objects reach the runtime — only `Retriever` an
 `get_project_memory` / `get_research_memory` / `get_open_questions` /
 `save_research_memory` delegate to a `MemoryService` (which wraps the neutral
 repository interfaces). `build_research_context(query, project_id=…)` assembles
-a bounded `ResearchContext` of evidence + memory + open questions.
+a bounded `ResearchContext` of evidence + memory + open questions + verification
+summaries (see below).
 
 ### Memory provenance (Phase 4.1)
 
@@ -67,11 +68,19 @@ holds for every writer (MCP, CLI, API, workflow), not only MCP.
 ### Verification (Phase 5)
 
 `create_claim`, `link_claim_evidence`, `assess_evidence`, `verify_claim`,
-`get_verification_report`, and `get_contradictions` delegate to a configured
-`EvidenceIntegrityService` (over a `VerificationStore` + optional `CorpusIndex`).
-`verify_claim` returns a persisted `VerificationReport` and updates the claim's
-memory-promotion status; without a verification service, these operations raise
-`UnsupportedOperationError`.
+`get_verification_report`, `get_project_verification_summaries`, and
+`get_contradictions` delegate to a configured `EvidenceIntegrityService` (over
+a `VerificationStore` + optional `CorpusIndex`). Claim lookup/link/assess/verify
+and report reads are **project-scoped** (they take a `project_id`; a claim id
+from another project resolves as not-found). `verify_claim` returns a persisted
+`VerificationReport` and updates the claim's memory-promotion status;
+`create_claim` validates `source_refs` against the corpus. Without a
+verification service, these operations raise `UnsupportedOperationError`.
+
+`build_research_context` adds **bounded verification summaries**
+(`get_project_verification_summaries`, capped by
+`ContextBudget.max_verification_summaries`) so the assembled context reflects
+how prior claims were verified without embedding full issue lists.
 
 ### Reserved lifecycle operations
 

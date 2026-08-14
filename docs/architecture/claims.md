@@ -32,6 +32,11 @@ Claim
 `confidence = None`. `with_status(status)` returns a **new** instance with
 `version + 1` and a bumped `updated_at` (immutable transitions).
 
+`source_refs` are **validated at creation** against the corpus (when one is
+configured): any provided source id that does not resolve to a corpus document
+raises `ProvenanceError` and nothing is persisted (atomic). A claim may carry
+zero source references — its evidence links are attached later.
+
 ### ClaimType
 
 `FACTUAL · CAUSAL · COMPARATIVE · QUANTITATIVE · DEFINITIONAL · PREDICTIVE ·
@@ -108,7 +113,8 @@ derived from a retrieval score.
 
 ## Project isolation
 
-Claims are listed per project (`get_claims(project_id)`); claim ids are unique
-so a cross-project lookup by id still resolves, but enumeration is
-project-scoped. Isolation is enforced at the repository/query boundary —
-never by prompts.
+Claims are **project-scoped at the repository/query boundary** — every claim
+lookup, link, assessment, verification, and report read takes a `project_id`
+and returns nothing (→ `ClaimNotFoundError`) for a claim from another project.
+`get_claims(project_id)` enumerates a project's claims. Isolation is enforced
+structurally, never by prompts.

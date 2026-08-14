@@ -22,8 +22,8 @@ def test_full_stack_restart(tmp_path: Path) -> None:
     service = EvidenceIntegrityService(store, corpus_index=stack["index"])
     claim = service.create_claim("p", "surface code threshold")
     evidence = search_evidence(stack, "surface code threshold", limit=1)[0]
-    service.link_claim_evidence(claim.claim_id, evidence, ClaimEvidenceRelationship.SUPPORTS)
-    report = service.verify_claim(claim.claim_id)
+    service.link_claim_evidence("p", claim.claim_id, evidence, ClaimEvidenceRelationship.SUPPORTS)
+    report = service.verify_claim("p", claim.claim_id)
     report_id = report.report_id
     store.close()
 
@@ -32,10 +32,10 @@ def test_full_stack_restart(tmp_path: Path) -> None:
     store2.initialize()
     service2 = EvidenceIntegrityService(store2, corpus_index=stack["index"])
 
-    loaded_claim = service2.get_claim(claim.claim_id)
+    loaded_claim = service2.get_claim("p", claim.claim_id)
     assert loaded_claim.status is ClaimStatus.SUPPORTED
 
-    loaded_report = service2.get_verification_report(report_id)
+    loaded_report = service2.get_verification_report("p", report_id)
     assert loaded_report.status.value == "supported"
 
     # A quantitative contradiction survives restart too.
@@ -73,7 +73,7 @@ def test_project_isolation_in_reports(tmp_path: Path) -> None:
     service = EvidenceIntegrityService(store, corpus_index=stack["index"])
     a = service.create_claim("A", "claim A")
     b = service.create_claim("B", "claim B")
-    service.verify_claim(a.claim_id)
-    service.verify_claim(b.claim_id)
+    service.verify_claim("A", a.claim_id)
+    service.verify_claim("B", b.claim_id)
     assert {r.project_id for r in store.get_reports("A")} == {"A"}
     assert {r.project_id for r in store.get_reports("B")} == {"B"}

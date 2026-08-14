@@ -372,10 +372,12 @@ class MCPServerApp:
             claim_id: ClaimIdParam,
             evidence_id: EvidenceIdParam,
             relationship: ClaimEvidenceRelationshipParam,
+            project_id: ProjectIdParam = "default",
             rationale: RationaleParam = None,
         ) -> dict[str, Any]:
             def run() -> dict[str, Any]:
                 link = runtime.link_claim_evidence(
+                    project_id,
                     ClaimId(claim_id),
                     EvidenceId(evidence_id),
                     ClaimEvidenceRelationship(relationship),
@@ -388,23 +390,32 @@ class MCPServerApp:
         def assess_evidence(
             claim_id: ClaimIdParam,
             evidence_id: EvidenceIdParam,
+            project_id: ProjectIdParam = "default",
         ) -> dict[str, Any]:
             def run() -> dict[str, Any]:
-                assessment = runtime.assess_evidence(ClaimId(claim_id), EvidenceId(evidence_id))
+                assessment = runtime.assess_evidence(
+                    project_id, ClaimId(claim_id), EvidenceId(evidence_id)
+                )
                 return adapter.evidence_assessment_result(assessment)
 
             return guarded_call(policy, "assess_evidence", run)
 
-        def verify_claim(claim_id: ClaimIdParam) -> dict[str, Any]:
+        def verify_claim(
+            claim_id: ClaimIdParam,
+            project_id: ProjectIdParam = "default",
+        ) -> dict[str, Any]:
             def run() -> dict[str, Any]:
-                report = runtime.verify_claim(ClaimId(claim_id))
+                report = runtime.verify_claim(project_id, ClaimId(claim_id))
                 return adapter.verification_report_result(report)
 
             return guarded_call(policy, "verify_claim", run)
 
-        def get_verification_report(report_id: ReportIdParam) -> dict[str, Any]:
+        def get_verification_report(
+            report_id: ReportIdParam,
+            project_id: ProjectIdParam = "default",
+        ) -> dict[str, Any]:
             def run() -> dict[str, Any]:
-                report = runtime.get_verification_report(report_id)
+                report = runtime.get_verification_report(project_id, report_id)
                 return adapter.verification_report_result(report)
 
             return guarded_call(policy, "get_verification_report", run)

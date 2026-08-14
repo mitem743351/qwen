@@ -161,6 +161,37 @@ class VerificationReport:
         )
 
 
+@serializable
+@dataclasses.dataclass(frozen=True)
+class VerificationSummary:
+    """A bounded, context-safe summary of a claim's verification outcome.
+
+    Carried inside ``ResearchContext`` so the model sees *how* prior claims were
+    verified (scoped status, corroboration, contradiction/issue counts) without
+    the full issue list. It is never a truth assertion.
+    """
+
+    claim_id: str
+    project_id: str
+    status: VerificationStatus
+    independent_corroboration: bool
+    contradiction_count: int
+    unresolved_issue_count: int
+
+    @classmethod
+    def from_report(cls, report: VerificationReport) -> VerificationSummary:
+        return cls(
+            claim_id=report.claim_id or "",
+            project_id=report.project_id,
+            status=report.status,
+            independent_corroboration=bool(
+                report.coverage.claims_with_independent_corroboration
+            ),
+            contradiction_count=len(report.contradictions),
+            unresolved_issue_count=report.coverage.claims_with_unresolved_issues,
+        )
+
+
 @runtime_checkable
 class VerificationAssistant(Protocol):
     """A future model-assisted verification boundary.

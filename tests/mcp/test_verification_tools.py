@@ -30,11 +30,13 @@ def test_runtime_verification_roundtrip(tmp_path: Path) -> None:
 
     claim = runtime.create_claim("p", "surface code threshold", claim_type=ClaimType.FACTUAL)
     evidence_id = EvidenceId(search_evidence(stack, "surface code threshold", limit=1)[0])
-    runtime.link_claim_evidence(claim.claim_id, evidence_id, ClaimEvidenceRelationship.SUPPORTS)
-    runtime.assess_evidence(claim.claim_id, evidence_id)
-    report = runtime.verify_claim(claim.claim_id)
+    runtime.link_claim_evidence(
+        "p", claim.claim_id, evidence_id, ClaimEvidenceRelationship.SUPPORTS
+    )
+    runtime.assess_evidence("p", claim.claim_id, evidence_id)
+    report = runtime.verify_claim("p", claim.claim_id)
     assert report.claim_id == claim.claim_id
-    assert runtime.get_verification_report(report.report_id).report_id == report.report_id
+    assert runtime.get_verification_report("p", report.report_id).report_id == report.report_id
     assert runtime.get_contradictions("p") == []
 
 
@@ -43,6 +45,6 @@ def test_runtime_verification_unavailable(tmp_path: Path) -> None:
     with pytest.raises(UnsupportedOperationError):
         runtime.create_claim("p", "text")
     with pytest.raises(UnsupportedOperationError):
-        runtime.verify_claim(ClaimId("claim_1"))
+        runtime.verify_claim("p", ClaimId("claim_1"))
     with pytest.raises(UnsupportedOperationError):
         runtime.get_contradictions("p")

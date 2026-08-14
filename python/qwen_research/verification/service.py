@@ -13,7 +13,12 @@ from qwen_research.claims.relationships import ClaimEvidenceLink, ClaimEvidenceR
 from qwen_research.common.ids import ClaimId, EvidenceId
 from qwen_research.contradictions.detector import detect_contradictions
 from qwen_research.contradictions.models import Contradiction
-from qwen_research.domain.errors import ClaimNotFoundError, EvidenceNotFoundError
+from qwen_research.domain.errors import (
+    ClaimNotFoundError,
+    EvidenceNotFoundError,
+    ProvenanceError,
+    VerificationConfigurationError,
+)
 from qwen_research.evidence.models import (
     EvidenceQuality,
     EvidenceRecord,
@@ -29,6 +34,7 @@ from qwen_research.verification.models import (
     VerificationAssistant,
     VerificationReport,
     VerificationStatus,
+    VerificationSummary,
 )
 from qwen_research.verification.repositories import VerificationStore
 
@@ -68,7 +74,13 @@ class EvidenceIntegrityService:
         scope: Scope | None = None,
         quantitative: QuantitativeClaim | None = None,
     ) -> Claim:
-        """Create a structured claim in the ``UNREVIEWED`` state."""
+        """Create a structured claim in the ``UNREVIEWED`` state.
+
+        ``source_refs`` are validated against the corpus (when one is
+        configured) before the write commits; an unresolved source reference
+        raises :class:`ProvenanceError` and nothing is persisted.
+        """
+        self._validate_source_refs(source_refs)
         claim = Claim.create(
             project_id,
             text,
@@ -80,26 +92,27 @@ class EvidenceIntegrityService:
         self._store.save_claim(claim)
         return claim
 
-    def get_claim(self, claim_id: str) -> Claim:
-        claim = self._store.get_claim(claim_id)
+    def get_claim(self, project_id: str, claim_id: str) -> Claim:
+        claim = self._store.get_claim(project_id, claim_id)
         if claim is None:
-            raise ClaimNotFoundError(f"claim {claim_id!r} not found")
+            raise ClaimNotFoundError(f"claim {claim_id!r} not found in project {project_id!r}")
         return claim
 
     # -- linking -----------------------------------------------------------
 
     def link_claim_evidence(
         self,
+        project_id: str,
         claim_id: str,
         evidence_id: str,
         relationship: ClaimEvidenceRelationship,
         rationale: str = "",
     ) -> ClaimEvidenceLink:
-        """Link a claim to evidence with an explicit relationship.
+        """Link a claim (project-scoped) to evidence with an explicit relationship.
 
         Validates the claim and evidence exist before writing (atomic).
         """
-        self.get_claim(claim_id)
+        self.get_claim(project_id, claim_id)
         if not self._evidence_exists(evidence_id):
             raise EvidenceNotFoundError(f"evidence {evidence_id!r} not found in corpus")
         link = ClaimEvidenceLink.create(
@@ -110,9 +123,11 @@ class EvidenceIntegrityService:
 
     # -- assessment --------------------------------------------------------
 
-    def assess_evidence(self, claim_id: str, evidence_id: str) -> EvidenceAssessment:
+    def assess_evidence(
+        self, project_id: str, claim_id: str, evidence_id: str
+    ) -> EvidenceAssessment:
         """Produce a structured assessment of evidence against a claim."""
-        self.get_claim(claim_id)
+        self.get_claim(project_id, claim_id)
         record = self._materialize(evidence_id)
         if record is None:
             raise EvidenceNotFoundError(f"evidence {evidence_id!r} not found in corpus")
@@ -144,9 +159,9 @@ class EvidenceIntegrityService:
 
     # -- verification ------------------------------------------------------
 
-    def verify_claim(self, claim_id: str) -> VerificationReport:
+    def verify_claim(self, project_id: str, claim_id: str) -> VerificationReport:
         """Run the deterministic verification pipeline and persist the report."""
-        claim = self.get_claim(claim_id)
+        claim = self.get_claim(project_id, claim_id)
         self._detect_project_contradictions(claim.project_id)
         links = self._store.get_links(claim_id)
         contradictions = self._store.get_contradictions_for_claim(claim_id)
@@ -157,13 +172,26 @@ class EvidenceIntegrityService:
         self._update_claim_status(claim, report.status)
         return report
 
-    def get_verification_report(self, report_id: str) -> VerificationReport:
-        report = self._store.get_report(report_id)
+    def get_verification_report(self, project_id: str, report_id: str) -> VerificationReport:
+        report = self._store.get_report(project_id, report_id)
         if report is None:
             from qwen_research.domain.errors import VerificationReportNotFoundError
 
             raise VerificationReportNotFoundError(f"report {report_id!r} not found")
         return report
+
+    def get_project_verification_summaries(self, project_id: str) -> list[VerificationSummary]:
+        """Return a bounded summary of the latest verification outcome per claim.
+
+        Reports are ordered by ``generated_at``, so the last one per claim is
+        the most recent. No hidden reasoning is exposed; the summary carries
+        only the scoped status plus corroboration/contradiction/issue counts.
+        """
+        latest: dict[str, VerificationReport] = {}
+        for report in self._store.get_reports(project_id):
+            if report.claim_id is not None:
+                latest[report.claim_id] = report
+        return [VerificationSummary.from_report(r) for r in latest.values()]
 
     def get_contradictions(self, project_id: str) -> list[Contradiction]:
         """Return contradiction candidates/confirmations for a project scope."""
@@ -171,6 +199,23 @@ class EvidenceIntegrityService:
         return self._store.get_contradictions(project_id)
 
     # -- internals ---------------------------------------------------------
+
+    def _validate_source_refs(self, source_refs: tuple[str, ...]) -> None:
+        """Validate claim ``source_refs`` against the corpus before writing.
+
+        A claim may carry zero source references (its evidence links are added
+        later), but any provided source id must resolve to a corpus document.
+        """
+        if not source_refs:
+            return
+        if self._corpus is None:
+            raise VerificationConfigurationError(
+                "cannot validate claim source_refs without a corpus index"
+            )
+        known = {doc.source_id for doc in self._corpus.list_documents()}
+        for ref in source_refs:
+            if ref not in known:
+                raise ProvenanceError("source", ref)
 
     def _evidence_exists(self, evidence_id: str) -> bool:
         if self._corpus is None:

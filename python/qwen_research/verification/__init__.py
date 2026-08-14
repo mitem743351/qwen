@@ -11,6 +11,7 @@ from qwen_research.verification.models import (
     VerificationReport,
     VerificationScope,
     VerificationStatus,
+    VerificationSummary,
 )
 from qwen_research.verification.repositories import VerificationStore
 from qwen_research.verification.rules import VerificationFacts
@@ -32,4 +33,5 @@ __all__ = [
     "VerificationScope",
     "VerificationStatus",
     "VerificationStore",
+    "VerificationSummary",
 ]

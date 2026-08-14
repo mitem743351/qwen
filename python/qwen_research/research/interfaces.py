@@ -26,7 +26,11 @@ from qwen_research.memory.context import ResearchContext
 from qwen_research.memory.models import ResearchMemory, ResearchQuestion
 from qwen_research.memory.retriever import MemoryHit
 from qwen_research.retrieval.models import DocumentView, SearchOptions, SearchResult
-from qwen_research.verification.models import EvidenceAssessment, VerificationReport
+from qwen_research.verification.models import (
+    EvidenceAssessment,
+    VerificationReport,
+    VerificationSummary,
+)
 from qwen_research.workflows.base import WorkflowResult
 
 
@@ -130,17 +134,24 @@ class ResearchRuntime(Protocol):
 
     def link_claim_evidence(
         self,
+        project_id: str,
         claim_id: ClaimId,
         evidence_id: EvidenceId,
         relationship: ClaimEvidenceRelationship,
         rationale: str = "",
     ) -> ClaimEvidenceLink: ...
 
-    def assess_evidence(self, claim_id: ClaimId, evidence_id: EvidenceId) -> EvidenceAssessment: ...
+    def assess_evidence(
+        self, project_id: str, claim_id: ClaimId, evidence_id: EvidenceId
+    ) -> EvidenceAssessment: ...
 
-    def verify_claim(self, claim_id: ClaimId) -> VerificationReport: ...
+    def verify_claim(self, project_id: str, claim_id: ClaimId) -> VerificationReport: ...
 
-    def get_verification_report(self, report_id: str) -> VerificationReport: ...
+    def get_verification_report(self, project_id: str, report_id: str) -> VerificationReport: ...
+
+    def get_project_verification_summaries(
+        self, project_id: str
+    ) -> list[VerificationSummary]: ...
 
     def get_contradictions(self, project_id: str) -> list[Contradiction]: ...
 

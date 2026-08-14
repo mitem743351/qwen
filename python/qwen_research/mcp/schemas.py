@@ -115,10 +115,12 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_open_questions": "Return unresolved research questions for a project.",
     "save_research_memory": "Save research-derived memory with explicit provenance.",
     "create_claim": "Create a structured claim (status UNREVIEWED; no truth assertion).",
-    "link_claim_evidence": "Link a claim to corpus evidence with an explicit relationship.",
+    "link_claim_evidence": (
+        "Link a project-scoped claim to corpus evidence with an explicit relationship."
+    ),
     "assess_evidence": "Produce a structured assessment of evidence against a claim.",
-    "verify_claim": "Run the deterministic verification pipeline and return a report.",
-    "get_verification_report": "Return a persisted verification report by id.",
+    "verify_claim": "Run the deterministic verification pipeline for a project-scoped claim.",
+    "get_verification_report": "Return a persisted verification report (project-scoped) by id.",
     "get_contradictions": "Return contradictions (candidates/confirmed) for a project.",
 }
 

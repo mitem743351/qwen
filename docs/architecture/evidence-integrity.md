@@ -74,6 +74,13 @@ The verification engine assembles **facts** (claim, linked evidence, source
 quality, chunk status, independence count) and runs **deterministic rules** to
 emit a scoped `VerificationReport`. It never calls a model.
 
+All claim operations are **project-scoped**: lookup, link, assessment,
+verification, and report reads take a `project_id`, and a claim/report id from
+one project never resolves from another. Claim `source_refs` are validated
+against the corpus at creation. Bounded `VerificationSummary` objects (one per
+verified claim) flow into the `ResearchContext` so the model sees *how* prior
+claims were verified without the full issue lists.
+
 ---
 
 ## Packages (all under `python/qwen_research/`)
@@ -82,7 +89,7 @@ emit a scoped `VerificationReport`. It never calls a model.
 |---------|----------------|
 | `claims/` | `Claim`, `ClaimStatus`, `ClaimType`, `Scope`, `QuantitativeClaim`, `ClaimEvidenceLink` |
 | `evidence/` | `EvidenceRecord`, `SupportType`, `ExtractionQuality`, `EvidenceQuality` |
-| `sources/` | `SourceTier`, `SourceQuality`, `SourceQualityAssessor`, `assess_independence` |
+| `sources/` | `SourceTier`, `SourceQuality`, `SourceQualityAssessor`, `SourceIdentity`, `assess_independence`, `count_independent_sources` |
 | `contradictions/` | `Contradiction`, types/statuses/severities, `assess_contradiction`, `detect_contradiction(s)` |
 | `verification/` | `VerificationEngine`, rules, statuses, `Coverage`, `EvidenceAssessment`, `VerificationReport`, `EvidenceIntegrityService`, `SqliteVerificationStore` |
 

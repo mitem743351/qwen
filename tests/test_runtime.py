@@ -100,7 +100,7 @@ def test_retrieve_context_is_unsupported(runtime: InMemoryResearchRuntime) -> No
 
 def test_verify_claim_is_unsupported(runtime: InMemoryResearchRuntime) -> None:
     with pytest.raises(UnsupportedOperationError):
-        runtime.verify_claim(ClaimId("claim_1"))
+        runtime.verify_claim("default", ClaimId("claim_1"))
 
 
 @pytest.mark.parametrize(
