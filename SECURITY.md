@@ -29,13 +29,14 @@ behavioral (prompt instructions are not a security control).
   verification outcomes are audited.
 - **Immutability** — RAW corpus content is never modified.
 
-## Inference ownership is a separate boundary
+## Inference ownership and credentials are separate boundaries
 
 MCP permissions and **inference ownership** are distinct. Access to MCP tools
 does **not** grant permission to invoke arbitrary model backends, and
-Studio-native mode does **not** implicitly gain access to gateway-owned API
-credentials. Credentials remain isolated from tool payloads and model-visible
-context. See
+Studio-native mode does **not** implicitly gain access to Inference-Runtime
+API credentials. Provider secrets live exclusively in the Inference Runtime /
+provider adapter and never appear in MCP arguments, tool output, model-visible
+context, research state, logs, or artifacts. See
 [`docs/architecture/security.md#inference-ownership-as-a-boundary`](docs/architecture/security.md#inference-ownership-as-a-boundary).
 
 ## Hidden chain-of-thought

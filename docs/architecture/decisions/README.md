@@ -20,8 +20,14 @@ Alternatives considered, Trade-offs, Reversibility.**
 | 0013 | Least-privilege security model | Accepted |
 | 0014 | Inference ownership and operating modes (CapabilityMode) | Accepted |
 | 0015 | Capability negotiation (APPLY/DEGRADE/EMULATE/REJECT) | Accepted |
-| 0016 | Gateway as capability/orchestration boundary | Accepted |
+| 0016 | Gateway as capability/orchestration boundary | Accepted (amended by 0018, 0019) |
 | 0017 | Hybrid escalation contract | Accepted |
+| 0018 | MCP Server vs Research Runtime separation | Accepted |
+| 0019 | Research Runtime vs Inference Runtime separation | Accepted |
+| 0020 | Internal Tool Registry vs MCP exposure | Accepted |
+| 0021 | In-process vs IPC boundary policy | Accepted |
+| 0022 | Runtime failure isolation | Accepted |
+| 0023 | Runtime API and domain contracts | Accepted |
 
 New ADRs are appended with the next number and a status (`Proposed` →
 `Accepted` / `Superseded by NNNN`).

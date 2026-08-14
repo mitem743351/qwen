@@ -4,32 +4,35 @@
 flowchart TB
     subgraph L1["L1 · Interface"]
         QS["Qwen Studio<br/>(conversation + native web search)"]
+        OC["Future CLI / API / dashboard"]
     end
 
-    subgraph L2["L2 · Protocol Boundary"]
-        MCP["MCP Entrypoint<br/>(tool registry · permissions · validation · audit)"]
+    subgraph L2["L2 · Capability Exposure"]
+        MCP["MCP Server<br/>(protocol · tool registry · permissions · validation · audit)"]
     end
 
-    subgraph L3["L3 · Reasoning + Orchestration"]
-        subgraph LRG["Local Research Gateway"]
-            SM["Session Manager"]
-            TR["Task Router"]
-            RPE["Reasoning Policy Engine"]
-            TD["Task Decomposer"]
-            WE["Workflow Engine"]
-            CE["Context Engine"]
-            MM["Memory Manager"]
-            VE["Verification Engine"]
-            AM["Artifact Manager"]
-            IA["Inference Adapter"]
-        end
+    subgraph L3["L3 · Research Runtime"]
+        SM["Session Manager"]
+        TR["Task Router"]
+        RPE["Reasoning Policy Engine"]
+        TD["Task Decomposer"]
+        WE["Workflow Engine"]
+        CE["Context Engine"]
+        MM["Memory Manager"]
+        VE["Verification Engine"]
+        AM["Artifact Manager"]
+        TREG["Internal Tool Registry"]
+    end
+
+    subgraph L3b["L3b · Inference Runtime"]
+        IR["Inference Runtime<br/>(routing · capability discovery · policy translation · invocation)"]
     end
 
     subgraph L4["L4 · Knowledge / Computation / Tools"]
         RET["Retrieval<br/>(pipeline)"]
         DOC["Documents<br/>(pipeline)"]
         CMP["Computation<br/>(Python · DuckDB)"]
-        TOL["Tools<br/>(Filesystem · Git · other MCP)"]
+        TOL["Tools<br/>(Filesystem · Git · Rust · other)"]
     end
 
     subgraph L5["L5 · Local Data"]
@@ -41,11 +44,12 @@ flowchart TB
     end
 
     QS --> MCP
-    MCP --> LRG
-    LRG --> RET
-    LRG --> DOC
-    LRG --> CMP
-    LRG --> TOL
+    OC --> MCP
+    MCP --> WE
+    WE --> RET
+    WE --> DOC
+    WE --> CMP
+    WE --> TOL
     RET --> IDX
     RET --> DB
     DOC --> COR
@@ -56,17 +60,21 @@ flowchart TB
     MM --> DB
     AM --> BLB
     AM --> DB
-    IA -.->|"model call · provider-neutral<br/>(GATEWAY_INFERENCE / HYBRID only)"| QW["Model backend<br/>(Qwen / local / other)"]
+    WE -.->|"GATEWAY_INFERENCE / HYBRID only"| IR
+    IR -.->|"model call · provider-neutral"| QW["Model backend<br/>(Qwen / local / other)"]
 ```
 
 **Notes**
 
-- Dependencies point strictly downward (L1→L5).
+- Dependencies point strictly downward (Interface → MCP Server → Research
+  Runtime → Inference Runtime → Provider).
 - This is the **capability topology**, not a universal execution path. The
-  `Inference Adapter` and its edge to the model backend are **conditional on
+  `Inference Runtime` and its edge to the model backend are **conditional on
   mode**: dormant in `STUDIO_NATIVE`, active in `GATEWAY_INFERENCE`/`HYBRID`.
-  See [`operating-modes.md`](operating-modes.md) for the per-mode flows.
-- The Inference Adapter is the *only* component that contacts a model backend,
-  and it does so through the provider-neutral `InferenceProvider` interface.
+  See [`operating-modes.md`](operating-modes.md) and
+  [`runtime-boundaries.md`](../runtime-boundaries.md).
+- The Inference Runtime is the *only* component that contacts a model backend,
+  through the provider-neutral `InferenceProvider` interface.
 - `QW` (model backend) is outside the system and swap-able. In `STUDIO_NATIVE`
-  the model backend lives inside Qwen Studio, not behind the adapter.
+  the model backend lives inside Qwen Studio — its inference is never routed
+  through the MCP Server.

@@ -57,7 +57,10 @@ OtherProvider           — future alternative model providers — future
 ```
 
 Adapter selection is **configuration**, not code. The reasoning engine and
-workflow engine depend only on the `InferenceProvider` protocol.
+workflow engine (in the Research Runtime) depend only on the `InferenceProvider`
+protocol, mediated by the **Inference Runtime** — the provider-facing execution
+layer that owns routing, capability discovery, policy translation, and response
+normalization (see [`runtime-boundaries.md`](runtime-boundaries.md)).
 
 ---
 
@@ -71,10 +74,10 @@ This is the load-bearing abstraction. Four explicit objects:
 
 | Object | Meaning | Owned by |
 |--------|---------|----------|
-| **ReasoningProfile** | *What behavior* we want (critique passes, retrieval depth, budgets…) | Reasoning Policy Engine |
-| **InferencePolicy** | *How to call* a model, provider-neutrally (sampling intent, budget, structured output, tool use, streaming) | Reasoning Policy Engine → Adapter |
-| **ProviderCapabilities** | *What the backend can actually do* (advertised, not assumed) | Inference Adapter (queried from provider) |
-| **Provider parameters** | *What to send* to a specific backend (temperature, top_p, max_tokens, specific reasoning flags) | Inference Adapter |
+| **ReasoningProfile** | *What behavior* we want (critique passes, retrieval depth, budgets…) | Reasoning Policy Engine (Research Runtime) |
+| **InferencePolicy** | *How to call* a model, provider-neutrally (sampling intent, budget, structured output, tool use, streaming) | Reasoning Policy Engine → Inference Runtime |
+| **ProviderCapabilities** | *What the backend can actually do* (advertised, not assumed) | Inference Runtime (queried from provider) |
+| **Provider parameters** | *What to send* to a specific backend (temperature, top_p, max_tokens, specific reasoning flags) | Inference Runtime |
 
 **Capability negotiation:** the adapter intersects the `InferencePolicy` with
 `ProviderCapabilities` and assigns each element an explicit outcome:
@@ -107,9 +110,10 @@ and where even those are unavailable, the system says so instead of pretending.
 | Verification | Verification Engine |
 | Deterministic computation | Computation subsystem |
 
-Note: this decoupling applies to the gateway-owned path. In `STUDIO_NATIVE`
-mode the first three rows are owned by Qwen Studio and the gateway only
-provides the lower five.
+Note: this decoupling applies to the `GATEWAY_INFERENCE`/`HYBRID` path. In
+`STUDIO_NATIVE` mode the first three rows are owned by Qwen Studio and the
+local system (Research Runtime) only provides the lower five — the Inference
+Runtime is not on the request path.
 
 ---
 

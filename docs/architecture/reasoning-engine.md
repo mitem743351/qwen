@@ -11,8 +11,9 @@ exposing hidden chain-of-thought.
 **Reasoning is an explicit policy system, not a prompt-writing exercise.**
 
 `XHIGH` is not a longer system prompt. It is a named `ReasoningProfile` that the
-Workflow Engine and the Inference Adapter jointly enact. The same profile
-produces consistent *behavior* regardless of which backend is underneath.
+Workflow Engine (Research Runtime) and the Inference Runtime jointly enact. The
+same profile produces consistent *behavior* regardless of which backend is
+underneath.
 
 > **Ownership caveat.** A `ReasoningProfile` is an abstract resource-allocation
 > and workflow policy. It does **not** guarantee a specific model reasoning
@@ -56,7 +57,7 @@ configuration change, not a code change.
 | parallelism | off | off | off | optional | expected |
 
 These are **workflow dials**. They do **not** map one-to-one to Qwen API
-parameters; the Inference Adapter performs that mapping through explicit
+parameters; the Inference Runtime performs that mapping through explicit
 **capability negotiation** (see [`capability-negotiation.md`](capability-negotiation.md)).
 
 ---
@@ -115,24 +116,37 @@ ReasoningProfile ──▶ InferencePolicy ──▶ Capability negotiation ─�
   statement of *how* to call the model (temperature/top-p intent, sampling
   budget, structured-output requirements, max tokens, whether tool-calling is
   allowed, whether streaming is used).
-- The **capability-negotiation layer** intersects the `InferencePolicy` with the
-  provider's `capabilities()` and assigns each element an outcome —
-  `APPLY` / `DEGRADE` / `EMULATE` / `REJECT` (see
+- The **capability-negotiation layer** (in the Inference Runtime) intersects the
+  `InferencePolicy` with the provider's `capabilities()` and assigns each
+  element an outcome — `APPLY` / `DEGRADE` / `EMULATE` / `REJECT` (see
   [`capability-negotiation.md`](capability-negotiation.md)).
-- The **Inference Adapter** then emits concrete provider-specific parameters.
+- The **Inference Runtime** then emits concrete provider-specific parameters.
 
 No Qwen API parameter name appears anywhere in the reasoning engine. In
-`STUDIO_NATIVE` mode this translation is **not performed at all** — the gateway
-has no inference ownership.
+`STUDIO_NATIVE` mode this translation is **not performed at all** — the local
+system has no inference ownership.
 
 ---
 
 ## 4. Canonical Deep Workflow
 
-This workflow **runs under the Workflow Engine only when the gateway owns
+This workflow **runs under the Workflow Engine only when the system owns
 inference** (`GATEWAY_INFERENCE`, or escalated `HYBRID` tasks). In
 `STUDIO_NATIVE` mode the same stages exist as *tools the model may invoke*, but
 the model (Qwen Studio) retains control of the overall loop.
+
+### Workflow Engine boundary
+
+The Workflow Engine belongs to the **Research Runtime**. It decides *which
+stage runs, what comes next, when to retry/continue, when verification is
+required, and when completion criteria are met* — but it never constructs
+provider-specific HTTP requests:
+
+```text
+Workflow Engine → Inference Runtime → Provider
+```
+
+This prevents Qwen API details from leaking into workflow definitions.
 
 ```text
 User Request
@@ -243,11 +257,12 @@ with each section checked for coherence against prior sections and the
 consistent.
 
 > **Generation limit ≠ document length.** MCP does not bypass Qwen Studio's
-> generation limits. Long-output *as a gateway-owned workflow* (sectioned
-> generation, continuation, state persistence, incremental synthesis, artifact
-> assembly) is available in `GATEWAY_INFERENCE` mode. In `STUDIO_NATIVE` mode
-> long output is **client-dependent** — the system can persist partial sections
-> and artifacts but cannot extend the host model's own response length.
+> generation limits. Long-output *as a Research-Runtime-owned workflow*
+> (sectioned generation, continuation, state persistence, incremental
+> synthesis, artifact assembly) is available in `GATEWAY_INFERENCE` mode. In
+> `STUDIO_NATIVE` mode long output is **client-dependent** — the system can
+> persist partial sections and artifacts but cannot extend the host model's own
+> response length.
 
 ---
 

@@ -86,11 +86,14 @@ system never silently drops an intent.
 
 ## 4. Mode Interaction
 
-- **STUDIO_NATIVE:** the gateway does not negotiate inference at all — it has no
-  inference ownership. It only negotiates *tool/capability* availability (what
-  MCP tools exist), never provider parameters.
-- **GATEWAY_INFERENCE:** full negotiation applies on every call.
-- **HYBRID:** negotiation applies only to escalated, gateway-owned tasks.
+- **STUDIO_NATIVE:** the Inference Runtime is not on the request path, so no
+  inference negotiation occurs at all — the system only negotiates
+  *tool/capability* availability (what MCP tools exist), never provider
+  parameters.
+- **GATEWAY_INFERENCE:** full negotiation applies on every call (Research
+  Runtime → Inference Runtime → provider).
+- **HYBRID:** negotiation applies only to escalated, Research-Runtime-owned
+  tasks.
 
 ---
 

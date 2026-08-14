@@ -75,9 +75,9 @@ read-only by default.
 
 ### 3.4 Local-only network binding
 
-All services (MCP entrypoint, gateway, any dashboard) bind to `127.0.0.1`
-(or Unix domain sockets) by default. Remote binding is an explicit, documented
-opt-in with its own auth.
+All services (MCP Server, Research Runtime, Inference Runtime, any dashboard)
+bind to `127.0.0.1` (or Unix domain sockets) by default. Remote binding is an
+explicit, documented opt-in with its own auth.
 
 ### 3.5 Secret isolation
 
@@ -100,13 +100,49 @@ boundaries:
 
 - A client granted MCP tool access does **not** automatically gain permission
   to invoke arbitrary model backends.
-- `STUDIO_NATIVE` mode must **not** implicitly gain access to gateway-owned API
-  credentials.
+- `STUDIO_NATIVE` mode must **not** implicitly gain access to
+  Inference-Runtime-owned API credentials.
 - Credentials are isolated from tool payloads and model-visible context; the
-  inference adapter's credentials never cross the MCP boundary.
+  Inference Runtime's credentials never cross the MCP boundary.
 
-The Mode Selector enforces this: in `STUDIO_NATIVE` the Inference Adapter is
+The Mode Selector enforces this: in `STUDIO_NATIVE` the Inference Runtime is
 not exercised, so there is no path for tool calls to reach model backends.
+
+### 3.8 Permission domains (layered)
+
+```text
+Client permissions
+    ↓
+MCP permissions
+    ↓
+Research Runtime permissions
+    ↓
+Tool permissions
+    ↓
+Inference provider permissions
+```
+
+A client allowed `search_corpus` is **not** automatically allowed
+`run_python`, `invoke_inference_backend`, `write_files`, or `delete_files`.
+Likewise, a tool must **not** automatically gain access to provider
+credentials.
+
+### 3.9 Credential boundary
+
+Provider secrets belong **exclusively** to the Inference Runtime/provider
+adapter. They must never appear in:
+
+```text
+MCP arguments
+tool output
+model-visible context
+research state
+logs
+artifacts
+```
+
+The Research Runtime may request *"invoke provider X"* but must not receive or
+manage the provider's raw API key (absent a compelling future reason).
 
 ---
 
@@ -133,7 +169,8 @@ not exercised, so there is no path for tool calls to reach model backends.
 | Secrets in model output | Redaction on the persist path |
 | Corpus tampering | RAW immutability + content hashing + index versioning |
 | MCP grant ⇒ backend access | Separate boundaries: tool permissions ≠ inference ownership |
-| Credential bleed into Studio-native tools | Credentials isolated; never in tool payloads or model context |
+| Credential bleed into Studio-native tools | Credentials isolated in the Inference Runtime; never in tool payloads or model context |
+| Tool ⇒ provider credential access | Tools never receive provider secrets |
 
 ---
 

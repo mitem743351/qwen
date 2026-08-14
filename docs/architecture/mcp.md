@@ -20,17 +20,19 @@ It is deliberately narrow, semantic, and permission-gated.
 Qwen Studio (MCP client)
         │  MCP (JSON-RPC)
         ▼
-MCP Entrypoint
-   ├── Tool registry
+MCP Server
+   ├── Tool registry (MCP view)
    ├── Permission boundary
    ├── Argument validation
+   ├── Schema adapter (MCP ↔ domain)
    └── Audit logging
         │  typed internal calls
         ▼
-Local Research Gateway
+Research Runtime
 ```
 
-The MCP Entrypoint is a **translator and gatekeeper**, not an orchestrator. It
+The MCP Server is a **translator and gatekeeper** — an adapter onto the
+Research Runtime — not an orchestrator and not the research system. It
 contains no reasoning, retrieval, or storage logic.
 
 ---
@@ -58,11 +60,15 @@ get_project_context     # retrieve project-scoped memory and context
 1. **One tool = one semantic verb.** No `do_thing` mega-tools.
 2. Each tool declares a **permission class** (see §4).
 3. Each tool has a **JSON Schema** for arguments and a typed result schema
-   (living in `schemas/`).
+   (living in `schemas/mcp/`).
 4. Tool results are **structured** (typed records), so they flow into context
    and memory without re-parsing.
-5. Adding a tool is a **registered addition**, not a change to the gateway's
-   orchestration.
+5. Adding a tool is a **registered addition** to the Internal Tool Registry
+   plus a deliberate MCP-exposure decision — not a change to the Research
+   Runtime's orchestration.
+6. **MCP is not the internal plugin architecture.** Internal tools exist
+   independently of MCP; MCP is one adapter that publishes a curated subset
+   (see [`runtime-boundaries.md`](runtime-boundaries.md)).
 
 ---
 
@@ -83,8 +89,8 @@ get_project_context     # retrieve project-scoped memory and context
 > **Two separate boundaries.** MCP tool permissions and inference ownership are
 > **distinct** security boundaries. A client granted MCP `read`/`analyze`
 > access does **not** thereby gain permission to invoke arbitrary model
-> backends; that requires gateway-owned inference to be configured and the
-> relevant credentials scoped to it (see
+> backends; that requires `GATEWAY_INFERENCE`/`HYBRID` to be configured and the
+> relevant credentials scoped to the Inference Runtime (see
 > [`security.md`](security.md#inference-ownership-as-a-boundary)).
 
 Permissions are **classes**, independently controllable per tool and per
@@ -113,9 +119,11 @@ Rules:
 ```text
 MCP request (tool + args)
    → authenticate / identify session
-   → resolve tool → validate args against schema
+   → resolve tool → validate args against MCP schema
+   → adapt to domain object (MCPRequest)
    → check permission class against session grants
-   → dispatch to gateway handler
+   → dispatch to Research Runtime handler
+   → adapt result to MCPResult
    → record audit event (tool, args-hash, result-hash, latency, permission)
    → return typed result or structured error
 ```
@@ -128,8 +136,9 @@ See [`diagrams/mcp-interaction.md`](diagrams/mcp-interaction.md).
 
 - **Transport:** MCP over stdio or localhost only by default (local-only
   network binding; see [`security.md`](security.md)). No remote exposure in v1.
-- **Concurrency:** the entrypoint must handle concurrent tool calls without
-  shared mutable state; the gateway serializes state-mutating workflow steps.
+- **Concurrency:** the MCP Server must handle concurrent tool calls without
+  shared mutable state; the Research Runtime serializes state-mutating workflow
+  steps.
 - **Rust involvement:** justified only if a high-concurrency MCP server is
   needed (see [`polyglot-boundaries.md`](polyglot-boundaries.md)). For
   single-user local-first, a Python MCP server is acceptable; the decision is

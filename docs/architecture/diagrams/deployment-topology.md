@@ -4,10 +4,11 @@
 flowchart LR
     subgraph HOST["Single local machine"]
         QS["Qwen Studio<br/>(UI + MCP client)"]
-        MCP["MCP Entrypoint<br/>(localhost only)"]
-        GW["Local Research Gateway<br/>(in-process subsystems)"]
+        MCP["MCP Server<br/>(localhost only)"]
+        RR["Research Runtime<br/>(in-process modules)"]
+        IR["Inference Runtime<br/>(in-process module)"]
         RUST["Rust modules via FFI<br/>(scanner · hasher · watcher ·<br/>fast search · sandbox · process)"]
-        PY["Python subsystems<br/>(retrieval · documents · computation ·<br/>verification · memory · inference)"]
+        PY["Python subsystems<br/>(retrieval · documents · computation ·<br/>verification · memory · workflows)"]
         SQLITE[("SQLite<br/>system-of-record")]
         DUCKDB[("DuckDB<br/>analytics")]
         CORPUS[("corpus/<br/>immutable RAW")]
@@ -25,30 +26,33 @@ flowchart LR
 
     QS --> MCP
     QS --> WEB
-    MCP --> GW
-    GW --> PY
-    GW --> RUST
+    MCP --> RR
+    RR --> PY
+    RR --> RUST
+    RR -.->|"GATEWAY_INFERENCE / HYBRID only"| IR
+    IR -.-> API
     PY --> SQLITE
     PY --> DUCKDB
     PY --> CORPUS
     PY --> ART
-    GW -.->|"GATEWAY_INFERENCE / HYBRID only"| API
-    DASH -.->|read-only| GW
+    DASH -.->|read-only| RR
 ```
 
 **Binding rules shown here**
 
-- `QS → MCP → GW` run on `127.0.0.1` / Unix sockets (local-only by default).
-- `GW ↔ RUST` is **FFI (PyO3)**, not a network call.
-- `GW ↔ PY` is in-process (no serialization boundary).
-- The `GW → API` edge (model backend) is **conditional on mode**; it exists
-  only in `GATEWAY_INFERENCE`/`HYBRID`. In `STUDIO_NATIVE` the gateway has no
-  outbound model traffic — Qwen Studio's own web search/model connection is the
-  only model-plane network.
+- `QS → MCP → RR` run on `127.0.0.1` / Unix sockets (local-only by default).
+- `RR ↔ RUST` is **FFI (PyO3)**, not a network call.
+- `RR ↔ PY` and `RR → IR` are **in-process** (no serialization boundary).
+- The `IR → API` edge (model backend) is **conditional on mode**; it exists
+  only in `GATEWAY_INFERENCE`/`HYBRID`. In `STUDIO_NATIVE` the Inference
+  Runtime is not on the request path — Qwen Studio's own model/search
+  connection is the only model-plane network.
 - The dashboard is optional and read-only; the core runs without it.
 
-**Process count in v1**
+**Deployment vs logical boundaries**
 
-Exactly one long-lived core process (gateway + entrypoint + subsystems), plus
-Qwen Studio as the external client, and optional ephemeral sandbox subprocesses
-for computation. No microservices.
+`apps/mcp-server`, `apps/research-runtime`, `apps/inference-runtime` are
+**logical runtimes**, not three mandatory network daemons. In v1 they are one
+core process (one executable / one Python package / one Rust library), with
+optional ephemeral sandbox subprocesses for computation. A runtime is promoted
+to a separate process only if isolation requires it (ADR 0021).

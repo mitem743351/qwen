@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Amends:** 0011
+- **Superseded by:** 0018, 0019 (the single "gateway" is replaced by three runtimes)
 
 ## Decision
 

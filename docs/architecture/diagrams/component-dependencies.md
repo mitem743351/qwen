@@ -3,9 +3,10 @@
 ```mermaid
 flowchart TD
     QS["Qwen Studio"]
-    MCP["MCP Entrypoint"]
+    OC["Future CLI / API"]
+    MCP["MCP Server"]
 
-    subgraph GW["Local Research Gateway"]
+    subgraph RR["Research Runtime"]
         SM["Session Manager"]
         TR["Task Router"]
         RPE["Reasoning Policy Engine"]
@@ -15,27 +16,35 @@ flowchart TD
         MM["Memory Manager"]
         VE["Verification Engine"]
         AM["Artifact Manager"]
-        IA["Inference Adapter (conditional on mode)"]
+        TREG["Internal Tool Registry"]
         MS["Mode Selector (CapabilityMode)"]
+    end
+
+    subgraph IRT["Inference Runtime"]
+        ROUTE["Provider Router"]
+        DISC["Capability Discovery"]
+        TRANS["Policy Translator (negotiation)"]
+        INV["Invoker"]
+        NORM["Response Normalizer"]
     end
 
     subgraph RET["Retrieval"]
         QN["Query Normalizer"]
         CR["Candidate Retriever"]
         HR["Hybrid Ranker"]
-        RR["Reranker"]
+        RR2["Reranker"]
         EE["Evidence Extractor"]
         CIT["Citation Resolver"]
         CA["Context Assembler"]
     end
 
     subgraph DOC["Documents"]
-        DISC["Discovery"]
+        DISC2["Discovery"]
         ID["Identification"]
         HASH["Hasher"]
         META["Metadata Extractor"]
         PARSE["Parser (adapters)"]
-        NORM["Normalizer"]
+        NORM2["Normalizer"]
         CHUNK["Chunker"]
         REL["Relationship Extractor"]
     end
@@ -48,7 +57,7 @@ flowchart TD
     subgraph TOL["Tools"]
         FS["Filesystem Tool"]
         GIT["Git Tool"]
-        OM["Other MCP clients"]
+        OM["Other tool adapters"]
     end
 
     subgraph STORE["Storage"]
@@ -59,8 +68,9 @@ flowchart TD
         BLOB["Blob store"]
     end
 
-    QS --> MCP --> GW
-    MS --> IA
+    QS --> MCP
+    OC --> MCP
+    MCP --> WE
     MS --> WE
     TR --> RPE
     TR --> TD
@@ -68,7 +78,7 @@ flowchart TD
     WE --> MM
     WE --> VE
     WE --> AM
-    WE -.->|"gateway-owned modes only"| IA
+    WE -.->|"gateway-owned modes only"| IRT
     WE --> RET
     WE --> CMP
     WE --> TOL
@@ -79,10 +89,13 @@ flowchart TD
     AM --> BLOB
     AM --> REPO
 
-    RET --> QN --> CR --> HR --> RR --> EE --> CIT --> CA
+    IRT --> ROUTE --> DISC
+    ROUTE --> TRANS --> INV --> NORM
+
+    RET --> QN --> CR --> HR --> RR2 --> EE --> CIT --> CA
     CR --> VEC
     CR --> SQLITE
-    DOC --> DISC --> ID --> HASH --> META --> PARSE --> NORM --> CHUNK --> REL
+    DOC --> DISC2 --> ID --> HASH --> META --> PARSE --> NORM2 --> CHUNK --> REL
     CHUNK --> VEC
     CHUNK --> SQLITE
     CMP --> PY
@@ -97,10 +110,14 @@ flowchart TD
 
 **Rules encoded here**
 
-- The gateway orchestrates; subsystems are leaves with respect to orchestration.
-- `WE` (Workflow Engine) is the hub inside the gateway — it fans out to context,
-  memory, verification, artifacts, retrieval, computation, and tools.
-- The `WE → IA` edge is **dashed**: the Inference Adapter is exercised only in
+- The **Research Runtime** orchestrates; subsystems are leaves with respect to
+  orchestration. The **MCP Server** is an adapter above it; the **Inference
+  Runtime** is a leaf below it.
+- `WE` (Workflow Engine) is the hub inside the Research Runtime — it fans out
+  to context, memory, verification, artifacts, retrieval, computation, and
+  tools.
+- The `WE → Inference Runtime` edge is **dashed**: exercised only in
   `GATEWAY_INFERENCE`/`HYBRID` modes (enforced by the Mode Selector).
-- Subsystems never point back at the gateway or at each other.
+- The Inference Runtime never points back up into the Research Runtime.
+- Subsystems never point back at the Research Runtime or at each other.
 - Storage is reached only through repository interfaces (`REPO`).

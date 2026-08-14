@@ -1,7 +1,7 @@
 # Data Flow
 
 The request path is **mode-dependent**. The first sequence below is the
-`GATEWAY_INFERENCE` path (the only path that exercises the Inference Adapter);
+`GATEWAY_INFERENCE` path (the only path that exercises the Inference Runtime);
 the second is `STUDIO_NATIVE`.
 
 ## GATEWAY_INFERENCE
@@ -10,38 +10,38 @@ the second is `STUDIO_NATIVE`.
 sequenceDiagram
     autonumber
     participant QS as Client (Studio or other)
-    participant GW as Local Research Gateway
+    participant RR as Research Runtime
     participant RET as Retrieval
-    participant INF as Inference Adapter
+    participant IR as Inference Runtime
     participant NEG as Capability negotiation
     participant CMP as Computation / Tools
     participant VER as Verification Engine
     participant MEM as Memory / Artifact Manager
 
-    QS->>GW: task request
-    GW->>GW: intent + complexity → ReasoningProfile + ReasoningBudget
-    GW->>GW: decompose → tasks[]
+    QS->>RR: task request (via MCP Server or direct API)
+    RR->>RR: intent + complexity → ReasoningProfile + ReasoningBudget
+    RR->>RR: decompose → tasks[]
 
-    GW->>RET: retrieve evidence
-    RET-->>GW: evidence records (cited)
+    RR->>RET: retrieve evidence
+    RET-->>RR: evidence records (cited)
 
-    GW->>INF: generate (InferencePolicy)
-    INF->>NEG: intersect with ProviderCapabilities
-    NEG-->>INF: APPLY / DEGRADE / EMULATE / REJECT
-    INF-->>GW: model output (structured)
+    RR->>IR: InferenceRequest (InferencePolicy)
+    IR->>NEG: intersect with ProviderCapabilities
+    NEG-->>IR: APPLY / DEGRADE / EMULATE / REJECT
+    IR-->>RR: InferenceResult (structured)
 
     opt workflow requires computation
-        GW->>CMP: run_analysis / query
-        CMP-->>GW: deterministic result (audited)
+        RR->>CMP: run_analysis / query
+        CMP-->>RR: deterministic result (audited)
     end
 
-    GW->>VER: verify claims / find contradictions
-    VER-->>GW: verification outcome
+    RR->>VER: verify claims / find contradictions
+    VER-->>RR: verification outcome
 
-    GW->>MEM: persist research state + artifact
-    MEM-->>GW: artifact metadata (provenance)
+    RR->>MEM: persist research state + artifact
+    MEM-->>RR: artifact metadata (provenance)
 
-    GW-->>QS: final response + artifact refs
+    RR-->>QS: final response + artifact refs
 ```
 
 ## STUDIO_NATIVE
@@ -51,15 +51,15 @@ sequenceDiagram
     autonumber
     participant QS as Qwen Studio (owns inference)
     participant QM as Qwen model
-    participant MCP as MCP Entrypoint
-    participant GW as Gateway capability handlers
+    participant MCP as MCP Server
+    participant RR as Research Runtime capability handlers
 
     QS->>QM: user request (Qwen reasons)
     QM->>MCP: MCP tool call (e.g. retrieve_evidence)
-    MCP->>MCP: permission check + arg validation
-    MCP->>GW: typed capability request
-    GW-->>MCP: structured result (evidence / verification / computation)
-    MCP-->>QM: typed tool result
+    MCP->>MCP: permission check + arg validation + schema adaptation
+    MCP->>RR: domain request (MCPRequest)
+    RR-->>MCP: structured result (evidence / verification / computation)
+    MCP-->>QM: typed tool result (MCPResult)
     QM->>QS: Qwen continues its own inference loop
 ```
 

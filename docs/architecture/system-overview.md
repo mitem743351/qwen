@@ -15,14 +15,14 @@ orientation document for everything else.
 └──────────────────────────────┬───────────────────────────────┘
                                │ MCP (model context protocol)
 ┌──────────────────────────────▼───────────────────────────────┐
-│  L2 · MCP Entrypoint                                          │
+│  L2 · MCP Server                                              │
 │      Tool surface, permissions, protocol translation          │
 └──────────────────────────────┬───────────────────────────────┘
                                │ typed tool requests
 ┌──────────────────────────────▼───────────────────────────────┐
-│  L3 · Local Research Gateway (Reasoning + Orchestration)      │
+│  L3 · Research Runtime (Reasoning + Orchestration)            │
 │      Sessions, routing, policies, decomposition, workflows,   │
-│      context, memory, verification, artifacts, inference      │
+│      context, memory, verification, artifacts, state          │
 └───────────────┬───────────────┬───────────────┬──────────────┘
                 │               │               │
      ┌──────────▼────┐  ┌───────▼───────┐  ┌────▼──────────────┐
@@ -41,8 +41,9 @@ Layer responsibilities, and what each layer is **not** allowed to do:
 | Layer | Owns | Must not |
 |-------|------|----------|
 | **L1 Qwen Studio** | Conversation, rendering, native search, MCP client | Hold business logic; know about indexing or storage |
-| **L2 MCP Entrypoint** | Tool registry, permission checks, JSON-RPC, arg validation | Contain reasoning or retrieval logic |
-| **L3 Gateway** | Orchestration, policy, workflow, context, memory, verification, artifacts, **inference (conditional on mode)** | Talk to storage directly (except through managers); parse PDFs; run SQL |
+| **L2 MCP Server** | Tool registry, permission checks, JSON-RPC, arg validation, transport | Contain reasoning or retrieval logic |
+| **L3 Research Runtime** | Orchestration, policy, workflow, context, memory, verification, artifacts, state | Talk to storage directly (except through managers); parse PDFs; run SQL |
+| **L3b Inference Runtime** | Provider routing, capability discovery, policy translation, model invocation (conditional on mode) | Own research logic; call upward |
 | **L4 Capabilities** | Retrieval, document processing, computation, tools | Make workflow decisions; call the model directly |
 | **L5 Local Data** | Durable state, index, corpus, blobs | Contain policy or business logic |
 
@@ -50,13 +51,13 @@ The contract between layers is **interfaces and schemas**, never shared mutable
 state or cross-layer imports.
 
 > **The diagram above is the capability topology, not a universal execution
-> path.** It shows what the gateway *can* provide. Whether the gateway actually
-> drives the model depends on the operating mode (see
-> [`operating-modes.md`](operating-modes.md)): in `STUDIO_NATIVE` the model and
-> its inference loop live entirely inside Qwen Studio, and the gateway is only
-> an MCP capability server. The **model plane** (the inference backend) is
-> outside this stack and is only reachable by the gateway in
-> `GATEWAY_INFERENCE`/`HYBRID` modes.
+> path.** It shows what the Research Runtime *can* provide. Whether the
+> Research + Inference Runtimes actually drive the model depends on the
+> operating mode (see [`operating-modes.md`](operating-modes.md)): in
+> `STUDIO_NATIVE` the model and its inference loop live entirely inside Qwen
+> Studio, and the local system is only an MCP capability server. The **model
+> plane** (the inference backend) is outside this stack and is only reachable
+> by the Inference Runtime in `GATEWAY_INFERENCE`/`HYBRID` modes.
 
 ---
 
@@ -84,8 +85,9 @@ The single most important design idea is an **inversion of control** — but it 
 > drives the system**, and the workflow engine only *influences* it through tool
 > outputs and structured capabilities.
 
-In gateway-owned mode the model is invoked as one step inside a larger
-deterministic scaffold. The scaffold decides: whether to retrieve, whether to
+In `GATEWAY_INFERENCE` mode the model is invoked as one step inside a larger
+deterministic scaffold (driven by the Research Runtime, invoked through the
+Inference Runtime). The scaffold decides: whether to retrieve, whether to
 decompose, when to critique, when to verify, when to compute, and when to stop.
 This is what makes the system reproducible, resumable, and auditable — and what
 lets `XHIGH` be a real behavior instead of a long prompt.
@@ -97,7 +99,7 @@ return. That is **workflow influence**, not **direct model-inference control**.
 
 This separation also guarantees the eight concerns (Section 2 of
 `ARCHITECTURE.md`): the workflow engine orchestrates (agent plane); the
-inference adapter configures the model only when the gateway owns inference
+Inference Runtime configures the model only when the system owns inference
 (model plane); the tools execute; the retrieval pipeline fetches knowledge
 (knowledge plane); the memory manager persists state; the verification engine
 checks claims; the computation subsystem does deterministic math.
@@ -114,22 +116,23 @@ There is **no single universal execution path**. The two primary paths are:
    model inference loop.
 2. Qwen Studio (its MCP client) decides to call a local tool, e.g.
    `retrieve_evidence` or `verify_claim`.
-3. The **MCP Entrypoint** authorizes the call against the tool's permission
-   class, validates arguments, and dispatches to the gateway.
-4. The gateway runs the requested capability (retrieval, verification,
+3. The **MCP Server** authorizes the call against the tool's permission
+   class, validates arguments, and dispatches to the Research Runtime.
+4. The Research Runtime runs the requested capability (retrieval, verification,
    computation, memory) and returns a **structured result**.
-5. Qwen Studio continues reasoning with that result. The gateway never touches
-   the model's parameters, thinking budget, or generation limits.
+5. Qwen Studio continues reasoning with that result. The local system never
+   touches the model's parameters, thinking budget, or generation limits.
 
 ### 4.2 GATEWAY_INFERENCE (orchestration-owned)
 
-1. A client (Qwen Studio *or* another client) submits a task to the gateway.
+1. A client (Qwen Studio *or* another client) submits a task to the Research
+   Runtime (via MCP Server or its direct API).
 2. The **Task Router** classifies intent and complexity; the **Reasoning Policy
    Engine** selects a **ReasoningProfile** (and implied `ReasoningBudget`).
 3. The **Task Decomposer** splits the task; the **Context Engine** plans
    context; the **Workflow Engine** begins executing stages.
 4. The **Retrieval** subsystem assembles evidence.
-5. The **Inference Adapter** translates the profile into an `InferencePolicy`,
+5. The **Inference Runtime** translates the profile into an `InferencePolicy`,
    negotiates against `ProviderCapabilities`, and calls the model through an
    `InferenceProvider`.
 6. **Computation/Tools** run deterministic work; **Verification** checks
@@ -140,7 +143,7 @@ There is **no single universal execution path**. The two primary paths are:
 
 ### 4.3 HYBRID (escalation)
 
-Normal tasks follow §4.1; deep tasks are handed to the gateway per the
+Normal tasks follow §4.1; deep tasks are handed to the Research Runtime per the
 [`EscalationRequest`/`EscalationResult`](operating-modes.md#6-hybrid-escalation-contract)
 contract, then follow §4.2.
 

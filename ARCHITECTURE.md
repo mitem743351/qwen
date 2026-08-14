@@ -1,6 +1,6 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 0 — Architecture Contract (documentation only)
+> **Status:** Phase 0.75 — Architecture Contract (documentation only)
 > **Audience:** Implementers, code agents, reviewers
 > **Scope:** This document is the stable, binding architecture contract for the
 > "local AI research infrastructure" that extends **Qwen Studio** through MCP.
@@ -16,6 +16,13 @@ later implementation prompts must follow.
 > inference control exists only where the active inference backend exposes that
 > control. Gateway-owned and hybrid modes provide the architectural path to
 > true API-grade orchestration.**
+
+> ### Runtime statement (binding, Phase 0.75)
+>
+> **MCP is an external capability boundary. The Research Runtime is the
+> provider-independent research and orchestration layer. The Inference Runtime
+> is the provider-facing model execution layer. They are logically separate
+> even when deployed in one local process.**
 
 ---
 
@@ -55,9 +62,9 @@ unnecessarily:
 ```text
 Qwen Studio                      (1) Human interface
     ↓
-MCP / Gateway                    (2) Protocol boundary
+MCP Server                       (2) Capability exposure boundary
     ↓
-Reasoning + Orchestration        (3) Workflow and policy
+Research Runtime                 (3) Workflow, policy, orchestration
     ↓
 Knowledge / Computation / Tools  (4) Capabilities
     ↓
@@ -66,6 +73,21 @@ Local Data                       (5) Storage and corpus
 
 A change in any layer must not force a redesign of the others. The contract
 between layers is defined by **interfaces and schemas**, not by implementation.
+
+### The Three Runtime Layers
+
+The former monolithic "gateway" is replaced by **three logically distinct
+runtime layers** (see
+[`docs/architecture/runtime-boundaries.md`](docs/architecture/runtime-boundaries.md)):
+
+| Runtime | Role | Never owns |
+|---------|------|------------|
+| **MCP Server** | capability exposure: protocol, tool registry (MCP view), validation, permissions, transport | research logic, reasoning policy, retrieval, memory, workflows |
+| **Research Runtime** | core application: classification, decomposition, profiles/budgets, orchestration, workflows, context, retrieval, memory, verification, artifacts, state | provider-specific inference orchestration |
+| **Inference Runtime** | model invocation: provider/model selection, capability discovery, policy translation, request construction, streaming, retries, response normalization | research memory, indexing, retrieval, workflow policy, verification, provenance |
+
+These are **logical boundaries first** — in-process modules on a single
+machine, not three mandatory network daemons.
 
 ### Inference Ownership Rule
 
@@ -85,20 +107,20 @@ expose. There are **three operating modes** (see
 | Mode | Inference owner | What the local system provides |
 |------|-----------------|-------------------------------|
 | `STUDIO_NATIVE` | Qwen Studio | MCP tools, corpus, retrieval, memory, computation, verification, artifacts |
-| `GATEWAY_INFERENCE` | Local gateway | All of the above **plus** direct workflow/inference orchestration via `InferenceProvider` |
-| `HYBRID` | Both (escalation boundary) | Studio-native for normal tasks; gateway-owned for escalated deep tasks |
+| `GATEWAY_INFERENCE` | Research Runtime + Inference Runtime | All of the above **plus** direct workflow/inference orchestration via `InferenceProvider` |
+| `HYBRID` | Both (escalation boundary) | Studio-native for normal tasks; Research-Runtime-owned for escalated deep tasks |
 
 ### The Four Control Planes
 
 To avoid ambiguity in the word "gateway", the system is described in four
-**control planes**:
+**control planes**, now mapped to runtime ownership:
 
-| Plane | Owns | Examples |
-|-------|------|----------|
-| **Model plane** | The actual inference backend | model, reasoning, generation, context window, provider parameters |
-| **Agent plane** | The orchestration system | planning, tool selection, workflow, iteration, parallelism, retry, continuation |
-| **Knowledge plane** | The persistent research infrastructure | documents, retrieval, memory, claims, evidence, datasets |
-| **Interface plane** | The user-facing interaction | Qwen Studio, CLI, API, dashboard, future clients |
+| Plane | Owns | Examples | Runtime owner |
+|-------|------|----------|---------------|
+| **Model plane** | The actual inference backend | model, reasoning, generation, context window, provider parameters | Inference Runtime (+ Model Provider) |
+| **Agent plane** | The orchestration system | planning, tool selection, workflow, iteration, parallelism, retry, continuation | Research Runtime |
+| **Knowledge plane** | The persistent research infrastructure | documents, retrieval, memory, claims, evidence, datasets | Research Runtime + Retrieval/Memory/Documents |
+| **Interface plane** | The user-facing interaction | Qwen Studio, CLI, API, dashboard, future clients | MCP Server (adapters) |
 
 ### The Eight Concerns
 
@@ -108,14 +130,14 @@ solved by "a longer prompt" alone**:
 
 | # | Concern | Owned by |
 |---|---------|----------|
-| 1 | Model capability | Inference abstraction (`capabilities()`) |
-| 2 | Inference configuration | Inference Adapter (`InferencePolicy`) |
-| 3 | Reasoning workflow | Workflow Engine + Reasoning Policy Engine |
-| 4 | Tool execution | Tools subsystem (behind permissions) |
-| 5 | Knowledge retrieval | Retrieval subsystem |
-| 6 | Persistent state | Memory Manager + storage layer |
-| 7 | Verification | Verification Engine |
-| 8 | Deterministic computation | Computation subsystem |
+| 1 | Model capability | Inference Runtime (`capabilities()`) |
+| 2 | Inference configuration | Inference Runtime (`InferencePolicy`) |
+| 3 | Reasoning workflow | Research Runtime (Workflow Engine + Reasoning Policy Engine) |
+| 4 | Tool execution | Research Runtime (Tools subsystem, behind permissions) |
+| 5 | Knowledge retrieval | Research Runtime (Retrieval subsystem) |
+| 6 | Persistent state | Research Runtime (Memory Manager + storage layer) |
+| 7 | Verification | Research Runtime (Verification Engine) |
+| 8 | Deterministic computation | Research Runtime (Computation subsystem) |
 
 ---
 
@@ -146,14 +168,13 @@ See [`docs/architecture/polyglot-boundaries.md`](docs/architecture/polyglot-boun
 ## 4. High-Level Components
 
 ```text
-QWEN STUDIO
+QWEN STUDIO  /  FUTURE CLI / API / DASHBOARD
     │
     ▼
-MCP ENTRYPOINT
+MCP SERVER   (capability exposure: protocol · tools · permissions · transport)
     │
     ▼
-LOCAL RESEARCH GATEWAY
-    │
+RESEARCH RUNTIME   (the operational brain)
     ├── Session Manager
     ├── Task Router
     ├── Reasoning Policy Engine
@@ -163,7 +184,7 @@ LOCAL RESEARCH GATEWAY
     ├── Memory Manager
     ├── Verification Engine
     ├── Artifact Manager
-    └── Inference Adapter
+    └── Internal Tool Registry
     │
     ├───────────────┬────────────────┬─────────────────┐
     ▼               ▼                ▼                 ▼
@@ -176,21 +197,28 @@ Memory          Chunking        Simulation          Other MCP
     │
     ▼
 LOCAL CORPUS / DATABASES
+
+    │
+    ▼ (GATEWAY_INFERENCE / HYBRID only)
+INFERENCE RUNTIME   (provider routing · capability discovery · policy translation)
+    │
+    ▼
+INFERENCE PROVIDER  (Qwen API / local Qwen / other)
 ```
 
-The **Local Research Gateway (LRG)** is the single orchestration component.
-Subsystems (Retrieval, Documents, Computation, Tools) are capabilities it
-calls — they do not call each other except through explicit interfaces, and
-they never call Qwen Studio.
+The **Research Runtime** is the core orchestration component (the "operational
+brain"). Subsystems (Retrieval, Documents, Computation, Tools) are capabilities
+it calls — they do not call each other except through explicit interfaces, and
+they never call Qwen Studio. The **Inference Runtime** sits below it and owns
+model invocation; it is only exercised in `GATEWAY_INFERENCE`/`HYBRID` modes.
 
-> **Inference ownership is conditional.** The gateway always provides local
-> capabilities and orchestration; it **owns model inference only in
-> `GATEWAY_INFERENCE` (and escalated `HYBRID`) mode.** In `STUDIO_NATIVE` mode
-> the `Inference Adapter` shown above is dormant — Qwen Studio owns inference
-> and merely calls the gateway's MCP tools.
+> **Inference ownership is conditional.** In `STUDIO_NATIVE` mode the Inference
+> Runtime is not on the request path — Qwen Studio owns inference and merely
+> calls MCP tools backed by the Research Runtime's capabilities.
 
-See [`docs/architecture/component-boundaries.md`](docs/architecture/component-boundaries.md)
-and [`docs/architecture/operating-modes.md`](docs/architecture/operating-modes.md).
+See [`docs/architecture/component-boundaries.md`](docs/architecture/component-boundaries.md),
+[`docs/architecture/runtime-boundaries.md`](docs/architecture/runtime-boundaries.md), and
+[`docs/architecture/operating-modes.md`](docs/architecture/operating-modes.md).
 
 ---
 
@@ -224,7 +252,7 @@ Conceptual profiles: `FAST`, `NORMAL`, `DEEP`, `XHIGH`, `EXTREME`.
 > `verification_budget`, `output_budget`, `time_budget`, `parallelism_budget`).
 
 These names map to **workflow behavior** (how many passes, how much retrieval,
-how many critiques) and are translated by the Inference Adapter into whatever
+how many critiques) and are translated by the Inference Runtime into whatever
 concrete controls the selected Qwen backend actually exposes — through an
 explicit **capability negotiation** step.
 
@@ -379,9 +407,10 @@ Permissions distinguish `read`, `analyze`, `write`, `execute`, `destructive`.
 `write` and `destructive` are independently controllable.
 
 > **MCP ≠ inference control.** MCP exposes *capabilities*; it does not grant
-> the gateway control over the host client's inference parameters, reasoning
-> budget, or generation limits. Tool permissions and inference ownership are
-> **separate** security boundaries.
+> the local system control over the host client's inference parameters,
+> reasoning budget, or generation limits. Tool permissions and inference
+> ownership are **separate** security boundaries. The MCP Server is an adapter
+> onto the Research Runtime, not the research system itself.
 
 See [`docs/architecture/mcp.md`](docs/architecture/mcp.md) and
 [`docs/architecture/operating-modes.md`](docs/architecture/operating-modes.md).
@@ -488,20 +517,24 @@ audit events. **Hidden chain-of-thought is never logged.**
 
 ```text
 qwen-research-system/
-├── apps/            gateway/ · worker/ · dashboard/
-├── python/          reasoning/ · orchestration/ · retrieval/ · context/
-│                    memory/ · documents/ · verification/ · inference/
-│                    computation/ · workflows/
-├── rust/            core/ · mcp/ · filesystem/ · indexer/ · search/ · process/
+├── apps/            mcp-server/ · research-runtime/ · inference-runtime/ · dashboard/
+├── python/          research/ · reasoning/ · orchestration/ · retrieval/
+│                    memory/ · documents/ · verification/ · workflows/
+│                    inference/ · computation/
+├── rust/            core/ · filesystem/ · indexer/ · search/ · process/
 ├── typescript/      dashboard/
+├── schemas/         domain/ · mcp/ · inference/
 ├── data/            database/ · index/ · memory/ · cache/ · sessions/
 ├── corpus/          sources/ · papers/ · books/ · notes/ · datasets/
 │                    projects/ · archive/
-├── workflows/  prompts/  schemas/  config/  tests/  scripts/  docs/
+├── workflows/  prompts/  config/  tests/  scripts/  docs/
 ├── ARCHITECTURE.md  SECURITY.md  README.md  pyproject.toml  .env.example
 ```
 
-This is a **logical structure**, not an instruction to create every directory now.
+This is a **logical structure**, not an instruction to create every directory
+now. The `apps/` entries are **logical runtimes**, not three mandatory network
+daemons — initially they may be one executable, one Python package, and one
+Rust library.
 
 ---
 
@@ -531,6 +564,9 @@ This is a **logical structure**, not an instruction to create every directory no
 | Document | Covers |
 |----------|--------|
 | [system-overview](docs/architecture/system-overview.md) | End-to-end picture, layer responsibilities |
+| [runtime-boundaries](docs/architecture/runtime-boundaries.md) | MCP Server / Research Runtime / Inference Runtime separation |
+| [execution-model](docs/architecture/execution-model.md) | Per-mode execution paths |
+| [domain-contracts](docs/architecture/domain-contracts.md) | Domain objects, API vs transport, tool abstraction, task state machine |
 | [operating-modes](docs/architecture/operating-modes.md) | Inference ownership, CapabilityMode, escalation contract |
 | [capability-negotiation](docs/architecture/capability-negotiation.md) | ProviderCapabilities, ReasoningBudget, APPLY/DEGRADE/EMULATE/REJECT |
 | [component-boundaries](docs/architecture/component-boundaries.md) | Interfaces, ownership, dependency rules |
@@ -543,6 +579,6 @@ This is a **logical structure**, not an instruction to create every directory no
 | [inference](docs/architecture/inference.md) | Provider abstraction, policy translation, capability negotiation |
 | [security](docs/architecture/security.md) | Threat model, boundaries, sandboxing |
 | [architecture-review](docs/architecture/architecture-review.md) | Risks, failure modes, Rust-value analysis |
-| [implementation-phases](docs/architecture/implementation-phases.md) | Phase 0–11 roadmap |
+| [implementation-phases](docs/architecture/implementation-phases.md) | Phase 0–12 roadmap |
 | [decisions/](docs/architecture/decisions/) | ADRs for major architectural decisions |
 | [diagrams/](docs/architecture/diagrams/) | Mermaid diagrams |

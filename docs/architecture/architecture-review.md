@@ -40,7 +40,9 @@ or overturn **via a decision record**, not silently.
 
 ## 3. Unnecessary Complexity (deliberately avoided)
 
-- **No microservices.** One gateway process; subsystems are in-process modules.
+- **No microservices.** One core process (three in-process runtime modules);
+  subsystems are in-process modules. `apps/mcp-server`/`research-runtime`/
+  `inference-runtime` are logical runtimes, not three network daemons.
 - **No three databases in v1.** SQLite (system-of-record) + DuckDB (analytics)
   only; PostgreSQL deferred.
 - **No agent swarm / computer-use / distributed agents.** Trajectory interfaces
@@ -95,12 +97,39 @@ or overturn **via a decision record**, not silently.
 
 - **Over-claiming control** → capability matrix states what each mode
   guarantees; `STUDIO_NATIVE` rows are `client-dependent`, never "Yes".
-- **Credential bleed between modes** → gateway-owned API credentials are never
-  exposed to `STUDIO_NATIVE` MCP tool payloads or model-visible context.
+- **Credential bleed between modes** → Inference-Runtime-owned API credentials
+  are never exposed to `STUDIO_NATIVE` MCP tool payloads or model-visible
+  context.
 - **MCP grant ⇒ backend access** → MCP permissions and inference ownership are
   separate boundaries; tool access grants no backend-invocation rights.
 - **Silent XHIGH degradation** → negotiation outcomes (`DEGRADE`/`EMULATE`/
   `REJECT`) are recorded and surfaced, not hidden.
+
+### Boundary risks (Phase 0.75)
+
+| Risk | Mitigation |
+|------|------------|
+| MCP Server becomes a monolith | MCP owns protocol/validation/permissions only; all research logic lives in the Research Runtime |
+| Research Runtime becomes provider-specific | Provider details live only in the Inference Runtime; workflows depend on `InferenceProvider` |
+| Inference implementation leaks into workflows | Workflow Engine → Inference Runtime → Provider; no provider-specific requests in workflows |
+| MCP schemas become internal domain models | Schema adapters (ADR 0023); domain objects are transport-neutral |
+| Tool registry becomes MCP-specific | Internal Tool Registry + adapters (ADR 0020) |
+| Excessive IPC | in-process > FFI > IPC > network (ADR 0021) |
+| Excessive Rust | profile-first rule (§5); Rust only where measured |
+| Excessive microservices | logical runtimes ≠ network daemons (ADR 0021) |
+
+### Failure risks (Phase 0.75)
+
+| Risk | Mitigation |
+|------|------------|
+| Partial workflow completion | Stage-level checkpoints; resumable task state machine |
+| Provider outage | Retry / provider switch / explicit failure (ADR 0022) |
+| Retrieval outage | Report insufficient evidence; never fabricate |
+| MCP outage | Studio continues; research capability degrades |
+| Corrupt session state | Checkpointing + content hashing + append-only decisions |
+| Tool timeout | Per-tool timeout + resource limits in the execution boundary |
+| Stale research memory | Claims reference source hash; re-verify on change |
+| Inconsistent artifacts | Artifact provenance + versioning (ADR 0012) |
 
 ---
 
@@ -164,18 +193,21 @@ algorithms — everything model-adjacent or fast-changing.
 | Parallel trajectories | `Trajectory` interface (established now) |
 | New operating mode | `CapabilityMode` value + capability-matrix row |
 | Automatic escalation | Escalation contract (established now); heuristics deferred |
+| New transport | New adapter onto the transport-neutral Research Runtime API (ADR 0023) |
 | Dashboard | Read-only observability interface |
-| Distributed workers | Later; the gateway's manager interfaces are the boundary |
+| Distributed workers | Later; the Research Runtime's manager interfaces are the boundary |
 
 ---
 
 ## 9. Verdict
 
-The architecture is **internally consistent** for Phase 0.5: concerns are
+The architecture is **internally consistent** for Phase 0.75: concerns are
 separated, layers are decoupled, the inference seam absorbs provider risk, the
 memory/context/verification split prevents reasoning-from-prompt-only, the
-polyglot strategy is bounded by a "profile first" rule, and — critically —
-**inference ownership is now explicit** through `CapabilityMode`, so the system
-can no longer imply that an MCP server controls Qwen Studio's inference. The
-remaining work is to lock the few Phase-0 ambiguities (§1) into defaults and
-proceed to Phase 1.
+polyglot strategy is bounded by a "profile first" rule, inference ownership is
+explicit through `CapabilityMode`, and — now — the **runtime boundary** is
+explicit: MCP Server (capability exposure), Research Runtime (provider-
+independent research/orchestration), and Inference Runtime (provider-facing
+model execution) are logically separate even when deployed in one process.
+The remaining work is to lock the few Phase-0 ambiguities (§1) into defaults
+and proceed to Phase 1.

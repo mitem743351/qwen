@@ -4,26 +4,28 @@
 sequenceDiagram
     autonumber
     participant QS as Qwen Studio (MCP client)
-    participant EP as MCP Entrypoint
-    participant REG as Tool Registry
+    participant MCP as MCP Server
+    participant REG as Tool Registry (MCP view)
     participant PB as Permission Boundary
-    participant GW as Gateway handler
+    participant RR as Research Runtime handler
     participant AUD as Audit Log
 
-    QS->>EP: tool request (name + args)
-    EP->>REG: resolve tool + JSON Schema
+    QS->>MCP: tool request (name + args)
+    MCP->>REG: resolve tool + JSON Schema
     alt tool unknown or args invalid
-        EP-->>QS: structured validation error
+        MCP-->>QS: structured validation error
     else valid
-        EP->>PB: check permission class<br/>(read | analyze | write | execute | destructive)
+        MCP->>MCP: adapt MCP schema → domain object (MCPRequest)
+        MCP->>PB: check permission class<br/>(read | analyze | write | execute | destructive)
         alt not permitted (e.g. write/destructive disabled)
-            EP-->>QS: structured denial (no silent downgrade)
-            EP->>AUD: record denial
+            MCP-->>QS: structured denial (no silent downgrade)
+            MCP->>AUD: record denial
         else permitted
-            EP->>GW: dispatch typed request
-            GW-->>EP: typed result
-            EP->>AUD: record call (args-hash, result-hash, latency)
-            EP-->>QS: typed tool result
+            MCP->>RR: dispatch domain request
+            RR-->>MCP: domain result
+            MCP->>MCP: adapt domain object → MCP result
+            MCP->>AUD: record call (args-hash, result-hash, latency)
+            MCP-->>QS: typed tool result
         end
     end
 ```

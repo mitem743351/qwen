@@ -3,7 +3,8 @@
 How data moves through the system: the request path, the ingest path, the
 persistence path, and state transitions. Every flow obeys the downward
 dependency rule. **The request path is mode-dependent** — there is no single
-universal "Qwen Studio → gateway → inference" path.
+universal "Qwen Studio → gateway → inference" path, and Qwen Studio's model
+inference is never routed through the MCP Server.
 
 ---
 
@@ -15,23 +16,26 @@ universal "Qwen Studio → gateway → inference" path.
 Qwen Studio ──▶ Qwen model ──▶ Qwen decides to call MCP
     │                                │
     │                                ▼
-    │                         MCP Entrypoint
+    │                         MCP Server
     │                            │ permission check + arg validation
     │                            ▼
-    │                    capability handler (retrieve / verify / compute / memory)
+    │                    Research Runtime capability handler
+    │                    (retrieve / verify / compute / memory)
     │                            │
     │◀────────── typed result ───┘
     ▼
 Qwen continues reasoning (its own inference loop)
 ```
 
-The gateway provides **capabilities**; it never touches the model's inference
-loop, parameters, thinking budget, or generation limits.
+The Research Runtime provides **capabilities**; the local system never touches
+the model's inference loop, parameters, thinking budget, or generation limits.
 
 ### 1.2 GATEWAY_INFERENCE (orchestration-owned)
 
 ```text
-Client (Studio or other) ──▶ Gateway
+Client (Studio or other) ──▶ MCP Server or direct Research Runtime API
+    ▼
+Research Runtime
     ▼
 Task Router ──▶ intent + complexity
     ▼
@@ -42,7 +46,7 @@ Task Decomposer ──▶ tasks[]
 Workflow Engine ──▶ stage loop
     │        ┌──────────────────────────────────────────────┐
     │        │  stage: retrieve  ──▶ Retrieval pipeline       │
-    │        │  stage: reason    ──▶ Inference Adapter        │
+    │        │  stage: reason    ──▶ Inference Runtime        │
     │        │                       └─▶ capability negotiation
     │        │                           └─▶ InferenceProvider
     │        │  stage: compute   ──▶ Computation/Tools        │
@@ -128,19 +132,20 @@ research state, because the persisted state is **provider-independent**.
 ## 5. Tool Call Path (permission boundary)
 
 ```text
-Workflow Engine ──▶ Tools subsystem
+Workflow Engine (Research Runtime) ──▶ Internal Tool Registry
     │   request carries declared permission class
     ▼
 Permission Boundary (read | analyze | write | execute | destructive)
     │   deny/confirm as required
     ▼
-Tool implementation (Filesystem / Git / other MCP)
+Tool implementation (Filesystem / Git / Rust module / other)
     ▼
 Audit log (what ran, arguments, result hash, duration)
 ```
 
 Every tool invocation is audited. `write` and `destructive` operations require
-independent enablement and, where configured, confirmation.
+independent enablement and, where configured, confirmation. MCP is one adapter
+onto the Internal Tool Registry, not the registry itself.
 
 ---
 
@@ -148,10 +153,10 @@ independent enablement and, where configured, confirmation.
 
 | Data | Direction | Notes |
 |------|-----------|-------|
-| User request | Studio → MCP → Gateway (STUDIO_NATIVE) or Client → Gateway (GATEWAY_INFERENCE) | Mode-dependent |
-| Tool result | Tools → Gateway → (context) | Upward, typed |
-| Model output | Inference → Workflow Engine | **Gateway-owned modes only**; never to storage raw except as structured state |
-| Escalation handoff | Studio → Gateway (`EscalationRequest` → `EscalationResult`) | HYBRID only |
+| User request | Studio → MCP Server → Research Runtime (STUDIO_NATIVE) or Client → Research Runtime (GATEWAY_INFERENCE) | Mode-dependent |
+| Tool result | Tools → Research Runtime → (context) | Upward, typed |
+| Model output | Inference Runtime → Research Runtime (Workflow Engine) | **GATEWAY_INFERENCE/HYBRID only**; never to storage raw except as structured state |
+| Escalation handoff | Studio → Research Runtime (`EscalationRequest` → `EscalationResult`) | HYBRID only |
 | Corpus content | RAW → INDEXED → STRUCTURED → DERIVED | One-way, immutable source |
 | Retrieval results | Retrieval → Context Engine | Only via typed evidence records |
 | Observability events | All layers → log/telemetry | Redacted of chain-of-thought |
