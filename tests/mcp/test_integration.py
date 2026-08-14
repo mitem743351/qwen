@@ -99,11 +99,11 @@ def test_mcp_roundtrip() -> None:
             assert state["current_stage"] == "retrieving"
             assert state["plan"]["steps"] == ["plan", "retrieve", "reason", "verify", "synthesize"]
 
-            # 8. Error normalization: unknown mode → safe INVALID_PARAMS error.
-            with pytest.raises(MCPError) as exc:
-                await session.call_tool("create_session", {"mode": "bogus"})
-            assert exc.value.code == -32602
-            assert "invalid arguments" in exc.value.message
+            # 8. Error normalization: unknown mode is rejected by the
+            #    authoritative wire schema (Literal enum) → an is_error result.
+            result = await session.call_tool("create_session", {"mode": "bogus"})
+            assert result.is_error is True
+            assert "mode" in _text(result).lower()
 
             # 9. Session/task isolation: unknown session id → safe error.
             with pytest.raises(MCPError):

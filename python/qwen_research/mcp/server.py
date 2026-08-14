@@ -10,6 +10,7 @@ Research Runtime and Domain layers have no dependency on this module.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from typing import Any, TypeVar
@@ -23,7 +24,18 @@ from qwen_research.mcp.adapters import SchemaAdapter
 from qwen_research.mcp.config import MCPServerConfig
 from qwen_research.mcp.errors import map_error
 from qwen_research.mcp.permissions import DEFAULT_TOOL_PERMISSIONS, ToolPermissionPolicy
-from qwen_research.mcp.schemas import DEFAULT_TOOLS, TOOL_DESCRIPTIONS
+from qwen_research.mcp.schemas import (
+    DEFAULT_TOOLS,
+    TOOL_DESCRIPTIONS,
+    DescriptionParam,
+    MetadataParam,
+    ModeParam,
+    OptionalSessionIdParam,
+    ProjectIdParam,
+    ReasoningProfileParam,
+    SessionIdParam,
+    TaskIdParam,
+)
 from qwen_research.mcp.transport import MCPTransport, create_transport
 from qwen_research.research.interfaces import ResearchRuntime
 
@@ -77,7 +89,6 @@ class MCPServerApp:
         )
         self._transport = transport or create_transport(self._config.transport)
         self._status = "initialized"
-        self._tool_names: list[str] = []
         self._server = self._build_server()
 
     # -- lifecycle --------------------------------------------------------
@@ -108,9 +119,26 @@ class MCPServerApp:
 
     # -- diagnostics ------------------------------------------------------
 
+    def tool_catalog(self) -> dict[str, dict[str, Any]]:
+        """Return the authoritative MCP wire tool surface.
+
+        Keys are tool names; values carry the tool's ``description`` and
+        ``input_schema`` exactly as the SDK exposes them on the wire. This is
+        the single source of truth for tests and diagnostics — there is no
+        parallel hand-written schema to drift.
+
+        (``asyncio.run`` is used because the SDK's ``list_tools`` is async;
+        call this from a sync context only.)
+        """
+        tools = asyncio.run(self._server.list_tools())
+        return {
+            tool.name: {"description": tool.description, "input_schema": tool.input_schema}
+            for tool in tools
+        }
+
     def list_tools(self) -> list[str]:
-        """Return the names of registered tools (diagnostics)."""
-        return sorted(self._tool_names)
+        """Return the registered tool names (derived from the wire catalog)."""
+        return sorted(self.tool_catalog())
 
     def diagnostics(self) -> dict[str, Any]:
         """Minimal local diagnostics (no sensitive data)."""
@@ -131,7 +159,7 @@ class MCPServerApp:
         runtime = self._runtime
         policy = self._policy
 
-        def get_session(session_id: str) -> dict[str, Any]:
+        def get_session(session_id: SessionIdParam) -> dict[str, Any]:
             def run() -> dict[str, Any]:
                 session = runtime.get_session(SessionId(session_id))
                 return adapter.session_result(session)
@@ -139,9 +167,9 @@ class MCPServerApp:
             return guarded_call(policy, "get_session", run)
 
         def create_session(
-            project_id: str = "default",
-            mode: str = "studio_native",
-            metadata: dict[str, str] | None = None,
+            project_id: ProjectIdParam = "default",
+            mode: ModeParam = "studio_native",
+            metadata: MetadataParam = None,
         ) -> dict[str, Any]:
             def run() -> dict[str, Any]:
                 session = runtime.create_session(
@@ -154,9 +182,9 @@ class MCPServerApp:
             return guarded_call(policy, "create_session", run)
 
         def execute_task(
-            description: str,
-            session_id: str | None = None,
-            reasoning_profile: str = "DEEP",
+            description: DescriptionParam,
+            session_id: OptionalSessionIdParam = None,
+            reasoning_profile: ReasoningProfileParam = "DEEP",
         ) -> dict[str, Any]:
             def run() -> dict[str, Any]:
                 task = runtime.execute_task(
@@ -168,21 +196,21 @@ class MCPServerApp:
 
             return guarded_call(policy, "execute_task", run)
 
-        def continue_task(task_id: str) -> dict[str, Any]:
+        def continue_task(task_id: TaskIdParam) -> dict[str, Any]:
             def run() -> dict[str, Any]:
                 task = runtime.continue_task(TaskId(task_id))
                 return adapter.task_result(task)
 
             return guarded_call(policy, "continue_task", run)
 
-        def get_task_state(task_id: str) -> dict[str, Any]:
+        def get_task_state(task_id: TaskIdParam) -> dict[str, Any]:
             def run() -> dict[str, Any]:
                 task = runtime.inspect_task(TaskId(task_id))
                 return adapter.task_result(task)
 
             return guarded_call(policy, "get_task_state", run)
 
-        def get_research_state(task_id: str) -> dict[str, Any]:
+        def get_research_state(task_id: TaskIdParam) -> dict[str, Any]:
             def run() -> dict[str, Any]:
                 state = runtime.get_state(TaskId(task_id))
                 return adapter.research_state_result(state)
@@ -203,7 +231,6 @@ class MCPServerApp:
             if name not in handlers:
                 raise ConfigurationError(f"unknown MCP tool {name!r}")
             server.add_tool(handlers[name], name=name, description=TOOL_DESCRIPTIONS[name])
-            self._tool_names.append(name)
 
         return server
 

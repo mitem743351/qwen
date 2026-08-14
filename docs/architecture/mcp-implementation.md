@@ -61,8 +61,14 @@ or retrieval logic lives in the MCP layer.
 | `get_task_state` | READ | `inspect_task` |
 | `get_research_state` | READ | `get_state` |
 
-Input schemas live in `schemas.py` (JSON-Schema dicts, the semantic authority);
-the SDK infers compatible wire schemas from the handler signatures.
+Input schemas are **derived from the handler signatures** — the authoritative
+MCP wire schema. `schemas.py` holds the parameter *types* (as
+`Annotated`/`Literal`/`Field` aliases), tool descriptions, and the tool list;
+there are no hand-written JSON-Schema dicts that could drift from the code.
+`Literal` values become the wire `enum`, `Field(description=...)` becomes the
+property `description`, signature defaults become `default`, and parameters
+without a default become `required`. `tests/mcp/test_schemas.py` asserts the
+actual wire schemas (via `tool_catalog()`) match the domain enums.
 `WRITE`/`EXECUTE`/`DESTRUCTIVE` are **not** granted by any Phase 2 tool.
 
 **Not exposed yet** (their underlying implementations do not exist):
