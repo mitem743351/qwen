@@ -50,9 +50,12 @@ def test_mcp_roundtrip() -> None:
             tools = await session.list_tools()
             names = sorted(t.name for t in tools.tools)
             assert names == [
+                "assess_evidence",
                 "continue_task",
+                "create_claim",
                 "create_session",
                 "execute_task",
+                "get_contradictions",
                 "get_open_questions",
                 "get_project_memory",
                 "get_research_memory",
@@ -60,8 +63,11 @@ def test_mcp_roundtrip() -> None:
                 "get_session",
                 "get_source",
                 "get_task_state",
+                "get_verification_report",
+                "link_claim_evidence",
                 "save_research_memory",
                 "search_corpus",
+                "verify_claim",
             ]
 
             # 2. create_session

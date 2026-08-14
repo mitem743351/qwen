@@ -1,10 +1,12 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 4 — Semantic Retrieval, Hybrid Search, and Persistent Research Memory.
+> **Status:** Phase 5 — Evidence Integrity, Source Quality, Claim Verification, and Contradiction Analysis.
 > The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
-> persistent structured memory, still with no Qwen-API inference.
+> persistent structured memory; Phase 5 adds the deterministic evidence-integrity
+> and verification foundation (claims, evidence, source quality, corroboration,
+> contradictions), still with no Qwen-API inference.
 > **Audience:** Implementers, code agents, reviewers
 > **Scope:** This document is the stable, binding architecture contract for the
 > "local AI research infrastructure" that extends **Qwen Studio** through MCP.
@@ -382,6 +384,15 @@ calculation validation · cross-document consistency.
 
 Callable **automatically** (deep workflows) **and explicitly** (MCP).
 
+> **Phase 5 foundation (implemented).** The deterministic baseline is live:
+> structured claims (`claims/`), evidence records (`evidence/`), source-quality
+> assessment (`sources/`), contradiction analysis (`contradictions/`), and a
+> scoped verification engine (`verification/`) that emits `VerificationReport`s
+> and coverage metrics. Verification statuses are **bounded** —
+> `VERIFIED_WITHIN_CORPUS` means "passed the configured deterministic
+> procedures against the currently indexed corpus", never absolute truth. See
+> [`docs/architecture/evidence-integrity.md`](docs/architecture/evidence-integrity.md).
+
 ---
 
 ## 13. Computation
@@ -585,6 +596,10 @@ Rust library.
 | [hybrid-retrieval](docs/architecture/hybrid-retrieval.md) | Fusion, diversity, reranker, fallback |
 | [memory](docs/architecture/memory.md) | Structured persistent memory, provenance, isolation |
 | [memory](docs/architecture/memory.md) | Stores, entity model, lifecycle |
+| [evidence-integrity](docs/architecture/evidence-integrity.md) | Evidence integrity & verification foundation (Phase 5) |
+| [claims](docs/architecture/claims.md) | Claim model, status lifecycle, claim–evidence links |
+| [verification](docs/architecture/verification.md) | Verification engine, rules, statuses, coverage |
+| [contradictions](docs/architecture/contradictions.md) | Contradiction types, statuses, deterministic detection |
 | [inference](docs/architecture/inference.md) | Provider abstraction, policy translation, capability negotiation |
 | [security](docs/architecture/security.md) | Threat model, boundaries, sandboxing |
 | [architecture-review](docs/architecture/architecture-review.md) | Risks, failure modes, Rust-value analysis |

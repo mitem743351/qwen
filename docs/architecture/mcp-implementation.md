@@ -1,8 +1,8 @@
 # MCP Implementation
 
-> **Status:** Phases 2, 3, 4, and 4.1 implemented. This documents what **exists**
-> in `python/qwen_research/mcp/`, and distinguishes it from future MCP
-> capability.
+> **Status:** Phases 2, 3, 4, 4.1, and 5 implemented. This documents what
+> **exists** in `python/qwen_research/mcp/`, and distinguishes it from future
+> MCP capability.
 
 ---
 
@@ -10,9 +10,9 @@
 
 A **real, testable external adapter**: Qwen Studio (or another MCP client)
 connects over stdio to an MCP server that exposes Research Runtime operations —
-session/task management (Phase 2), corpus retrieval (Phase 3), and hybrid
-search + persistent memory (Phase 4). The MCP layer is an **adapter**, not the
-research system.
+session/task management (Phase 2), corpus retrieval (Phase 3), hybrid search +
+persistent memory (Phase 4), and deterministic evidence-integrity / verification
+(Phase 5). The MCP layer is an **adapter**, not the research system.
 
 ```text
 Qwen Studio ── MCP (stdio) ──▶ MCP Server ──▶ Research Runtime ──▶ Domain
@@ -69,6 +69,12 @@ or retrieval logic lives in the MCP layer.
 | `get_research_memory` | READ | `get_research_memory` | 4 |
 | `get_open_questions` | READ | `get_open_questions` | 4 |
 | `save_research_memory` | WRITE | `save_research_memory` | 4 |
+| `create_claim` | WRITE | `create_claim` | 5 |
+| `link_claim_evidence` | WRITE | `link_claim_evidence` | 5 |
+| `assess_evidence` | ANALYZE | `assess_evidence` | 5 |
+| `verify_claim` | ANALYZE | `verify_claim` | 5 |
+| `get_verification_report` | READ | `get_verification_report` | 5 |
+| `get_contradictions` | READ | `get_contradictions` | 5 |
 
 Input schemas are **derived from the handler signatures** — the authoritative
 MCP wire schema. `schemas.py` holds the parameter *types* (as
@@ -87,7 +93,7 @@ which calls the Retriever, which calls the CorpusIndex (see
 [`retrieval.md`](retrieval.md)).
 
 **Not exposed yet** (their underlying implementations do not exist):
-`retrieve_evidence`, `verify_claim`, `run_analysis`.
+`retrieve_evidence`, `run_analysis`.
 
 ---
 
@@ -112,6 +118,7 @@ chain-of-thought:
 | `PermissionError` | `INVALID_PARAMS` — "permission denied" |
 | `ProvenanceError` | `INVALID_PARAMS` — "invalid reference: …" (category + id, no private data) |
 | `DocumentNotFoundError` | `INVALID_PARAMS` — "not found" |
+| `ClaimNotFoundError` / `EvidenceNotFoundError` / `ContradictionNotFoundError` / `VerificationReportNotFoundError` | `INVALID_PARAMS` — "not found" |
 | `PathSecurityError` | `INVALID_PARAMS` — "access denied" (path never echoed) |
 | `RetrievalBackendUnavailable` | `INTERNAL_ERROR` — "retrieval unavailable" |
 | `UnsupportedOperationError` | `INTERNAL_ERROR` — "capability unavailable" |
@@ -143,20 +150,23 @@ transport, and the registered tool list — no sensitive data.
 
 - **Unit** (`tests/mcp/`): schemas, adapters (MCP↔domain), permissions, error
   mapping, server construction/lifecycle, guarded dispatch.
-- **Integration** (`test_integration.py`): a real stdio subprocess round-trip
-  using the official MCP client — discovery, all six tools, structured results,
-  error normalization, and shutdown. No Qwen or network required.
+- **Integration** (`test_integration.py`, `test_verification_integration.py`):
+  a real stdio subprocess round-trip using the official MCP client — discovery,
+  all 18 tools, structured results, error normalization, and shutdown (plus a
+  full create→link→assess→verify→report→contradictions verification round-trip
+  and a write-denied test). No Qwen or network required.
 
 ---
 
 ## Explicitly NOT implemented (future MCP capabilities)
 
-- `retrieve_evidence` / `verify_claim` / `run_analysis` tools
+- `retrieve_evidence` / `run_analysis` tools
 - MCP resources (project context, documents, artifacts) — reserved until their
   semantics exist
 - Streamable HTTP / SSE transports
 - Remote transport / authentication
-- Qwen API, verification, computation engine
+- Qwen API, computation engine; model-assisted verification (the `verify_claim`
+  tool exists but is deterministic — see [`verification.md`](verification.md))
 
 See [`mcp.md`](mcp.md) for the architecture contract and
 [`../setup/mcp.md`](../setup/mcp.md) for running instructions.

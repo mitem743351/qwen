@@ -11,7 +11,10 @@ from __future__ import annotations
 import dataclasses
 from typing import Any
 
-from qwen_research.common.ids import ClaimId, SessionId, TaskId, WorkflowId
+from qwen_research.claims.models import Claim, ClaimType, QuantitativeClaim, Scope
+from qwen_research.claims.relationships import ClaimEvidenceLink, ClaimEvidenceRelationship
+from qwen_research.common.ids import ClaimId, EvidenceId, SessionId, TaskId, WorkflowId
+from qwen_research.contradictions.models import Contradiction
 from qwen_research.domain.artifact import Artifact
 from qwen_research.domain.errors import (
     DocumentNotFoundError,
@@ -23,7 +26,6 @@ from qwen_research.domain.reasoning import DEEP, ReasoningProfile
 from qwen_research.domain.research import ResearchPlan, ResearchState
 from qwen_research.domain.session import Session
 from qwen_research.domain.task import Task, TaskStatus, next_active_status
-from qwen_research.domain.verification import VerificationResult
 from qwen_research.memory.context import ContextBudget, ResearchContext, build_context
 from qwen_research.memory.models import ResearchMemory, ResearchQuestion
 from qwen_research.memory.retriever import MemoryHit
@@ -36,6 +38,8 @@ from qwen_research.research.state import (
 )
 from qwen_research.retrieval.interface import Retriever
 from qwen_research.retrieval.models import DocumentView, SearchOptions, SearchResult
+from qwen_research.verification.models import EvidenceAssessment, VerificationReport
+from qwen_research.verification.service import EvidenceIntegrityService
 from qwen_research.workflows.base import WorkflowContext, WorkflowResult
 from qwen_research.workflows.registry import WorkflowRegistry
 
@@ -53,6 +57,7 @@ class InMemoryResearchRuntime:
         workflow_registry: WorkflowRegistry | None = None,
         retriever: Retriever | None = None,
         memory: MemoryService | None = None,
+        verification: EvidenceIntegrityService | None = None,
     ) -> None:
         self._session_store = session_store or InMemorySessionStore()
         self._task_store = task_store or InMemoryTaskStore()
@@ -61,6 +66,7 @@ class InMemoryResearchRuntime:
         self._workflow_registry = workflow_registry or WorkflowRegistry()
         self._retriever = retriever
         self._memory = memory
+        self._verification = verification
 
     # -- sessions ---------------------------------------------------------
 
@@ -242,8 +248,54 @@ class InMemoryResearchRuntime:
             budget=budget,
         )
 
-    def verify_claim(self, claim_id: ClaimId) -> VerificationResult:
-        raise UnsupportedOperationError("verification is not implemented until Phase 6")
+    # -- verification / evidence integrity (Phase 5) -----------------------
+
+    def _require_verification(self) -> EvidenceIntegrityService:
+        if self._verification is None:
+            raise UnsupportedOperationError("no verification service configured")
+        return self._verification
+
+    def create_claim(
+        self,
+        project_id: str,
+        text: str,
+        *,
+        claim_type: ClaimType = ClaimType.UNKNOWN,
+        source_refs: tuple[str, ...] = (),
+        scope: Scope | None = None,
+        quantitative: QuantitativeClaim | None = None,
+    ) -> Claim:
+        return self._require_verification().create_claim(
+            project_id,
+            text,
+            claim_type=claim_type,
+            source_refs=source_refs,
+            scope=scope,
+            quantitative=quantitative,
+        )
+
+    def link_claim_evidence(
+        self,
+        claim_id: ClaimId,
+        evidence_id: EvidenceId,
+        relationship: ClaimEvidenceRelationship,
+        rationale: str = "",
+    ) -> ClaimEvidenceLink:
+        return self._require_verification().link_claim_evidence(
+            claim_id, evidence_id, relationship, rationale
+        )
+
+    def assess_evidence(self, claim_id: ClaimId, evidence_id: EvidenceId) -> EvidenceAssessment:
+        return self._require_verification().assess_evidence(claim_id, evidence_id)
+
+    def verify_claim(self, claim_id: ClaimId) -> VerificationReport:
+        return self._require_verification().verify_claim(claim_id)
+
+    def get_verification_report(self, report_id: str) -> VerificationReport:
+        return self._require_verification().get_verification_report(report_id)
+
+    def get_contradictions(self, project_id: str) -> list[Contradiction]:
+        return self._require_verification().get_contradictions(project_id)
 
     # -- reserved lifecycle operations (contract only) --------------------
     # The domain supports PAUSED / WAITING / NEEDS_INPUT / CANCELLED as valid

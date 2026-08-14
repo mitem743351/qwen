@@ -19,9 +19,12 @@ def _runtime() -> InMemoryResearchRuntime:
 
 
 EXPECTED_TOOLS = [
+    "assess_evidence",
     "continue_task",
+    "create_claim",
     "create_session",
     "execute_task",
+    "get_contradictions",
     "get_open_questions",
     "get_project_memory",
     "get_research_memory",
@@ -29,8 +32,11 @@ EXPECTED_TOOLS = [
     "get_session",
     "get_source",
     "get_task_state",
+    "get_verification_report",
+    "link_claim_evidence",
     "save_research_memory",
     "search_corpus",
+    "verify_claim",
 ]
 
 
@@ -45,7 +51,7 @@ def test_diagnostics() -> None:
     assert d["server"] == "qwen-research"
     assert d["transport"] == "stdio"
     assert d["status"] == "initialized"
-    assert len(d["registered_tools"]) == 12
+    assert len(d["registered_tools"]) == 18
     assert d["runtime_status"] == "ok"
 
 

@@ -60,4 +60,10 @@ DEFAULT_TOOL_PERMISSIONS: dict[str, MCPPermission] = {
     "get_research_memory": MCPPermission.READ,
     "get_open_questions": MCPPermission.READ,
     "save_research_memory": MCPPermission.WRITE,
+    "create_claim": MCPPermission.WRITE,
+    "link_claim_evidence": MCPPermission.WRITE,
+    "assess_evidence": MCPPermission.ANALYZE,
+    "verify_claim": MCPPermission.ANALYZE,
+    "get_verification_report": MCPPermission.READ,
+    "get_contradictions": MCPPermission.READ,
 }

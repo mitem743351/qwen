@@ -77,6 +77,18 @@ at repository/query boundaries — never by prompts.
 
 ---
 
+## Verification integration (Phase 5)
+
+Phase 5 adds a separate **claims/verification store** (see
+[`evidence-integrity.md`](evidence-integrity.md)) that is distinct from memory:
+claims and their verification reports live in the verification store, while
+`ResearchMemory` remains the provenance-bearing knowledge record. The two are
+linked by `claim_refs`: a `ResearchMemory` entry can reference a verified
+claim, and the claim's memory-promotion status (`UNREVIEWED → ASSESSED →
+SUPPORTED → CORROBORATED`) is updated by the verification engine — but
+`UNREVIEWED` claims are never silently promoted. `SUPPORTED ≠ CORROBORATED ≠
+TRUE`.
+
 ## Context assembly
 
 `build_context()` combines a request with bounded evidence + memory + open

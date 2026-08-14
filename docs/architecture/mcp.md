@@ -7,8 +7,11 @@ It is deliberately narrow, semantic, and permission-gated.
 > `python/qwen_research/mcp/` (stdio transport, Research-Runtime tools,
 > permissions, error normalization). Phase 3 adds retrieval tools
 > (`search_corpus`, `get_source`); Phase 4 adds hybrid search and the memory
-> tools. See [`mcp-implementation.md`](mcp-implementation.md) for what exists
-> vs. future capability.
+> tools; Phase 5 adds the evidence-integrity tools (`create_claim`,
+> `link_claim_evidence`, `assess_evidence`, `verify_claim`,
+> `get_verification_report`, `get_contradictions`). See
+> [`mcp-implementation.md`](mcp-implementation.md) for what exists vs. future
+> capability.
 
 > ### MCP ≠ Inference Control
 >
@@ -56,12 +59,17 @@ get_project_memory      # project-scoped memory                           ✅ (P
 get_research_memory     # research-derived claims with provenance         ✅ (Phase 4)
 get_open_questions      # unresolved research questions                   ✅ (Phase 4)
 save_research_memory    # save research memory (WRITE)                    ✅ (Phase 4)
+create_claim            # create a structured claim (UNREVIEWED)          ✅ (Phase 5, WRITE)
+link_claim_evidence     # link a claim to evidence with a relationship    ✅ (Phase 5, WRITE)
+assess_evidence         # assess evidence against a claim                 ✅ (Phase 5, ANALYZE)
+verify_claim            # run deterministic verification → report         ✅ (Phase 5, ANALYZE)
+get_verification_report # read a persisted verification report            ✅ (Phase 5, READ)
+get_contradictions      # list project contradictions                     ✅ (Phase 5, READ)
 retrieve_evidence       # fetch evidence for a claim/question with citations (future)
 read_source             # read a specific source (permission-gated)      (future)
 get_research_state      # session/project research state summary          ✅ (Phase 2)
 query_database          # run read-only analytical SQL against DuckDB     (future)
 run_analysis            # run a bounded deterministic analysis (Python/DuckDB) (future)
-verify_claim            # verify a claim against evidence/sources         (future)
 find_contradictions     # detect contradictions across the corpus         (future)
 save_artifact           # persist a generated artifact with provenance    (future)
 get_project_context     # retrieve project-scoped memory and context      (future)
@@ -109,9 +117,9 @@ Permissions are **classes**, independently controllable per tool and per
 session:
 
 ```text
-read        — observe (search, get_source, get_*_memory, get_open_questions)
-analyze     — compute/derive without side effects (create_session, execute_task, query_database, run_analysis, verify_claim)
-write       — create new data (save_research_memory, save_artifact)
+read        — observe (search, get_source, get_*_memory, get_open_questions, get_verification_report, get_contradictions)
+analyze     — compute/derive without side effects (create_session, execute_task, query_database, run_analysis, verify_claim, assess_evidence)
+write       — create new data (save_research_memory, save_artifact, create_claim, link_claim_evidence)
 execute     — run code/processes (run_analysis execution, git commands)
 destructive — delete/overwrite/mutate existing data
 ```

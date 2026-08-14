@@ -19,6 +19,9 @@ ClaimId = NewType("ClaimId", str)
 ArtifactId = NewType("ArtifactId", str)
 WorkflowId = NewType("WorkflowId", str)
 VerificationId = NewType("VerificationId", str)
+VerificationReportId = NewType("VerificationReportId", str)
+ContradictionId = NewType("ContradictionId", str)
+EvidenceAssessmentId = NewType("EvidenceAssessmentId", str)
 
 
 def new_id(prefix: str) -> str:

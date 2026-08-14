@@ -75,6 +75,23 @@ StringListParam = Annotated[
 ]
 StatusParam = Annotated[str | None, Field(description="Optional status value.")]
 
+# Phase 5 evidence-integrity params.
+ClaimTypeName = Literal[
+    "factual", "causal", "comparative", "quantitative", "definitional",
+    "predictive", "methodological", "normative", "unknown",
+]
+ClaimTypeParam = Annotated[ClaimTypeName, Field(description="The claim type.")]
+ClaimIdParam = Annotated[str, Field(description="The claim identifier.")]
+EvidenceIdParam = Annotated[str, Field(description="The evidence (chunk) identifier.")]
+ReportIdParam = Annotated[str, Field(description="The verification report identifier.")]
+ClaimEvidenceRelationshipName = Literal[
+    "supports", "contradicts", "qualifies", "contextualizes", "does_not_address",
+]
+ClaimEvidenceRelationshipParam = Annotated[
+    ClaimEvidenceRelationshipName, Field(description="The claim-evidence relationship.")
+]
+RationaleParam = Annotated[str | None, Field(description="Optional rationale text.")]
+
 TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_session": "Return a session by its session id.",
     "create_session": (
@@ -97,6 +114,12 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_research_memory": "Return research-derived memory (claims/conclusions) with provenance.",
     "get_open_questions": "Return unresolved research questions for a project.",
     "save_research_memory": "Save research-derived memory with explicit provenance.",
+    "create_claim": "Create a structured claim (status UNREVIEWED; no truth assertion).",
+    "link_claim_evidence": "Link a claim to corpus evidence with an explicit relationship.",
+    "assess_evidence": "Produce a structured assessment of evidence against a claim.",
+    "verify_claim": "Run the deterministic verification pipeline and return a report.",
+    "get_verification_report": "Return a persisted verification report by id.",
+    "get_contradictions": "Return contradictions (candidates/confirmed) for a project.",
 }
 
 #: The Phase 2 minimal tool set, in registration order.
@@ -113,4 +136,10 @@ DEFAULT_TOOLS: tuple[str, ...] = (
     "get_research_memory",
     "get_open_questions",
     "save_research_memory",
+    "create_claim",
+    "link_claim_evidence",
+    "assess_evidence",
+    "verify_claim",
+    "get_verification_report",
+    "get_contradictions",
 )

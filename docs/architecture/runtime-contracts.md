@@ -15,7 +15,7 @@ ResearchRuntime (protocol, research/interfaces.py)
     continue_task(task_id) -> Task
     inspect_task(task_id) -> Task
     retrieve_context(task_id)   # UnsupportedOperationError until Phase 3
-    verify_claim(claim_id)      # UnsupportedOperationError until Phase 6
+    verify_claim(claim_id) -> VerificationReport
     run_workflow(workflow_id, task_id) -> WorkflowResult
     get_state(task_id) -> ResearchState
     save_artifact(artifact) -> Artifact
@@ -38,8 +38,10 @@ signature (statically enforced by mypy via a conformance test).
   session; otherwise it auto-creates one. It creates, classifies, and plans the
   task and creates a `ResearchState`.
 - `continue_task` advances one step along the active execution progression.
-- `retrieve_context` / `verify_claim` raise `UnsupportedOperationError` (no
-  fabricated results — B23).
+- `retrieve_context` raises `UnsupportedOperationError` (no fabricated results —
+  B23). `verify_claim` and the other verification methods delegate to a
+  configured `EvidenceIntegrityService` (Phase 5); when no verification service
+  is configured they raise `UnsupportedOperationError` (B23).
 
 ### Retrieval (Phase 3–4)
 
@@ -61,6 +63,15 @@ a bounded `ResearchContext` of evidence + memory + open questions.
 via a configured `ProvenanceValidator` **before** the write commits; an
 unresolved reference raises `ProvenanceError` and nothing is persisted. This
 holds for every writer (MCP, CLI, API, workflow), not only MCP.
+
+### Verification (Phase 5)
+
+`create_claim`, `link_claim_evidence`, `assess_evidence`, `verify_claim`,
+`get_verification_report`, and `get_contradictions` delegate to a configured
+`EvidenceIntegrityService` (over a `VerificationStore` + optional `CorpusIndex`).
+`verify_claim` returns a persisted `VerificationReport` and updates the claim's
+memory-promotion status; without a verification service, these operations raise
+`UnsupportedOperationError`.
 
 ### Reserved lifecycle operations
 

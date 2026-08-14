@@ -18,7 +18,9 @@ from typing import Any, TypeVar
 from mcp.server.mcpserver import MCPServer as SDKMCPServer
 from mcp.shared.exceptions import MCPError
 
-from qwen_research.common.ids import SessionId, TaskId
+from qwen_research.claims.models import ClaimType
+from qwen_research.claims.relationships import ClaimEvidenceRelationship
+from qwen_research.common.ids import ClaimId, EvidenceId, SessionId, TaskId
 from qwen_research.domain.errors import ConfigurationError, PermissionError
 from qwen_research.mcp.adapters import SchemaAdapter
 from qwen_research.mcp.config import MCPServerConfig
@@ -27,10 +29,14 @@ from qwen_research.mcp.permissions import DEFAULT_TOOL_PERMISSIONS, ToolPermissi
 from qwen_research.mcp.schemas import (
     DEFAULT_TOOLS,
     TOOL_DESCRIPTIONS,
+    ClaimEvidenceRelationshipParam,
+    ClaimIdParam,
+    ClaimTypeParam,
     ContentParam,
     DescriptionParam,
     DocumentIdParam,
     DocumentTypesParam,
+    EvidenceIdParam,
     LexicalKParam,
     LimitParam,
     MaxChunksPerDocumentParam,
@@ -41,7 +47,9 @@ from qwen_research.mcp.schemas import (
     PathPrefixParam,
     ProjectIdParam,
     QueryParam,
+    RationaleParam,
     ReasoningProfileParam,
+    ReportIdParam,
     RetrievalModeParam,
     RootsParam,
     SemanticKParam,
@@ -343,6 +351,73 @@ class MCPServerApp:
 
             return guarded_call(policy, "save_research_memory", run)
 
+        def create_claim(
+            text: ContentParam,
+            project_id: ProjectIdParam = "default",
+            claim_type: ClaimTypeParam = "unknown",
+            source_refs: StringListParam = None,
+        ) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                claim = runtime.create_claim(
+                    project_id,
+                    text,
+                    claim_type=ClaimType(claim_type),
+                    source_refs=tuple(source_refs or ()),
+                )
+                return adapter.claim_result(claim)
+
+            return guarded_call(policy, "create_claim", run)
+
+        def link_claim_evidence(
+            claim_id: ClaimIdParam,
+            evidence_id: EvidenceIdParam,
+            relationship: ClaimEvidenceRelationshipParam,
+            rationale: RationaleParam = None,
+        ) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                link = runtime.link_claim_evidence(
+                    ClaimId(claim_id),
+                    EvidenceId(evidence_id),
+                    ClaimEvidenceRelationship(relationship),
+                    rationale or "",
+                )
+                return adapter.claim_evidence_link_result(link)
+
+            return guarded_call(policy, "link_claim_evidence", run)
+
+        def assess_evidence(
+            claim_id: ClaimIdParam,
+            evidence_id: EvidenceIdParam,
+        ) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                assessment = runtime.assess_evidence(ClaimId(claim_id), EvidenceId(evidence_id))
+                return adapter.evidence_assessment_result(assessment)
+
+            return guarded_call(policy, "assess_evidence", run)
+
+        def verify_claim(claim_id: ClaimIdParam) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                report = runtime.verify_claim(ClaimId(claim_id))
+                return adapter.verification_report_result(report)
+
+            return guarded_call(policy, "verify_claim", run)
+
+        def get_verification_report(report_id: ReportIdParam) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                report = runtime.get_verification_report(report_id)
+                return adapter.verification_report_result(report)
+
+            return guarded_call(policy, "get_verification_report", run)
+
+        def get_contradictions(
+            project_id: ProjectIdParam = "default",
+        ) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                contradictions = runtime.get_contradictions(project_id)
+                return adapter.contradictions_result(contradictions)
+
+            return guarded_call(policy, "get_contradictions", run)
+
         handlers: dict[str, Callable[..., Any]] = {
             "get_session": get_session,
             "create_session": create_session,
@@ -356,6 +431,12 @@ class MCPServerApp:
             "get_research_memory": get_research_memory,
             "get_open_questions": get_open_questions,
             "save_research_memory": save_research_memory,
+            "create_claim": create_claim,
+            "link_claim_evidence": link_claim_evidence,
+            "assess_evidence": assess_evidence,
+            "verify_claim": verify_claim,
+            "get_verification_report": get_verification_report,
+            "get_contradictions": get_contradictions,
         }
 
         enabled = self._config.enabled_tools or DEFAULT_TOOLS

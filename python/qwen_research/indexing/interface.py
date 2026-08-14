@@ -101,6 +101,10 @@ class CorpusIndex(Protocol):
         """Return all indexed document metadata."""
         ...
 
+    def list_stale_document_ids(self) -> set[str]:
+        """Return the ids of documents whose files are marked stale."""
+        ...
+
     def document_hash_map(self) -> dict[tuple[str, str], str]:
         """Return ``{(root_id, relative_path): content_hash}`` for incremental scanning."""
         ...

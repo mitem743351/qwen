@@ -7,12 +7,13 @@ persistent research memory, verification/citation/provenance, and deterministic
 computation — while Qwen Studio keeps its native conversational and web-search
 capabilities.
 
-> **Current status: Phase 4 — Semantic Retrieval, Hybrid Search, and Persistent Research Memory.**
+> **Current status: Phase 5 — Evidence Integrity, Source Quality, Claim Verification, and Contradiction Analysis.**
 > The architecture (Phases 0, 0.5, 0.75) is the approved baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
-> persistent structured memory. Still **no** Qwen API, verification engine, or
-> dashboard.
+> persistent structured memory; Phase 5 adds the deterministic evidence-integrity
+> and verification foundation. Still **no** Qwen API, gateway inference, LLM
+> verification, or dashboard.
 
 ## What this is
 
@@ -89,6 +90,14 @@ Phase 4 (semantic/hybrid retrieval + memory):
 - [`docs/architecture/memory.md`](docs/architecture/memory.md) — structured persistent memory
 - [`docs/setup/semantic-retrieval.md`](docs/setup/semantic-retrieval.md) — enabling hybrid search + memory
 
+Phase 5 (evidence integrity + verification):
+
+- [`docs/architecture/evidence-integrity.md`](docs/architecture/evidence-integrity.md) — the evidence-integrity foundation
+- [`docs/architecture/claims.md`](docs/architecture/claims.md) — claim model and lifecycle
+- [`docs/architecture/verification.md`](docs/architecture/verification.md) — verification engine, rules, statuses, coverage
+- [`docs/architecture/contradictions.md`](docs/architecture/contradictions.md) — contradiction types and detection
+- [`docs/setup/verification.md`](docs/setup/verification.md) — enabling verification tools
+
 Full architecture docs:
 
 | Area | Document |
@@ -121,8 +130,13 @@ Full architecture docs:
 | Semantic retrieval | [`semantic-retrieval.md`](docs/architecture/semantic-retrieval.md) |
 | Hybrid retrieval | [`hybrid-retrieval.md`](docs/architecture/hybrid-retrieval.md) |
 | Memory | [`memory.md`](docs/architecture/memory.md) |
+| Evidence integrity | [`evidence-integrity.md`](docs/architecture/evidence-integrity.md) |
+| Claims | [`claims.md`](docs/architecture/claims.md) |
+| Verification | [`verification.md`](docs/architecture/verification.md) |
+| Contradictions | [`contradictions.md`](docs/architecture/contradictions.md) |
 | Corpus setup | [`setup/corpus.md`](docs/setup/corpus.md) |
 | Semantic setup | [`setup/semantic-retrieval.md`](docs/setup/semantic-retrieval.md) |
+| Verification setup | [`setup/verification.md`](docs/setup/verification.md) |
 | Decisions (ADRs) | [`decisions/`](docs/architecture/decisions/) |
 | Mermaid diagrams | [`diagrams/`](docs/architecture/diagrams/) |
 
@@ -130,10 +144,11 @@ Full architecture docs:
 
 Phase 0.75 (architecture) is the approved baseline. Phases 1, 1.1, 1.2 (core
 contracts + hardening), Phase 2 (MCP server), Phase 3 (local corpus + lexical
-retrieval), and Phase 4 (semantic + hybrid retrieval and persistent memory) are
-**complete**. The Research Runtime remains provider- and transport-independent;
-the MCP server is a thin adapter over it, now serving hybrid evidence plus
-project-scoped memory. See
+retrieval), Phase 4 (semantic + hybrid retrieval and persistent memory), and
+Phase 5 (evidence integrity and verification foundation) are **complete**. The
+Research Runtime remains provider- and transport-independent; the MCP server is
+a thin adapter over it, now serving hybrid evidence, project-scoped memory, and
+deterministic claim verification. See
 [`implementation-phases.md`](docs/architecture/implementation-phases.md).
 
 ### Develop

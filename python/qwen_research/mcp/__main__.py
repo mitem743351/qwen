@@ -11,6 +11,8 @@ Optional environment configuration:
   hybrid by default.
 - ``QWEN_RESEARCH_MEMORY_DB`` — enable persistent structured memory and the
   ``get_*_memory`` / ``save_research_memory`` tools.
+- ``QWEN_RESEARCH_VERIFICATION_DB`` — enable the evidence-integrity layer
+  (claims, evidence links, assessments, verification reports, contradictions).
 
 Local-only: no network socket is opened.
 """
@@ -35,6 +37,7 @@ def build_runtime() -> ResearchRuntime:
     corpus_root = os.environ.get("QWEN_RESEARCH_CORPUS_ROOT")
     vector_db = os.environ.get("QWEN_RESEARCH_VECTOR_DB")
     memory_db = os.environ.get("QWEN_RESEARCH_MEMORY_DB")
+    verification_db = os.environ.get("QWEN_RESEARCH_VERIFICATION_DB")
 
     index = None
     if corpus_db and corpus_root:
@@ -79,7 +82,16 @@ def build_runtime() -> ResearchRuntime:
         validator = validator_from_corpus(index) if index is not None else None
         memory = MemoryService(store, validator=validator)
 
-    return InMemoryResearchRuntime(retriever=retriever, memory=memory)
+    verification = None
+    if verification_db:
+        from qwen_research.verification.service import EvidenceIntegrityService
+        from qwen_research.verification.sqlite import SqliteVerificationStore
+
+        vstore = SqliteVerificationStore(verification_db)
+        vstore.initialize()
+        verification = EvidenceIntegrityService(vstore, corpus_index=index)
+
+    return InMemoryResearchRuntime(retriever=retriever, memory=memory, verification=verification)
 
 
 def main() -> None:

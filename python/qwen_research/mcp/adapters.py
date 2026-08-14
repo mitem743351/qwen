@@ -16,6 +16,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from qwen_research.claims.models import Claim
+from qwen_research.claims.relationships import ClaimEvidenceLink
+from qwen_research.contradictions.models import Contradiction
 from qwen_research.domain.errors import ValidationError
 from qwen_research.domain.modes import OperatingMode
 from qwen_research.domain.reasoning import ReasoningProfile, get_profile
@@ -26,6 +29,7 @@ from qwen_research.memory.models import ResearchMemory, ResearchQuestion
 from qwen_research.memory.retriever import MemoryHit
 from qwen_research.retrieval.models import DocumentView, SearchResult
 from qwen_research.tools.base import Tool
+from qwen_research.verification.models import EvidenceAssessment, VerificationReport
 
 
 class SchemaAdapter:
@@ -175,6 +179,97 @@ class SchemaAdapter:
             "provenance": dict(memory.provenance),
             "origin": memory.origin.value,
             "version": memory.version,
+        }
+
+    # -- Phase 5 evidence-integrity projections ---------------------------
+
+    def claim_result(self, claim: Claim) -> dict[str, Any]:
+        return {
+            "claim_id": claim.claim_id,
+            "project_id": claim.project_id,
+            "text": claim.text,
+            "type": claim.type.value,
+            "status": claim.status.value,
+            "confidence": claim.confidence,
+            "source_refs": list(claim.source_refs),
+            "evidence_refs": list(claim.evidence_refs),
+            "supporting_refs": list(claim.supporting_refs),
+            "contradicting_refs": list(claim.contradicting_refs),
+            "version": claim.version,
+        }
+
+    def claim_evidence_link_result(self, link: ClaimEvidenceLink) -> dict[str, Any]:
+        return {
+            "link_id": link.link_id,
+            "claim_id": link.claim_id,
+            "evidence_id": link.evidence_id,
+            "relationship": link.relationship.value,
+            "rationale": link.rationale,
+            "status": link.status.value,
+        }
+
+    def evidence_assessment_result(self, assessment: EvidenceAssessment) -> dict[str, Any]:
+        return {
+            "assessment_id": assessment.assessment_id,
+            "claim_id": assessment.claim_id,
+            "evidence_id": assessment.evidence_id,
+            "support_type": assessment.support_type.value,
+            "rationale": assessment.rationale,
+            "status": assessment.status.value,
+            "quality": {
+                "extraction_quality": assessment.quality.extraction_quality.value,
+                "relevance": assessment.quality.relevance,
+                "directness": assessment.quality.directness,
+            },
+        }
+
+    def verification_report_result(self, report: VerificationReport) -> dict[str, Any]:
+        return {
+            "report_id": report.report_id,
+            "scope": report.scope.value,
+            "claim_id": report.claim_id,
+            "project_id": report.project_id,
+            "status": report.status.value,
+            "issues": [
+                {
+                    "code": i.code,
+                    "severity": i.severity.value,
+                    "entity_type": i.entity_type,
+                    "entity_id": i.entity_id,
+                    "message": i.message,
+                }
+                for i in report.issues
+            ],
+            "evidence": list(report.evidence),
+            "contradictions": list(report.contradictions),
+            "source_assessments": list(report.source_assessments),
+            "coverage": {
+                "claims_checked": report.coverage.claims_checked,
+                "claims_with_evidence": report.coverage.claims_with_evidence,
+                "claims_with_independent_corroboration": (
+                    report.coverage.claims_with_independent_corroboration
+                ),
+                "claims_with_contradictions": report.coverage.claims_with_contradictions,
+                "claims_with_unresolved_issues": report.coverage.claims_with_unresolved_issues,
+            },
+            "generated_at": report.generated_at.isoformat(),
+        }
+
+    def contradictions_result(self, contradictions: list[Contradiction]) -> dict[str, Any]:
+        return {
+            "contradictions": [
+                {
+                    "contradiction_id": c.contradiction_id,
+                    "project_id": c.project_id,
+                    "claim_a": c.claim_a,
+                    "claim_b": c.claim_b,
+                    "type": c.type.value,
+                    "severity": c.severity.value,
+                    "status": c.status.value,
+                    "rationale": c.rationale,
+                }
+                for c in contradictions
+            ]
         }
 
 

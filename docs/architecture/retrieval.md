@@ -51,6 +51,16 @@ excerpt, score).
 domain object (`source_id`, `location`, `excerpt`, `relevance`, metadata). The
 `relevance` is the search score — never model-derived confidence.
 
+### Evidence records (Phase 5)
+
+The verification engine's `materialize_evidence(chunk)` builds a richer
+`EvidenceRecord` (in `evidence/`) carrying full provenance (source/document/
+chunk), an evaluative `support_type` (never derived from retrieval score),
+extraction quality (consumed from Phase 3 parser metadata), and a
+`SourceQuality` assessment. Retrieval relevance, source quality, evidence
+strength, claim confidence, and truth remain distinct axes — see
+[`evidence-integrity.md`](evidence-integrity.md).
+
 ## Failure semantics & degradation (Phase 4.1)
 
 Retrieval failures are explicit and typed. A backend outage

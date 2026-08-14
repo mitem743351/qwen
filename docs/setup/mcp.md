@@ -51,8 +51,7 @@ a typical client configuration:
 ```
 
 Use the absolute path to the Python interpreter (e.g. the project venv) if
-needed. The client will discover the server, list the six tools, and invoke
-them.
+needed. The client will discover the server, list the tools, and invoke them.
 
 ---
 
@@ -66,6 +65,13 @@ them.
 | `continue_task` | advance a task one step |
 | `get_task_state` | read a task's state |
 | `get_research_state` | read a task's structured research state |
+
+> Additional tools are enabled by configuration: retrieval (`search_corpus`,
+> `get_source`) via `QWEN_RESEARCH_CORPUS_DB`/`CORPUS_ROOT` — see
+> [`corpus.md`](corpus.md); memory tools via `QWEN_RESEARCH_MEMORY_DB` — see
+> [`semantic-retrieval.md`](semantic-retrieval.md); and the six
+> evidence-integrity tools via `QWEN_RESEARCH_VERIFICATION_DB` — see
+> [`verification.md`](verification.md).
 
 ---
 

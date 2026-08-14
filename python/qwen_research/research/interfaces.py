@@ -11,19 +11,22 @@ from __future__ import annotations
 import dataclasses
 from typing import Any, Protocol, runtime_checkable
 
-from qwen_research.common.ids import ArtifactId, ClaimId, SessionId, TaskId, WorkflowId
+from qwen_research.claims.models import Claim, ClaimType, QuantitativeClaim, Scope
+from qwen_research.claims.relationships import ClaimEvidenceLink, ClaimEvidenceRelationship
+from qwen_research.common.ids import ArtifactId, ClaimId, EvidenceId, SessionId, TaskId, WorkflowId
 from qwen_research.common.serialization import serializable
+from qwen_research.contradictions.models import Contradiction
 from qwen_research.domain.artifact import Artifact
 from qwen_research.domain.modes import OperatingMode
 from qwen_research.domain.reasoning import ReasoningProfile
 from qwen_research.domain.research import ResearchState
 from qwen_research.domain.session import Session
 from qwen_research.domain.task import Task
-from qwen_research.domain.verification import VerificationResult
 from qwen_research.memory.context import ResearchContext
 from qwen_research.memory.models import ResearchMemory, ResearchQuestion
 from qwen_research.memory.retriever import MemoryHit
 from qwen_research.retrieval.models import DocumentView, SearchOptions, SearchResult
+from qwen_research.verification.models import EvidenceAssessment, VerificationReport
 from qwen_research.workflows.base import WorkflowResult
 
 
@@ -114,7 +117,32 @@ class ResearchRuntime(Protocol):
         self, query: str, *, project_id: str = "default"
     ) -> ResearchContext: ...
 
-    def verify_claim(self, claim_id: ClaimId) -> VerificationResult: ...
+    def create_claim(
+        self,
+        project_id: str,
+        text: str,
+        *,
+        claim_type: ClaimType = ClaimType.UNKNOWN,
+        source_refs: tuple[str, ...] = (),
+        scope: Scope | None = None,
+        quantitative: QuantitativeClaim | None = None,
+    ) -> Claim: ...
+
+    def link_claim_evidence(
+        self,
+        claim_id: ClaimId,
+        evidence_id: EvidenceId,
+        relationship: ClaimEvidenceRelationship,
+        rationale: str = "",
+    ) -> ClaimEvidenceLink: ...
+
+    def assess_evidence(self, claim_id: ClaimId, evidence_id: EvidenceId) -> EvidenceAssessment: ...
+
+    def verify_claim(self, claim_id: ClaimId) -> VerificationReport: ...
+
+    def get_verification_report(self, report_id: str) -> VerificationReport: ...
+
+    def get_contradictions(self, project_id: str) -> list[Contradiction]: ...
 
     def run_workflow(self, workflow_id: WorkflowId, task_id: TaskId) -> WorkflowResult: ...
 

@@ -31,6 +31,8 @@ class ErrorCategory(StrEnum):
     INDEX = "index"
     RETRIEVAL = "retrieval"
     PROVENANCE = "provenance"
+    VERIFICATION = "verification"
+    CLAIM = "claim"
 
 
 class DomainError(Exception):
@@ -204,3 +206,31 @@ class ProvenanceError(DomainError):
         self.kind = kind
         self.identifier = identifier
         super().__init__(f"unresolved {kind} reference: {identifier}")
+
+
+class VerificationError(DomainError):
+    """Base class for evidence-integrity / verification errors."""
+
+    category = ErrorCategory.VERIFICATION
+
+
+class ClaimNotFoundError(VerificationError):
+    """A referenced claim does not exist (in the current project scope)."""
+
+    category = ErrorCategory.CLAIM
+
+
+class EvidenceNotFoundError(VerificationError):
+    """A referenced evidence item does not exist."""
+
+
+class ContradictionNotFoundError(VerificationError):
+    """A referenced contradiction does not exist."""
+
+
+class VerificationReportNotFoundError(VerificationError):
+    """A referenced verification report does not exist."""
+
+
+class VerificationConfigurationError(VerificationError):
+    """The verification subsystem is misconfigured."""

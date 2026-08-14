@@ -5,6 +5,15 @@ phase lists objective, dependencies, major components, acceptance criteria, and
 explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
 0.5 / 0.75 corrections) are internally consistent.
 
+> **Note on numbering.** The delivered sequence advanced the *verification
+> foundation* as **Phase 5** (after Phase 4 semantic/memory and Phase 4.1
+> hardening) ahead of the originally-planned "Reasoning/workflow engine"
+> (roadmap §Phase 5 below). The roadmap's §Phase 5 (workflow engine) therefore
+> remains **not-yet**, while its §Phase 6 (Verification) is partially realized —
+> the deterministic baseline (claims, evidence, source quality, corroboration,
+> contradiction analysis) is delivered; the model-assisted / multi-agent /
+> web fact-checking parts remain future.
+
 ---
 
 ## Phase 0 — Architecture ✅ (complete)
@@ -114,7 +123,31 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
 - **Not yet:** knowledge-graph DB; PostgreSQL; transformer embeddings; ANN
   vector index; cross-encoder reranker; verification; deep workflows.
 
-## Phase 5 — Reasoning/workflow engine
+## Phase 5 — Evidence integrity & verification foundation ✅ (complete)
+
+- **Objective:** deterministic evidence-integrity and verification baseline.
+- **Dependencies:** Phase 3–4.1 (retrieval + memory provenance).
+- **Components:** `claims/` (structured `Claim`, `ClaimStatus`, `ClaimType`,
+  `Scope`, `QuantitativeClaim`, `ClaimEvidenceLink`); `evidence/`
+  (`EvidenceRecord`, `SupportType`, `ExtractionQuality`, `EvidenceQuality`);
+  `sources/` (`SourceTier` TIER_1..TIER_5, `SourceQualityAssessor`,
+  `assess_independence`); `contradictions/` (types/statuses/severities,
+  deterministic `assess_contradiction`/`detect_contradiction(s)`);
+  `verification/` (`VerificationEngine`, 10 deterministic rules,
+  `VerificationStatus`/`Coverage`/`VerificationReport`, `EvidenceIntegrityService`,
+  `SqliteVerificationStore`); Research Runtime methods; MCP tools (`create_claim`,
+  `link_claim_evidence`, `assess_evidence`, `verify_claim`,
+  `get_verification_report`, `get_contradictions`); typed verification errors.
+- **Acceptance criteria:** claim/evidence/source/contradiction/report models
+  persisted and restored across restart; project isolation; atomic
+  reference-validated writes; deterministic statuses bounded by
+  `VERIFIED_WITHIN_CORPUS` (never absolute truth); corroboration at source
+  level (not chunk level); `UNREVIEWED` never silently promoted.
+- **Not yet:** LLM claim extraction, LLM contradiction reasoning, LLM
+  source-quality judgment, web fact-checking, multi-agent verification,
+  adversarial debate (Phase 10), deep-workflow auto-verification loops.
+
+## Phase 5 (roadmap) — Reasoning/workflow engine
 
 - **Objective:** profile-driven workflows run.
 - **Dependencies:** Phase 1–4.
@@ -136,6 +169,13 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
 - **Acceptance criteria:** deep workflows loop on verification; standalone via
   MCP and Research Runtime API; outcomes persisted.
 - **Not yet:** multi-agent adversarial critique beyond single-pass.
+
+> **Partial delivery (Phase 5).** The deterministic baseline (claims, evidence,
+> source quality, corroboration, contradiction analysis, `verify_claim` /
+> `get_contradictions` tools, persisted reports) is delivered in the actual
+> Phase 5. Remaining here: counterexample search, calculation validation,
+> cross-document consistency at scale, and deep-workflow auto-verification
+> loops (the model-assisted layer sits behind `VerificationAssistant`).
 
 ## Phase 7 — Computation/tools
 

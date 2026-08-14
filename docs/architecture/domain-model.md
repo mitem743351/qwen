@@ -161,6 +161,41 @@ New typed errors in `domain/errors.py`: `RetrievalError` and
 `LexicalRetrievalUnavailable`), `RetrievalQueryError`,
 `RetrievalConfigurationError`, and `ProvenanceError(kind, identifier)`.
 
+## Claims, evidence & verification (Phase 5)
+
+Phase 5 adds a structured **evidence-integrity layer** in new packages (not in
+`domain/`):
+
+| Entity | Module | Key fields |
+|--------|--------|------------|
+| `Claim` | `claims/models.py` | claim_id, project_id, text, type (`ClaimType`), status (`ClaimStatus`), confidence, source_refs, evidence_refs, supporting_refs, contradicting_refs, scope, quantitative, version |
+| `Scope` | `claims/models.py` | population, conditions, region, dataset, method, time_range (all optional) |
+| `QuantitativeClaim` | `claims/models.py` | metric, value, unit, operator, comparison, population, time_range |
+| `ClaimEvidenceLink` | `claims/relationships.py` | link_id, claim_id, evidence_id, relationship, rationale, status |
+| `EvidenceRecord` | `evidence/models.py` | evidence_id, source_id, document_id, chunk_id, excerpt, support_type, extraction_quality, source_quality, provenance |
+| `SourceQuality` | `sources/quality.py` | tier (`SourceTier` TIER_1..TIER_5), authority, primary_source, peer_reviewed, recency, provenance_completeness, extraction_quality |
+| `Contradiction` | `contradictions/models.py` | contradiction_id, claim_a, claim_b, type, severity, status, rationale |
+| `VerificationReport` | `verification/models.py` | report_id, scope, claim_id, status, issues, evidence, contradictions, source_assessments, coverage |
+
+Key enums: `ClaimType`, `ClaimStatus`, `ClaimEvidenceRelationship`, `SupportType`,
+`ExtractionQuality`, `SourceTier`, `SourceIndependence`, `ContradictionType`,
+`ContradictionStatus`, `ContradictionSeverity`, `VerificationStatus`,
+`VerificationScope`, `Severity`.
+
+`ClaimStatus` is the **memory-promotion** ladder (`UNREVIEWED → ASSESSED →
+SUPPORTED → CORROBORATED`), distinct from the run-scoped `VerificationStatus`
+(`VERIFIED_WITHIN_CORPUS` etc.). The old `domain/claim.py` `Claim` /
+`ClaimStatus` (Phase 1) remains intact and is **not** edited; the Phase 5
+`claims/` package is a separate model consumed by the verification engine.
+
+### Errors (Phase 5)
+
+New `ErrorCategory` values `VERIFICATION` and `CLAIM`; new typed errors
+`VerificationError`, `ClaimNotFoundError`, `EvidenceNotFoundError`,
+`ContradictionNotFoundError`, `VerificationReportNotFoundError`, and
+`VerificationConfigurationError`. Reference-failure errors are raised before
+any write commits (atomic).
+
 ## Serialization
 
 `common/serialization.py` provides `dumps`/`loads` (deterministic, version-aware
@@ -173,5 +208,6 @@ and dicts from type hints.
 ## Identifiers and timestamps
 
 - `common/ids.py` — `NewType`-wrapped identifiers (`TaskId`, `SessionId`, …)
-  minted by `new_id(prefix)`.
+  minted by `new_id(prefix)`. Phase 5 adds `VerificationReportId`,
+  `ContradictionId`, and `EvidenceAssessmentId`.
 - `common/timestamps.py` — timezone-aware UTC datetimes (`utc_now()`).

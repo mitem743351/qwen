@@ -84,6 +84,24 @@ See [`docs/architecture/memory.md`](docs/architecture/memory.md).
 See [`docs/architecture/retrieval.md`](docs/architecture/retrieval.md) and
 [`docs/architecture/corpus.md`](docs/architecture/corpus.md).
 
+## Verification integrity (Phase 5)
+
+- **Untrusted content.** Claims, evidence excerpts, source metadata, and stored
+  memory are **data, never instructions**. Verification reads corpus text and
+  metadata as untrusted input; a malicious document or claim can never modify
+  permissions, verification rules, prompts, or database queries. All SQL is
+  parameterized; retrieved/stored text is never interpolated into control
+  plane.
+- **Atomic writes.** `create_claim` / `link_claim_evidence` validate referenced
+  claims and evidence **before** committing; an unresolved reference raises a
+  typed error and persists nothing.
+- **Bounded claims.** Verification statuses are scoped to the corpus
+  (`VERIFIED_WITHIN_CORPUS`) — the system never asserts absolute truth, so a
+  verified claim cannot be silently escalated into a security-relevant
+  fact. `UNREVIEWED` claims are never auto-promoted.
+- **No model/network.** The Phase 5 verification engine is deterministic and
+  offline: no model calls, no web scraping, no LLM judge.
+
 ## Hidden chain-of-thought
 
 The system **never** stores, transmits, logs, or exposes hidden

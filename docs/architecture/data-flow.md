@@ -75,6 +75,32 @@ query → Retriever (lexical FTS5 + semantic vector) → hybrid fusion
       → diversity → ranked evidence → ResearchContext (evidence + memory)
 ```
 
+## 2.1 Verification Path (Phase 5)
+
+```text
+create_claim → Claim (UNREVIEWED)
+    │
+link_claim_evidence → ClaimEvidenceLink (relationship, rationale)
+    │
+assess_evidence → EvidenceAssessment (support_type, quality)
+    │
+verify_claim → VerificationEngine
+    ├── materialize evidence (chunks + source quality)
+    ├── detect contradictions (pairwise, deterministic)
+    ├── run rules → VerificationIssue[]
+    ├── derive status (scoped, non-absolute)
+    └── Coverage
+    │
+    ▼
+VerificationReport (persisted) ──▶ updates Claim.status (promotion ladder)
+```
+
+Every write is transactional; an unresolved claim/evidence reference raises a
+typed error and persists nothing. `UNREVIEWED` claims are never silently
+promoted.
+
+---
+
 ## 3. Ingest Path (corpus material) — implemented in Phase 3
 
 ```text

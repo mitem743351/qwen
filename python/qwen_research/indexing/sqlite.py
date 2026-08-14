@@ -424,6 +424,12 @@ class SqliteCorpusIndex:
             if cid in by_id
         ]
 
+    def list_stale_document_ids(self) -> set[str]:
+        rows = self._db().execute(
+            "SELECT document_id FROM documents WHERE stale = 1"
+        ).fetchall()
+        return {r["document_id"] for r in rows}
+
     def list_documents(self) -> list[Document]:
         rows = self._db().execute("SELECT * FROM documents ORDER BY relative_path").fetchall()
         return [

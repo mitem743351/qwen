@@ -15,9 +15,12 @@ import dataclasses
 
 from qwen_research.domain.errors import (
     CapabilityError,
+    ClaimNotFoundError,
     ConfigurationError,
+    ContradictionNotFoundError,
     DocumentNotFoundError,
     DomainError,
+    EvidenceNotFoundError,
     InferenceError,
     InvalidTransitionError,
     PathSecurityError,
@@ -28,6 +31,7 @@ from qwen_research.domain.errors import (
     ToolError,
     UnsupportedOperationError,
     ValidationError,
+    VerificationReportNotFoundError,
     WorkflowError,
 )
 
@@ -56,6 +60,16 @@ def map_error(exc: Exception) -> MCPErrorInfo:
     if isinstance(exc, (ValidationError, InvalidTransitionError)):
         return MCPErrorInfo(INVALID_PARAMS, f"invalid arguments: {exc.message}", exc.category.value)
     if isinstance(exc, DocumentNotFoundError):
+        return MCPErrorInfo(INVALID_PARAMS, f"not found: {exc.message}", exc.category.value)
+    if isinstance(
+        exc,
+        (
+            ClaimNotFoundError,
+            EvidenceNotFoundError,
+            ContradictionNotFoundError,
+            VerificationReportNotFoundError,
+        ),
+    ):
         return MCPErrorInfo(INVALID_PARAMS, f"not found: {exc.message}", exc.category.value)
     if isinstance(exc, PathSecurityError):
         # Never echo the offending path back to the client.

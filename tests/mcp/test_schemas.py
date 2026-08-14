@@ -33,6 +33,12 @@ def test_default_tool_set() -> None:
         "get_research_memory",
         "get_open_questions",
         "save_research_memory",
+        "create_claim",
+        "link_claim_evidence",
+        "assess_evidence",
+        "verify_claim",
+        "get_verification_report",
+        "get_contradictions",
     )
 
 
@@ -55,6 +61,25 @@ def test_retrieval_mode_enum_on_search_corpus() -> None:
     mode = schema["properties"]["mode"]
     assert mode["enum"] == ["lexical", "semantic", "hybrid"]
     assert mode["default"] == "hybrid"
+
+
+def test_claim_type_enum_on_create_claim() -> None:
+    schema = _catalog()["create_claim"]["input_schema"]
+    claim_type = schema["properties"]["claim_type"]
+    assert claim_type["enum"] == [
+        "factual", "causal", "comparative", "quantitative", "definitional",
+        "predictive", "methodological", "normative", "unknown",
+    ]
+    assert claim_type["default"] == "unknown"
+
+
+def test_relationship_enum_on_link_claim_evidence() -> None:
+    schema = _catalog()["link_claim_evidence"]["input_schema"]
+    relationship = schema["properties"]["relationship"]
+    assert relationship["enum"] == [
+        "supports", "contradicts", "qualifies", "contextualizes", "does_not_address",
+    ]
+    assert schema["required"] == ["claim_id", "evidence_id", "relationship"]
 
 
 def test_wire_tools_match_default_set() -> None:
