@@ -77,17 +77,23 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
   tools; MCP resources; SSE/HTTP transports; remote transport/auth;
   GATEWAY_INFERENCE/HYBRID; dashboard.
 
-## Phase 3 — Corpus + retrieval
+## Phase 3 — Corpus + retrieval ✅ (complete — lexical foundation)
 
-- **Objective:** immutable corpus + retrieval pipeline.
+- **Objective:** local corpus ingestion, indexing, and retrieval.
 - **Dependencies:** Phase 1–2.
-- **Components:** document pipeline; corpus layout; hashing; lexical + metadata
-  indexes; `VectorIndex`/`Embedder` interfaces; hybrid ranking + reranking;
-  evidence extraction + citation resolution; context assembly.
-- **Acceptance criteria:** mixed corpus → searchable cited evidence; RAW never
-  modified; retrieval callable from the Research Runtime (not just MCP).
-- **Not yet:** verification; deep workflows; Rust indexer (unless profiling
-  justifies it).
+- **Components:** `corpus/` (config, security, scanner, hashing, records);
+  `documents/` (pluggable parsers: text/markdown/code/json/yaml/csv/pdf,
+  normalization, chunking); `indexing/` (CorpusIndex interface, SQLite+FTS5,
+  schema, incremental manager); `retrieval/` (Retriever interface,
+  LexicalRetriever, evidence packaging); Research Runtime `search_corpus` /
+  `get_source`; MCP `search_corpus` / `get_source` tools; typed corpus errors.
+- **Acceptance criteria:** configured roots; path/symlink security; incremental
+  + idempotent indexing; PDF text extraction (unextractable flagged); chunk
+  provenance; FTS5 ranked retrieval; evidence packaging; retrieval MCP tools;
+  existing tools intact; no unrestricted filesystem access; prompt-injection
+  boundary respected.
+- **Not yet:** verification; deep workflows; embeddings/vector search;
+  reranking; hybrid retrieval; OCR; Office parsing; Rust indexer.
 
 ## Phase 4 — Memory + persistence
 

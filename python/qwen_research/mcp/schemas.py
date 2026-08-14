@@ -44,6 +44,19 @@ OptionalSessionIdParam = Annotated[
     str | None,
     Field(description="Optional existing session id; a new session is created if omitted."),
 ]
+QueryParam = Annotated[str, Field(description="The search query text.")]
+LimitParam = Annotated[int, Field(description="Maximum number of results.", ge=1, le=100)]
+RootsParam = Annotated[
+    list[str] | None, Field(description="Optional corpus root ids to restrict the search to.")
+]
+DocumentTypesParam = Annotated[
+    list[str] | None,
+    Field(description="Optional media types (e.g. 'text/markdown') to filter by."),
+]
+PathPrefixParam = Annotated[
+    str | None, Field(description="Optional relative path prefix to filter by.")
+]
+DocumentIdParam = Annotated[str, Field(description="The document identifier.")]
 
 TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_session": "Return a session by its session id.",
@@ -58,6 +71,11 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "continue_task": "Advance a task one step along its execution progression.",
     "get_task_state": "Return the current state of a task.",
     "get_research_state": "Return the structured research state of a task.",
+    "search_corpus": (
+        "Search the local corpus for text relevant to a query and return ranked "
+        "evidence with source provenance (file, page/section, score, excerpt)."
+    ),
+    "get_source": "Return metadata and structure for a document by its id.",
 }
 
 #: The Phase 2 minimal tool set, in registration order.
@@ -68,4 +86,6 @@ DEFAULT_TOOLS: tuple[str, ...] = (
     "continue_task",
     "get_task_state",
     "get_research_state",
+    "search_corpus",
+    "get_source",
 )

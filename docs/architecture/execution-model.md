@@ -37,9 +37,10 @@ Qwen continues its own inference
 - The Research Runtime provides capabilities; it does **not** become the owner
   of the Studio model's reasoning loop.
 - The only model-plane network traffic is Qwen Studio's own.
-- **Implemented in Phase 2:** this path is live via the MCP server (stdio),
+- **Implemented in Phase 2/3:** this path is live via the MCP server (stdio),
   exposing `create_session` / `execute_task` / `continue_task` /
-  `get_task_state` / `get_session` / `get_research_state` (see
+  `get_task_state` / `get_session` / `get_research_state`, plus (Phase 3)
+  `search_corpus` / `get_source` over an indexed local corpus (see
   [`mcp-implementation.md`](mcp-implementation.md)).
 
 ---

@@ -22,6 +22,7 @@ from qwen_research.domain.reasoning import ReasoningProfile, get_profile
 from qwen_research.domain.research import ResearchState
 from qwen_research.domain.session import Session
 from qwen_research.domain.task import Task
+from qwen_research.retrieval.models import DocumentView, SearchResult
 from qwen_research.tools.base import Tool
 
 
@@ -83,6 +84,42 @@ class SchemaAdapter:
             "artifact_refs": list(state.artifact_refs),
             "verification_refs": list(state.verification_refs),
             "continuation_state": state.continuation_state,
+        }
+
+    def search_result(self, result: SearchResult) -> dict[str, Any]:
+        """Project a search result into a concise, model-friendly response."""
+        return {
+            "query": result.query,
+            "results": [
+                {
+                    "chunk_id": c.chunk_id,
+                    "document_id": c.document_id,
+                    "path": c.relative_path or c.path,
+                    "page": c.page,
+                    "section": c.section,
+                    "excerpt": c.text,
+                    "score": c.score,
+                }
+                for c in result.chunks
+            ],
+        }
+
+    def document_view_result(self, view: DocumentView) -> dict[str, Any]:
+        """Project a document view into a concise, model-friendly response."""
+        return {
+            "document_id": view.document_id,
+            "source_id": view.source_id,
+            "root_id": view.root_id,
+            "path": view.relative_path,
+            "media_type": view.media_type,
+            "title": view.title,
+            "metadata": dict(view.metadata),
+            "content_hash": view.content_hash,
+            "size_bytes": view.size_bytes,
+            "modified_at": view.modified_at.isoformat() if view.modified_at else None,
+            "sections": [
+                {"page": page, "heading": heading} for page, heading in view.sections
+            ],
         }
 
 

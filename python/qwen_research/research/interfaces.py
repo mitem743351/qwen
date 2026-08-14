@@ -20,6 +20,7 @@ from qwen_research.domain.research import ResearchState
 from qwen_research.domain.session import Session
 from qwen_research.domain.task import Task
 from qwen_research.domain.verification import VerificationResult
+from qwen_research.retrieval.models import DocumentView, SearchOptions, SearchResult
 from qwen_research.workflows.base import WorkflowResult
 
 
@@ -81,6 +82,10 @@ class ResearchRuntime(Protocol):
     def inspect_task(self, task_id: TaskId) -> Task: ...
 
     def retrieve_context(self, task_id: TaskId) -> Any: ...
+
+    def search_corpus(self, query: str, options: SearchOptions | None = None) -> SearchResult: ...
+
+    def get_source(self, document_id: str) -> DocumentView: ...
 
     def verify_claim(self, claim_id: ClaimId) -> VerificationResult: ...
 

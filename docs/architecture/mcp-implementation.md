@@ -1,6 +1,6 @@
-# MCP Implementation (Phase 2)
+# MCP Implementation
 
-> **Status:** Phase 2 foundation implemented. This documents what **exists** in
+> **Status:** Phases 2 and 3 implemented. This documents what **exists** in
 > `python/qwen_research/mcp/`, and distinguishes it from future MCP capability.
 
 ---
@@ -50,16 +50,18 @@ or retrieval logic lives in the MCP layer.
 
 ---
 
-## Tools (Phase 2 minimal set)
+## Tools
 
-| Tool | Permission | Research Runtime operation |
-|------|-----------|---------------------------|
-| `get_session` | READ | `get_session` |
-| `create_session` | ANALYZE | `create_session` |
-| `execute_task` | ANALYZE | `execute_task` |
-| `continue_task` | ANALYZE | `continue_task` |
-| `get_task_state` | READ | `inspect_task` |
-| `get_research_state` | READ | `get_state` |
+| Tool | Permission | Research Runtime operation | Phase |
+|------|-----------|---------------------------|-------|
+| `get_session` | READ | `get_session` | 2 |
+| `create_session` | ANALYZE | `create_session` | 2 |
+| `execute_task` | ANALYZE | `execute_task` | 2 |
+| `continue_task` | ANALYZE | `continue_task` | 2 |
+| `get_task_state` | READ | `inspect_task` | 2 |
+| `get_research_state` | READ | `get_state` | 2 |
+| `search_corpus` | READ | `search_corpus` | 3 |
+| `get_source` | READ | `get_source` | 3 |
 
 Input schemas are **derived from the handler signatures** — the authoritative
 MCP wire schema. `schemas.py` holds the parameter *types* (as
@@ -69,10 +71,16 @@ there are no hand-written JSON-Schema dicts that could drift from the code.
 property `description`, signature defaults become `default`, and parameters
 without a default become `required`. `tests/mcp/test_schemas.py` asserts the
 actual wire schemas (via `tool_catalog()`) match the domain enums.
-`WRITE`/`EXECUTE`/`DESTRUCTIVE` are **not** granted by any Phase 2 tool.
+`WRITE`/`EXECUTE`/`DESTRUCTIVE` are **not** granted by any tool.
+
+`search_corpus` and `get_source` return **concise, model-friendly results**
+(source path, page/section, score, excerpt — not raw directory trees). The
+MCP layer never touches the filesystem or SQLite: it calls the Research Runtime,
+which calls the Retriever, which calls the CorpusIndex (see
+[`retrieval.md`](retrieval.md)).
 
 **Not exposed yet** (their underlying implementations do not exist):
-`search_corpus`, `retrieve_evidence`, `verify_claim`, `run_analysis`.
+`retrieve_evidence`, `verify_claim`, `run_analysis`.
 
 ---
 
@@ -132,12 +140,12 @@ transport, and the registered tool list — no sensitive data.
 
 ## Explicitly NOT implemented (future MCP capabilities)
 
-- `search_corpus` / `retrieve_evidence` / `verify_claim` / `run_analysis` tools
+- `retrieve_evidence` / `verify_claim` / `run_analysis` tools
 - MCP resources (project context, documents, artifacts) — reserved until their
   semantics exist
 - Streamable HTTP / SSE transports
 - Remote transport / authentication
-- Qwen API, retrieval, real persistence, document parsing, computation engine
+- Qwen API, semantic/vector retrieval, real persistence, computation engine
 
 See [`mcp.md`](mcp.md) for the architecture contract and
 [`../setup/mcp.md`](../setup/mcp.md) for running instructions.

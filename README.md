@@ -7,11 +7,12 @@ persistent research memory, verification/citation/provenance, and deterministic
 computation — while Qwen Studio keeps its native conversational and web-search
 capabilities.
 
-> **Current status: Phase 2 — MCP Server Foundation.**
-> The architecture (Phases 0, 0.5, 0.75) is the approved baseline; Phase 1
-> established the core domain and runtime contracts and Phase 1.1/1.2 hardened
-> them. Phase 2 adds a real, testable MCP server (stdio) exposing the Research
-> Runtime. Still **no** Qwen API, retrieval, real persistence, or dashboard.
+> **Current status: Phase 3 — Local Corpus, Document Pipeline, and Retrieval Foundation.**
+> The architecture (Phases 0, 0.5, 0.75) is the approved baseline; Phases 1–1.2
+> established and hardened the core contracts; Phase 2 added the MCP server;
+> Phase 3 adds local corpus ingestion, SQLite FTS5 indexing, and lexical
+> retrieval exposed as `search_corpus` / `get_source`. Still **no** Qwen API,
+> embeddings, or real persistence.
 
 ## What this is
 
@@ -74,6 +75,13 @@ Phase 2 (MCP server):
 - [`docs/architecture/mcp-implementation.md`](docs/architecture/mcp-implementation.md) — what Phase 2 delivers
 - [`docs/setup/mcp.md`](docs/setup/mcp.md) — running the MCP server
 
+Phase 3 (corpus + retrieval):
+
+- [`docs/architecture/corpus.md`](docs/architecture/corpus.md) — corpus roots and security boundary
+- [`docs/architecture/document-pipeline.md`](docs/architecture/document-pipeline.md) — parsers, normalization, chunking
+- [`docs/architecture/retrieval.md`](docs/architecture/retrieval.md) — indexing, lexical retrieval, evidence
+- [`docs/setup/corpus.md`](docs/setup/corpus.md) — configuring a local corpus
+
 Full architecture docs:
 
 | Area | Document |
@@ -100,16 +108,20 @@ Full architecture docs:
 | Runtime contracts | [`runtime-contracts.md`](docs/architecture/runtime-contracts.md) |
 | MCP implementation | [`mcp-implementation.md`](docs/architecture/mcp-implementation.md) |
 | MCP setup | [`setup/mcp.md`](docs/setup/mcp.md) |
+| Corpus | [`corpus.md`](docs/architecture/corpus.md) |
+| Document pipeline | [`document-pipeline.md`](docs/architecture/document-pipeline.md) |
+| Retrieval | [`retrieval.md`](docs/architecture/retrieval.md) |
+| Corpus setup | [`setup/corpus.md`](docs/setup/corpus.md) |
 | Decisions (ADRs) | [`decisions/`](docs/architecture/decisions/) |
 | Mermaid diagrams | [`diagrams/`](docs/architecture/diagrams/) |
 
 ## Status
 
-Phase 0.75 (architecture) is the approved baseline. Phase 1 (core domain and
-runtime contracts), Phase 1.1 (contract hardening), Phase 1.2 (capability
-semantics), and Phase 2 (MCP server foundation) are **complete**. The Research
+Phase 0.75 (architecture) is the approved baseline. Phases 1, 1.1, 1.2 (core
+contracts + hardening), Phase 2 (MCP server), and Phase 3 (local corpus,
+document pipeline, and retrieval foundation) are **complete**. The Research
 Runtime remains provider- and transport-independent; the MCP server is a thin
-adapter over it. See
+adapter over it, now serving ranked lexical evidence from a local corpus. See
 [`implementation-phases.md`](docs/architecture/implementation-phases.md).
 
 ### Develop

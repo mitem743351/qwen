@@ -54,6 +54,22 @@ The MCP server is an **external adapter** that defaults to secure operation:
 
 See [`docs/architecture/mcp-implementation.md`](docs/architecture/mcp-implementation.md).
 
+## Corpus path security and prompt-injection boundary (Phase 3)
+
+- **Allowlisted roots.** Filesystem access is confined to configured corpus
+  roots. `../` traversal, absolute paths outside roots, and symlink escapes are
+  rejected (symlinks are resolved before containment checks, and refused when
+  `follow_symlinks = false`). No unrestricted filesystem tools are exposed.
+- **Untrusted documents.** Retrieved document content is **data, never
+  instructions**. A document containing "ignore previous instructions" remains
+  document content; it cannot alter tool permissions or system behavior. Only
+  the model sees retrieved content as evidence.
+- **No path leakage.** `PathSecurityError` messages never include the offending
+  absolute path; MCP errors are normalized to safe messages.
+
+See [`docs/architecture/retrieval.md`](docs/architecture/retrieval.md) and
+[`docs/architecture/corpus.md`](docs/architecture/corpus.md).
+
 ## Hidden chain-of-thought
 
 The system **never** stores, transmits, logs, or exposes hidden

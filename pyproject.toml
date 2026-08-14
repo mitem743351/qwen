@@ -14,6 +14,10 @@ dependencies = [
     # Used only in the MCP layer (python/qwen_research/mcp); the Research
     # Runtime and Domain layers remain free of it.
     "mcp>=1.9,<3",
+    # PDF text extraction (document layer).
+    "pypdf>=4,<7",
+    # YAML structured-data parsing (document layer).
+    "pyyaml>=6,<7",
 ]
 
 [project.optional-dependencies]

@@ -16,9 +16,11 @@ import dataclasses
 from qwen_research.domain.errors import (
     CapabilityError,
     ConfigurationError,
+    DocumentNotFoundError,
     DomainError,
     InferenceError,
     InvalidTransitionError,
+    PathSecurityError,
     PermissionError,
     PersistenceError,
     ToolError,
@@ -51,6 +53,13 @@ def map_error(exc: Exception) -> MCPErrorInfo:
     """
     if isinstance(exc, (ValidationError, InvalidTransitionError)):
         return MCPErrorInfo(INVALID_PARAMS, f"invalid arguments: {exc.message}", exc.category.value)
+    if isinstance(exc, DocumentNotFoundError):
+        return MCPErrorInfo(INVALID_PARAMS, f"not found: {exc.message}", exc.category.value)
+    if isinstance(exc, PathSecurityError):
+        # Never echo the offending path back to the client.
+        return MCPErrorInfo(
+            INVALID_PARAMS, "access denied: path is outside the allowed corpus", exc.category.value
+        )
     if isinstance(exc, PermissionError):
         return MCPErrorInfo(INVALID_PARAMS, f"permission denied: {exc.message}", exc.category.value)
     if isinstance(exc, UnsupportedOperationError):

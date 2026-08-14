@@ -46,7 +46,7 @@ class ToolPermissionPolicy:
         )
 
 
-#: Default Phase 2 tool → permission mapping (see docs/architecture/mcp.md).
+#: Default tool → permission mapping (see docs/architecture/mcp.md).
 DEFAULT_TOOL_PERMISSIONS: dict[str, MCPPermission] = {
     "get_session": MCPPermission.READ,
     "get_task_state": MCPPermission.READ,
@@ -54,4 +54,6 @@ DEFAULT_TOOL_PERMISSIONS: dict[str, MCPPermission] = {
     "create_session": MCPPermission.ANALYZE,
     "execute_task": MCPPermission.ANALYZE,
     "continue_task": MCPPermission.ANALYZE,
+    "search_corpus": MCPPermission.READ,
+    "get_source": MCPPermission.READ,
 }

@@ -13,7 +13,11 @@ from typing import Any
 
 from qwen_research.common.ids import ClaimId, SessionId, TaskId, WorkflowId
 from qwen_research.domain.artifact import Artifact
-from qwen_research.domain.errors import PersistenceError, UnsupportedOperationError
+from qwen_research.domain.errors import (
+    DocumentNotFoundError,
+    PersistenceError,
+    UnsupportedOperationError,
+)
 from qwen_research.domain.modes import OperatingMode
 from qwen_research.domain.reasoning import DEEP, ReasoningProfile
 from qwen_research.domain.research import ResearchPlan, ResearchState
@@ -26,6 +30,8 @@ from qwen_research.research.state import (
     InMemorySessionStore,
     InMemoryTaskStore,
 )
+from qwen_research.retrieval.interface import Retriever
+from qwen_research.retrieval.models import DocumentView, SearchOptions, SearchResult
 from qwen_research.workflows.base import WorkflowContext, WorkflowResult
 from qwen_research.workflows.registry import WorkflowRegistry
 
@@ -41,12 +47,14 @@ class InMemoryResearchRuntime:
         state_store: InMemoryResearchStateStore | None = None,
         artifact_store: InMemoryArtifactStore | None = None,
         workflow_registry: WorkflowRegistry | None = None,
+        retriever: Retriever | None = None,
     ) -> None:
         self._session_store = session_store or InMemorySessionStore()
         self._task_store = task_store or InMemoryTaskStore()
         self._state_store = state_store or InMemoryResearchStateStore()
         self._artifact_store = artifact_store or InMemoryArtifactStore()
         self._workflow_registry = workflow_registry or WorkflowRegistry()
+        self._retriever = retriever
 
     # -- sessions ---------------------------------------------------------
 
@@ -145,6 +153,21 @@ class InMemoryResearchRuntime:
 
     def retrieve_context(self, task_id: TaskId) -> Any:
         raise UnsupportedOperationError("retrieval is not implemented until Phase 3")
+
+    def search_corpus(self, query: str, options: SearchOptions | None = None) -> SearchResult:
+        """Search the local corpus and return ranked, citable evidence."""
+        if self._retriever is None:
+            raise UnsupportedOperationError("no corpus retriever configured")
+        return self._retriever.search(query, options)
+
+    def get_source(self, document_id: str) -> DocumentView:
+        """Return document metadata and structure for a source id."""
+        if self._retriever is None:
+            raise UnsupportedOperationError("no corpus retriever configured")
+        view = self._retriever.get_document(document_id)
+        if view is None:
+            raise DocumentNotFoundError(f"document {document_id!r} not found")
+        return view
 
     def verify_claim(self, claim_id: ClaimId) -> VerificationResult:
         raise UnsupportedOperationError("verification is not implemented until Phase 6")

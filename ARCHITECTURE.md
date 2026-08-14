@@ -1,9 +1,10 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 2 — MCP Server Foundation.
-> The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1,
-> 1.1, and 1.2 established and hardened the core domain and runtime contracts;
-> Phase 2 adds the MCP server adapter (`python/qwen_research/mcp/`).
+> **Status:** Phase 3 — Local Corpus, Document Pipeline, and Retrieval Foundation.
+> The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1, 1.1,
+> and 1.2 established and hardened the core contracts; Phase 2 added the MCP
+> server adapter; Phase 3 adds corpus ingestion, indexing (SQLite FTS5), and
+> lexical retrieval exposed as `search_corpus` / `get_source` MCP tools.
 > **Audience:** Implementers, code agents, reviewers
 > **Scope:** This document is the stable, binding architecture contract for the
 > "local AI research infrastructure" that extends **Qwen Studio** through MCP.
@@ -577,6 +578,8 @@ Rust library.
 | [data-flow](docs/architecture/data-flow.md) | Request → response, persistence, state transitions |
 | [reasoning-engine](docs/architecture/reasoning-engine.md) | Profiles, workflow engine, iterative passes |
 | [mcp](docs/architecture/mcp.md) | Tool surface, permissions, protocol |
+| [corpus](docs/architecture/corpus.md) | Corpus roots, security boundary, scanner |
+| [document-pipeline](docs/architecture/document-pipeline.md) | Parsers, normalization, chunking, PDF handling |
 | [retrieval](docs/architecture/retrieval.md) | Pipeline, ranking, corpus, document pipeline |
 | [memory](docs/architecture/memory.md) | Stores, entity model, lifecycle |
 | [inference](docs/architecture/inference.md) | Provider abstraction, policy translation, capability negotiation |

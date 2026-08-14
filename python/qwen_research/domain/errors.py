@@ -25,6 +25,10 @@ class ErrorCategory(StrEnum):
     PERSISTENCE = "persistence"
     CONFIGURATION = "configuration"
     UNSUPPORTED = "unsupported"
+    CORPUS = "corpus"
+    SECURITY = "security"
+    DOCUMENT = "document"
+    INDEX = "index"
 
 
 class DomainError(Exception):
@@ -98,3 +102,46 @@ class ConfigurationError(DomainError):
     """Configuration is missing or invalid."""
 
     category = ErrorCategory.CONFIGURATION
+
+
+class CorpusError(DomainError):
+    """Base class for corpus-level errors."""
+
+    category = ErrorCategory.CORPUS
+
+
+class PathSecurityError(CorpusError):
+    """A filesystem request would escape the configured corpus roots.
+
+    The message never contains the offending absolute path.
+    """
+
+    category = ErrorCategory.SECURITY
+
+
+class UnsupportedDocumentError(CorpusError):
+    """A file's type is not supported by any registered parser."""
+
+    category = ErrorCategory.DOCUMENT
+
+
+class DocumentParseError(CorpusError):
+    """A document could not be parsed (but the file was discovered)."""
+
+    category = ErrorCategory.DOCUMENT
+
+
+class DocumentNotFoundError(CorpusError):
+    """A requested document is not present in the index."""
+
+    category = ErrorCategory.DOCUMENT
+
+
+class CorpusIndexError(CorpusError):
+    """The corpus index is missing, uninitialized, or in a bad state.
+
+    Named ``CorpusIndexError`` rather than ``IndexError`` to avoid shadowing
+    the builtin ``IndexError``.
+    """
+
+    category = ErrorCategory.INDEX

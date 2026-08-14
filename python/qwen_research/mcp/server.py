@@ -28,16 +28,23 @@ from qwen_research.mcp.schemas import (
     DEFAULT_TOOLS,
     TOOL_DESCRIPTIONS,
     DescriptionParam,
+    DocumentIdParam,
+    DocumentTypesParam,
+    LimitParam,
     MetadataParam,
     ModeParam,
     OptionalSessionIdParam,
+    PathPrefixParam,
     ProjectIdParam,
+    QueryParam,
     ReasoningProfileParam,
+    RootsParam,
     SessionIdParam,
     TaskIdParam,
 )
 from qwen_research.mcp.transport import MCPTransport, create_transport
 from qwen_research.research.interfaces import ResearchRuntime
+from qwen_research.retrieval.models import SearchOptions
 
 logger = logging.getLogger("qwen_research.mcp")
 
@@ -240,6 +247,34 @@ class MCPServerApp:
 
             return guarded_call(policy, "get_research_state", run)
 
+        def search_corpus(
+            query: QueryParam,
+            limit: LimitParam = 10,
+            roots: RootsParam = None,
+            document_types: DocumentTypesParam = None,
+            path_prefix: PathPrefixParam = None,
+        ) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                result = runtime.search_corpus(
+                    query,
+                    SearchOptions(
+                        limit=limit,
+                        roots=tuple(roots or ()),
+                        document_types=tuple(document_types or ()),
+                        path_prefix=path_prefix,
+                    ),
+                )
+                return adapter.search_result(result)
+
+            return guarded_call(policy, "search_corpus", run)
+
+        def get_source(document_id: DocumentIdParam) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                view = runtime.get_source(document_id)
+                return adapter.document_view_result(view)
+
+            return guarded_call(policy, "get_source", run)
+
         handlers: dict[str, Callable[..., Any]] = {
             "get_session": get_session,
             "create_session": create_session,
@@ -247,6 +282,8 @@ class MCPServerApp:
             "continue_task": continue_task,
             "get_task_state": get_task_state,
             "get_research_state": get_research_state,
+            "search_corpus": search_corpus,
+            "get_source": get_source,
         }
 
         enabled = self._config.enabled_tools or DEFAULT_TOOLS

@@ -3,9 +3,10 @@
 The MCP layer is the **only** surface the model (via Qwen Studio) can touch.
 It is deliberately narrow, semantic, and permission-gated.
 
-> **Implemented in Phase 2.** The MCP **foundation** is now implemented in
-> `python/qwen_research/mcp/` (stdio transport, six Research-Runtime tools,
-> permissions, error normalization). See
+> **Implemented.** The MCP foundation (Phase 2) is implemented in
+> `python/qwen_research/mcp/` (stdio transport, Research-Runtime tools,
+> permissions, error normalization). Phase 3 adds the retrieval tools
+> `search_corpus` and `get_source`. See
 > [`mcp-implementation.md`](mcp-implementation.md) for what exists vs. future
 > capability.
 
@@ -49,16 +50,17 @@ A **small number of high-value semantic tools** — never a reflection of every
 internal function, and **never** a universal `execute_anything`.
 
 ```text
-search_corpus           # query the local corpus, return ranked evidence
-retrieve_evidence       # fetch evidence for a claim/question with citations
-read_source             # read a specific source (permission-gated)
-get_research_state      # session/project research state summary
-query_database          # run read-only analytical SQL against DuckDB
-run_analysis            # run a bounded deterministic analysis (Python/DuckDB)
-verify_claim            # verify a claim against evidence/sources
-find_contradictions     # detect contradictions across the corpus
-save_artifact           # persist a generated artifact with provenance
-get_project_context     # retrieve project-scoped memory and context
+search_corpus           # query the local corpus, return ranked evidence  ✅ (Phase 3)
+get_source              # document metadata + structure for a source id   ✅ (Phase 3)
+retrieve_evidence       # fetch evidence for a claim/question with citations (future)
+read_source             # read a specific source (permission-gated)      (future)
+get_research_state      # session/project research state summary          ✅ (Phase 2)
+query_database          # run read-only analytical SQL against DuckDB     (future)
+run_analysis            # run a bounded deterministic analysis (Python/DuckDB) (future)
+verify_claim            # verify a claim against evidence/sources         (future)
+find_contradictions     # detect contradictions across the corpus         (future)
+save_artifact           # persist a generated artifact with provenance    (future)
+get_project_context     # retrieve project-scoped memory and context      (future)
 ```
 
 ### Design rules for the tool surface

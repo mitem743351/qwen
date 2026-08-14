@@ -55,7 +55,9 @@ def test_mcp_roundtrip() -> None:
                 "execute_task",
                 "get_research_state",
                 "get_session",
+                "get_source",
                 "get_task_state",
+                "search_corpus",
             ]
 
             # 2. create_session

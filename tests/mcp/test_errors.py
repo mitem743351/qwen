@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from qwen_research.domain.errors import (
+    DocumentNotFoundError,
+    DocumentParseError,
     InferenceError,
     InvalidTransitionError,
+    PathSecurityError,
     PermissionError,
     PersistenceError,
     UnsupportedOperationError,
@@ -57,3 +60,23 @@ def test_unknown_error_maps_to_generic_internal() -> None:
     assert info.code == INTERNAL_ERROR
     assert info.message == "internal error"
     assert info.category == "domain"
+
+
+def test_document_not_found_maps_to_invalid_params() -> None:
+    info = map_error(DocumentNotFoundError("doc_1 not found"))
+    assert info.code == INVALID_PARAMS
+    assert "not found" in info.message
+    assert info.category == "document"
+
+
+def test_path_security_error_does_not_leak_path() -> None:
+    info = map_error(PathSecurityError("/secret/escape"))
+    assert info.code == INVALID_PARAMS
+    assert "/secret/escape" not in info.message
+    assert "access denied" in info.message
+
+
+def test_document_parse_error_maps_to_internal() -> None:
+    info = map_error(DocumentParseError("invalid JSON"))
+    assert info.code == INTERNAL_ERROR
+    assert info.category == "document"

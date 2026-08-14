@@ -1,0 +1,17 @@
+Quantum Error Correction Thresholds
+
+This paper surveys the surface code and its role in fault-tolerant quantum
+computing. Quantum error correction is essential because physical qubits are
+noisy and decohere quickly.
+
+The surface code achieves a high error-correction threshold by using local
+stabilizer measurements on a two-dimensional lattice of data and ancilla
+qubits. Errors are detected by measuring parity checks known as stabilizers.
+
+Fault-tolerant quantum computation requires error rates below a threshold.
+Below this threshold, increasing the code distance exponentially suppresses
+logical errors. The threshold for the surface code is approximately one
+percent under standard circuit-level noise models.
+
+Topological error correction is attractive because stabilizer measurements
+are local and require only nearest-neighbor interactions.

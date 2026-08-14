@@ -27,7 +27,22 @@ def test_default_tool_set() -> None:
         "continue_task",
         "get_task_state",
         "get_research_state",
+        "search_corpus",
+        "get_source",
     )
+
+
+def test_required_fields_match_tool_contract() -> None:
+    catalog = _catalog()
+    assert catalog["get_session"]["input_schema"]["required"] == ["session_id"]
+    assert catalog["execute_task"]["input_schema"]["required"] == ["description"]
+    assert catalog["continue_task"]["input_schema"]["required"] == ["task_id"]
+    assert catalog["get_task_state"]["input_schema"]["required"] == ["task_id"]
+    assert catalog["get_research_state"]["input_schema"]["required"] == ["task_id"]
+    assert catalog["search_corpus"]["input_schema"]["required"] == ["query"]
+    assert catalog["get_source"]["input_schema"]["required"] == ["document_id"]
+    # create_session has no required args (all defaulted) → no "required" key.
+    assert "required" not in catalog["create_session"]["input_schema"]
 
 
 def test_wire_tools_match_default_set() -> None:
@@ -39,17 +54,6 @@ def test_every_tool_has_description_and_schema() -> None:
         assert name in TOOL_DESCRIPTIONS
         assert entry["description"] == TOOL_DESCRIPTIONS[name]
         assert entry["input_schema"]["type"] == "object"
-
-
-def test_required_fields_match_tool_contract() -> None:
-    catalog = _catalog()
-    assert catalog["get_session"]["input_schema"]["required"] == ["session_id"]
-    assert catalog["execute_task"]["input_schema"]["required"] == ["description"]
-    assert catalog["continue_task"]["input_schema"]["required"] == ["task_id"]
-    assert catalog["get_task_state"]["input_schema"]["required"] == ["task_id"]
-    assert catalog["get_research_state"]["input_schema"]["required"] == ["task_id"]
-    # create_session has no required args (all defaulted) → no "required" key.
-    assert "required" not in catalog["create_session"]["input_schema"]
 
 
 def test_mode_enum_matches_domain_operating_mode() -> None:

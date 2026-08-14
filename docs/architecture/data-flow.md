@@ -68,7 +68,7 @@ raw chat text.
 
 ---
 
-## 2. Ingest Path (corpus material)
+## 2. Ingest Path (corpus material) — implemented in Phase 3
 
 ```text
 Filesystem ──discovery──▶ Identification ──▶ Hasher

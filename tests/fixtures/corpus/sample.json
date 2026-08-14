@@ -1,0 +1,9 @@
+{
+  "title": "Experimental Results",
+  "model": "surface-code-simulator",
+  "metrics": {
+    "logical_error_rate": 0.0012,
+    "threshold": 0.011
+  },
+  "tags": ["quantum", "error-correction", "simulation"]
+}

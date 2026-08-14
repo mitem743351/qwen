@@ -18,16 +18,21 @@ def _runtime() -> InMemoryResearchRuntime:
     return InMemoryResearchRuntime()
 
 
+EXPECTED_TOOLS = [
+    "continue_task",
+    "create_session",
+    "execute_task",
+    "get_research_state",
+    "get_session",
+    "get_source",
+    "get_task_state",
+    "search_corpus",
+]
+
+
 def test_server_builds_and_lists_tools() -> None:
     app = MCPServerApp(_runtime())
-    assert app.list_tools() == [
-        "continue_task",
-        "create_session",
-        "execute_task",
-        "get_research_state",
-        "get_session",
-        "get_task_state",
-    ]
+    assert app.list_tools() == EXPECTED_TOOLS
 
 
 def test_diagnostics() -> None:
@@ -36,7 +41,7 @@ def test_diagnostics() -> None:
     assert d["server"] == "qwen-research"
     assert d["transport"] == "stdio"
     assert d["status"] == "initialized"
-    assert len(d["registered_tools"]) == 6
+    assert len(d["registered_tools"]) == 8
     assert d["runtime_status"] == "ok"
 
 
@@ -101,14 +106,7 @@ def test_tool_catalog_async_inside_running_loop() -> None:
         return await app.tool_catalog_async()
 
     catalog = asyncio.run(run())
-    assert sorted(catalog) == [
-        "continue_task",
-        "create_session",
-        "execute_task",
-        "get_research_state",
-        "get_session",
-        "get_task_state",
-    ]
+    assert sorted(catalog) == EXPECTED_TOOLS
     assert "input_schema" in catalog["get_session"]
     assert "description" in catalog["get_session"]
 
