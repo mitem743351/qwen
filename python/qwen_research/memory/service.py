@@ -18,15 +18,22 @@ from qwen_research.memory.models import (
     ResearchMemory,
     ResearchQuestion,
 )
+from qwen_research.memory.provenance import ProvenanceValidator
 from qwen_research.memory.retriever import MemoryHit, MemoryRetriever
 
 
 class MemoryService:
-    """Provider-neutral, project-scoped memory operations."""
+    """Provider-neutral, project-scoped memory operations.
 
-    def __init__(self, store: MemoryStore) -> None:
+    ``validator`` (optional) enforces research-derived provenance: when present
+    and ``origin == RESEARCH``, every ``source_refs``/``evidence_refs``/
+    ``claim_refs`` must resolve (project-scoped) **before** the write commits.
+    """
+
+    def __init__(self, store: MemoryStore, *, validator: ProvenanceValidator | None = None) -> None:
         self._store = store
         self._retriever = MemoryRetriever(store)
+        self._validator = validator
 
     def initialize(self) -> None:
         self._store.initialize()
@@ -61,7 +68,20 @@ class MemoryService:
         origin: MemoryOrigin = MemoryOrigin.RESEARCH,
         provenance: dict[str, str] | None = None,
     ) -> ResearchMemory:
-        """Save research-derived memory with explicit provenance."""
+        """Save research-derived memory with explicit provenance.
+
+        Research-derived references are validated (project-scoped) before the
+        write; an invalid reference raises :class:`ProvenanceError` and nothing
+        is persisted (atomic). User-originated metadata (``origin=USER``) is not
+        subject to research provenance validation.
+        """
+        if origin is MemoryOrigin.RESEARCH and self._validator is not None:
+            self._validator.validate(
+                project_id,
+                source_refs=source_refs,
+                evidence_refs=evidence_refs,
+                claim_refs=claim_refs,
+            )
         memory = ResearchMemory.create(
             project_id,
             content,

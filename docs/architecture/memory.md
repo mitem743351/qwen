@@ -34,6 +34,22 @@ Research-derived claims **require** evidence references; explicit user/project
 metadata is marked `origin = user` and does not. Retrieval scores are never
 converted into memory confidence.
 
+### Reference validation (Phase 4.1)
+
+When a `ProvenanceValidator` is configured on the `MemoryService`,
+research-derived memory (`origin=RESEARCH`) is validated **before** the write
+commits:
+
+- `source_refs` / `evidence_refs` resolve against the corpus (global source and
+  chunk ids).
+- `claim_refs` resolve against the **same project's** research-memory claim ids
+  — a claim from project A never validates in project B.
+
+An unresolved reference raises `ProvenanceError` (identifying the category and
+id) and **nothing is persisted** (atomic). Validation lives at the memory
+service boundary, so the invariant holds for MCP, CLI, API, and future
+workflow writers — not just MCP. User-originated metadata is exempt.
+
 ---
 
 ## Versioning

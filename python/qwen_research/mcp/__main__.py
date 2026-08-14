@@ -36,6 +36,7 @@ def build_runtime() -> ResearchRuntime:
     vector_db = os.environ.get("QWEN_RESEARCH_VECTOR_DB")
     memory_db = os.environ.get("QWEN_RESEARCH_MEMORY_DB")
 
+    index = None
     if corpus_db and corpus_root:
         from qwen_research.corpus.config import CorpusConfig, CorpusRoot
         from qwen_research.indexing.manager import IndexManager
@@ -69,12 +70,14 @@ def build_runtime() -> ResearchRuntime:
             retriever = lexical
 
     if memory_db:
+        from qwen_research.memory.provenance import validator_from_corpus
         from qwen_research.memory.service import MemoryService
         from qwen_research.memory.sqlite import SqliteMemoryStore
 
         store = SqliteMemoryStore(memory_db)
         store.initialize()
-        memory = MemoryService(store)
+        validator = validator_from_corpus(index) if index is not None else None
+        memory = MemoryService(store, validator=validator)
 
     return InMemoryResearchRuntime(retriever=retriever, memory=memory)
 

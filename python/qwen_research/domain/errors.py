@@ -29,6 +29,8 @@ class ErrorCategory(StrEnum):
     SECURITY = "security"
     DOCUMENT = "document"
     INDEX = "index"
+    RETRIEVAL = "retrieval"
+    PROVENANCE = "provenance"
 
 
 class DomainError(Exception):
@@ -145,3 +147,60 @@ class CorpusIndexError(CorpusError):
     """
 
     category = ErrorCategory.INDEX
+
+
+class RetrievalError(DomainError):
+    """Base class for retrieval failures."""
+
+    category = ErrorCategory.RETRIEVAL
+
+
+class RetrievalBackendUnavailable(RetrievalError):  # noqa: N818
+    """A retrieval backend is unavailable (a recoverable, expected outage).
+
+    This is **not** a programming error: it represents a backend that is
+    legitimately missing/broken (e.g. the vector index is absent or the corpus
+    database is corrupt). Hybrid retrieval may fall back to the other backend;
+    unexpected exceptions (TypeError, logic bugs, …) must **not** be conflated
+    with this.
+    """
+
+
+class SemanticRetrievalUnavailable(RetrievalBackendUnavailable):  # noqa: N818
+    """The semantic (embedding/vector) backend is unavailable."""
+
+
+class VectorIndexUnavailable(SemanticRetrievalUnavailable):  # noqa: N818
+    """The vector index backend is unavailable."""
+
+
+class EmbeddingBackendUnavailable(SemanticRetrievalUnavailable):  # noqa: N818
+    """The embedding provider backend is unavailable."""
+
+
+class LexicalRetrievalUnavailable(RetrievalBackendUnavailable):  # noqa: N818
+    """The lexical (FTS) backend is unavailable."""
+
+
+class RetrievalQueryError(RetrievalError):
+    """A retrieval query is invalid."""
+
+
+class RetrievalConfigurationError(RetrievalError):
+    """Retrieval is misconfigured."""
+
+
+class ProvenanceError(DomainError):
+    """A research-memory reference does not resolve.
+
+    ``kind`` is the reference category (``source``/``evidence``/``claim``) and
+    ``identifier`` is the offending reference id. The message identifies the
+    category and id without leaking unrelated private information.
+    """
+
+    category = ErrorCategory.PROVENANCE
+
+    def __init__(self, kind: str, identifier: str) -> None:
+        self.kind = kind
+        self.identifier = identifier
+        super().__init__(f"unresolved {kind} reference: {identifier}")

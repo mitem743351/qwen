@@ -146,8 +146,20 @@ Structured memory lives in `qwen_research/memory/` (not `domain/`): `ProjectMemo
 `ResearchMemory`, `DecisionRecord`, `ResearchQuestion`, `SourceMemory`,
 `SessionMemoryItem`, plus `MemoryType`/`QuestionStatus`/`MemoryOrigin` enums.
 Research-derived entries carry provenance (`source_refs`/`evidence_refs`/
-`claim_refs`); user metadata is marked `origin=user`. See
+`claim_refs`); user metadata is marked `origin=user`.
+
+Phase 4.1 adds reference validation: research-derived references are validated
+(project-scoped for claims) against a `ProvenanceValidator` before the write
+commits, raising `ProvenanceError` for unresolved references (atomic). See
 [`memory.md`](memory.md).
+
+## Errors (Phase 4.1)
+
+New typed errors in `domain/errors.py`: `RetrievalError` and
+`RetrievalBackendUnavailable` (with `SemanticRetrievalUnavailable`,
+`VectorIndexUnavailable`, `EmbeddingBackendUnavailable`,
+`LexicalRetrievalUnavailable`), `RetrievalQueryError`,
+`RetrievalConfigurationError`, and `ProvenanceError(kind, identifier)`.
 
 ## Serialization
 

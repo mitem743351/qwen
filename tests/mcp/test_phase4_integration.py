@@ -79,19 +79,21 @@ def test_mcp_hybrid_and_memory_roundtrip(tmp_path: Path) -> None:
             assert result["mode"] == "hybrid"
             assert len(result["results"]) >= 1
             assert result["results"][0]["document_id"]
+            chunk_id = result["results"][0]["chunk_id"]
 
-            # save_research_memory (WRITE permission enabled).
+            # save_research_memory (WRITE permission enabled) with a valid
+            # evidence reference (a real corpus chunk id).
             r = await session.call_tool(
                 "save_research_memory",
                 {
                     "project_id": "p1",
                     "content": "surface code threshold ~1%",
-                    "source_refs": ["src_1"],
+                    "evidence_refs": [chunk_id],
                 },
             )
             memory = json.loads(_text(r))
             assert memory["project_id"] == "p1"
-            assert memory["source_refs"] == ["src_1"]
+            assert memory["evidence_refs"] == [chunk_id]
 
             # get_research_memory returns it (project isolation).
             r = await session.call_tool("get_research_memory", {"project_id": "p1"})

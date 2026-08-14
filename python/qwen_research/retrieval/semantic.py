@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import dataclasses
+import sqlite3
 from time import monotonic
 
+from qwen_research.domain.errors import VectorIndexUnavailable
 from qwen_research.embeddings.base import EmbeddingProvider
 from qwen_research.indexing.interface import CorpusIndex
+from qwen_research.retrieval.filters import apply_filters
 from qwen_research.retrieval.models import (
     CorpusStats,
     DocumentView,
     IndexStatus,
     RetrievalMode,
-    RetrievedChunk,
     SearchOptions,
     SearchResult,
 )
@@ -20,7 +22,13 @@ from qwen_research.vector.interface import VectorIndex
 
 
 class SemanticRetriever:
-    """Retrieves chunks by embedding similarity over the vector index."""
+    """Retrieves chunks by embedding similarity over the vector index.
+
+    Because the vector backend has no native metadata filtering, this retriever
+    **overfetches** candidates (``candidate_limit``), applies filters, and only
+    then truncates to the final limit — so a metadata filter cannot silently
+    destroy recall when the top candidates fall outside the filter.
+    """
 
     def __init__(
         self,
@@ -35,14 +43,26 @@ class SemanticRetriever:
     def search(self, query: str, options: SearchOptions | None = None) -> SearchResult:
         options = options or SearchOptions()
         started = monotonic()
-        limit = max(0, options.limit)
+        final_limit = max(0, options.limit)
         if not query.strip():
             return SearchResult((), query, 0, 0, 0.0, RetrievalMode.SEMANTIC.value)
+
         info = self._provider.model_info()
+        # The hashing provider cannot fail; a future provider (transformer,
+        # remote) raises ``EmbeddingBackendUnavailable`` itself, which
+        # propagates here. We do not wrap this call in a broad handler.
         vector = self._provider.embed_query(query)
-        hits = self._vector.search(
-            vector, model=info.model, version=info.version, limit=limit
-        )
+
+        candidate_limit = options.semantic_candidate_limit()
+        try:
+            hits = self._vector.search(
+                vector, model=info.model, version=info.version, limit=candidate_limit
+            )
+        except (sqlite3.Error, OSError) as exc:
+            # A backend-level vector failure (missing/corrupt index, I/O) is a
+            # recoverable outage; unexpected programming errors propagate.
+            raise VectorIndexUnavailable(f"vector index unavailable: {exc}") from exc
+
         chunks = self._corpus.get_chunks_for_ids([h.chunk_id for h in hits])
         score_by_id = {h.chunk_id: h.score for h in hits}
         ranked = []
@@ -56,34 +76,21 @@ class SemanticRetriever:
                     retrieval_mode=RetrievalMode.SEMANTIC.value,
                 )
             )
-        # Apply filters (the vector index has no filter support yet).
-        ranked = self._filter(ranked, options)
-        for rank, chunk in enumerate(ranked):
-            ranked[rank] = dataclasses.replace(chunk, rank=rank)
+
+        # Filter (overfetch was applied upstream), then rank, then truncate.
+        filtered = apply_filters(ranked, options)
+        for rank, chunk in enumerate(filtered):
+            filtered[rank] = dataclasses.replace(chunk, rank=rank)
         return SearchResult(
-            chunks=tuple(ranked[:limit]),
+            chunks=tuple(filtered[:final_limit]),
             query=query,
-            candidate_count=len(ranked),
-            returned_count=min(len(ranked), limit),
+            candidate_count=len(filtered),
+            returned_count=min(len(filtered), final_limit),
             duration_ms=(monotonic() - started) * 1000,
             mode=RetrievalMode.SEMANTIC.value,
+            semantic_available=True,
+            lexical_available=False,
         )
-
-    def _filter(
-        self, chunks: list[RetrievedChunk], options: SearchOptions
-    ) -> list[RetrievedChunk]:
-        out: list[RetrievedChunk] = []
-        for chunk in chunks:
-            if options.roots and chunk.root_id not in options.roots:
-                continue
-            if options.document_types and chunk.media_type not in options.document_types:
-                continue
-            if options.path_prefix and not _matches_prefix(
-                chunk.relative_path, options.path_prefix
-            ):
-                continue
-            out.append(chunk)
-        return out
 
     def get_document(self, document_id: str) -> DocumentView | None:
         return self._corpus.get_document(document_id)
@@ -93,12 +100,3 @@ class SemanticRetriever:
 
     def status(self) -> IndexStatus:
         return self._corpus.status()
-
-
-def _matches_prefix(relative_path: str | None, prefix: str) -> bool:
-    if not relative_path:
-        return False
-    prefix = prefix.rstrip("/")
-    if not prefix:
-        return True
-    return relative_path == prefix or relative_path.startswith(prefix + "/")

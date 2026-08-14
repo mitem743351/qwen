@@ -51,6 +51,15 @@ excerpt, score).
 domain object (`source_id`, `location`, `excerpt`, `relevance`, metadata). The
 `relevance` is the search score — never model-derived confidence.
 
+## Failure semantics & degradation (Phase 4.1)
+
+Retrieval failures are explicit and typed. A backend outage
+(`RetrievalBackendUnavailable` subclasses) is a *recoverable* condition that the
+hybrid retriever degrades with structured metadata; a programming failure is
+*unexpected* and propagates. **FAILURE ≠ EMPTY RESULT.** See
+[`hybrid-retrieval.md`](hybrid-retrieval.md) and
+[`semantic-retrieval.md`](semantic-retrieval.md).
+
 ---
 
 ## Index lifecycle

@@ -5,10 +5,10 @@ It is deliberately narrow, semantic, and permission-gated.
 
 > **Implemented.** The MCP foundation (Phase 2) is implemented in
 > `python/qwen_research/mcp/` (stdio transport, Research-Runtime tools,
-> permissions, error normalization). Phase 3 adds the retrieval tools
-> `search_corpus` and `get_source`. See
-> [`mcp-implementation.md`](mcp-implementation.md) for what exists vs. future
-> capability.
+> permissions, error normalization). Phase 3 adds retrieval tools
+> (`search_corpus`, `get_source`); Phase 4 adds hybrid search and the memory
+> tools. See [`mcp-implementation.md`](mcp-implementation.md) for what exists
+> vs. future capability.
 
 > ### MCP ≠ Inference Control
 >

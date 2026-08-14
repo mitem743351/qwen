@@ -52,6 +52,19 @@ Without `QWEN_RESEARCH_VECTOR_DB`, `search_corpus` is lexical-only. With it,
   vectors are detected, never mixed).
 - `EmbeddingManager.sync()` embeds only new/changed chunks (incremental).
 
+## Filter-correct search (overfetch)
+
+Semantic search overfetches candidates (`candidate_limit = final_k ×
+semantic_overfetch_factor`, default `5×`, floor `20`), applies metadata filters,
+then truncates to the final limit — so a filter cannot silently destroy recall.
+
+## Memory provenance
+
+When a corpus database is configured, `save_research_memory` validates
+research-derived `source_refs`/`evidence_refs`/`claim_refs` against the corpus
+(and project-scoped claims) before persisting; unresolved references are
+rejected (no partial write). User-originated metadata is exempt.
+
 ---
 
 ## Limitations

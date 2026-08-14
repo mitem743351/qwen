@@ -65,12 +65,24 @@ lightweight cross-encoder can be added later without changing search APIs.
 
 ---
 
-## Fallback
+## Failure semantics & fallback (Phase 4.1)
 
-A semantic-backend failure never destroys lexical retrieval: the hybrid
-retriever degrades the failed sub-search to an empty result (visible via
-`semantic_hits = 0` in `SearchResult`), never silently pretending semantic
-retrieval succeeded.
+Only :class:`~qwen_research.domain.errors.RetrievalBackendUnavailable`
+subclasses (`SemanticRetrievalUnavailable`, `VectorIndexUnavailable`,
+`EmbeddingBackendUnavailable`, `LexicalRetrievalUnavailable`) trigger fallback.
+Unexpected programming failures (TypeError, logic bugs, schema errors) **propagate**
+and are never silently converted to zero hits.
+
+| Lexical | Semantic | Result |
+|---------|----------|--------|
+| available | available | normal hybrid |
+| available | unavailable | lexical fallback + `degraded=True`, `degradation_reason="semantic_backend_unavailable"` |
+| unavailable | available | semantic-only + `degraded=True`, `degradation_reason="lexical_backend_unavailable"` |
+| unavailable | unavailable | raise `RetrievalBackendUnavailable` |
+
+`SearchResult` carries structured degradation metadata: `degraded`,
+`degradation_reason` (a stable identifier, not free-form prose),
+`semantic_available`, and `lexical_available`.
 
 ---
 

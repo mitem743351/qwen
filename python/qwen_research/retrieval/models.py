@@ -39,6 +39,7 @@ class RetrievedChunk:
     root_id: str | None = None
     relative_path: str | None = None
     media_type: str | None = None
+    modified_at: datetime | None = None
     lexical_score: float | None = None
     semantic_score: float | None = None
     fusion_score: float | None = None
@@ -78,6 +79,23 @@ class SearchOptions:
     semantic_k: int = 20
     final_k: int = 10
     max_chunks_per_document: int = 3
+    #: Recall safeguard for semantic retrieval when the backend has no native
+    #: metadata filtering: the vector index is asked for ``candidate_limit``
+    #: chunks, filters are applied, then the final ``limit`` is returned.
+    semantic_overfetch_factor: int = 5
+    minimum_candidate_pool: int = 20
+
+    def semantic_candidate_limit(self) -> int:
+        """The number of semantic candidates to fetch before filtering.
+
+        Distinct from the final ``limit``: overfetch preserves recall when the
+        top semantic candidates fall outside the requested filters. This is a
+        recall safeguard, never a confidence measure.
+        """
+        return max(
+            self.limit * self.semantic_overfetch_factor,
+            self.minimum_candidate_pool,
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -134,6 +152,13 @@ class SearchResult:
     lexical_hits: int | None = None
     semantic_hits: int | None = None
     intersection_count: int | None = None
+    #: Degradation metadata: set when a backend fell back. ``degraded`` is
+    #: False on a normal (non-fallback) result; ``degradation_reason`` is a
+    #: short, stable identifier (not free-form prose).
+    degraded: bool = False
+    degradation_reason: str | None = None
+    semantic_available: bool | None = None
+    lexical_available: bool | None = None
 
 
 @dataclasses.dataclass(frozen=True)

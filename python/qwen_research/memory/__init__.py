@@ -13,6 +13,11 @@ from qwen_research.memory.models import (
     SessionMemoryItem,
     SourceMemory,
 )
+from qwen_research.memory.provenance import (
+    ProvenanceValidator,
+    ReferenceKind,
+    validator_from_corpus,
+)
 from qwen_research.memory.retriever import MemoryHit, MemoryRetriever
 from qwen_research.memory.service import MemoryService
 from qwen_research.memory.sqlite import SqliteMemoryStore
@@ -27,7 +32,9 @@ __all__ = [
     "MemoryStore",
     "MemoryType",
     "ProjectMemory",
+    "ProvenanceValidator",
     "QuestionStatus",
+    "ReferenceKind",
     "ResearchContext",
     "ResearchMemory",
     "ResearchQuestion",
@@ -35,4 +42,5 @@ __all__ = [
     "SourceMemory",
     "SqliteMemoryStore",
     "build_context",
+    "validator_from_corpus",
 ]

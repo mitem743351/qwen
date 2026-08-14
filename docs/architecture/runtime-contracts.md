@@ -55,6 +55,13 @@ metadata. No SQLite/FTS/vector objects reach the runtime — only `Retriever` an
 repository interfaces). `build_research_context(query, project_id=…)` assembles
 a bounded `ResearchContext` of evidence + memory + open questions.
 
+### Memory provenance (Phase 4.1)
+
+`save_research_memory` validates research-derived references (project-scoped)
+via a configured `ProvenanceValidator` **before** the write commits; an
+unresolved reference raises `ProvenanceError` and nothing is persisted. This
+holds for every writer (MCP, CLI, API, workflow), not only MCP.
+
 ### Reserved lifecycle operations
 
 `pause_task`, `resume_task`, `wait_for_input`, `provide_input`, and

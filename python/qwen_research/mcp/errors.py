@@ -23,6 +23,8 @@ from qwen_research.domain.errors import (
     PathSecurityError,
     PermissionError,
     PersistenceError,
+    ProvenanceError,
+    RetrievalBackendUnavailable,
     ToolError,
     UnsupportedOperationError,
     ValidationError,
@@ -62,6 +64,13 @@ def map_error(exc: Exception) -> MCPErrorInfo:
         )
     if isinstance(exc, PermissionError):
         return MCPErrorInfo(INVALID_PARAMS, f"permission denied: {exc.message}", exc.category.value)
+    if isinstance(exc, ProvenanceError):
+        # Identify the invalid reference category/id; no unrelated private info.
+        return MCPErrorInfo(INVALID_PARAMS, f"invalid reference: {exc.message}", exc.category.value)
+    if isinstance(exc, RetrievalBackendUnavailable):
+        return MCPErrorInfo(
+            INTERNAL_ERROR, f"retrieval unavailable: {exc.message}", exc.category.value
+        )
     if isinstance(exc, UnsupportedOperationError):
         return MCPErrorInfo(
             INTERNAL_ERROR, f"capability unavailable: {exc.message}", exc.category.value

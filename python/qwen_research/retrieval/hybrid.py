@@ -9,6 +9,20 @@ that retriever's result). Rank-based fusion is used because lexical (BM25) and
 semantic (cosine) scores are not directly comparable. Ties break by ``chunk_id``
 for deterministic ordering. A document-diversity step then limits the number of
 chunks returned per document, and an optional :class:`Reranker` may re-score.
+
+Failure semantics (Phase 4.1):
+
+    lexical     semantic    result
+    ----------  ----------  ----------------------------------------
+    available   available   normal hybrid
+    available   unavailable lexical fallback + degraded flag
+    unavailable available   semantic-only + degraded flag
+    unavailable unavailable raise RetrievalBackendUnavailable
+
+Only :class:`~qwen_research.domain.errors.RetrievalBackendUnavailable`
+subclasses trigger fallback. Unexpected exceptions (programming defects, schema
+errors, corruption not classified as an outage) **propagate** and are never
+silently converted into zero hits.
 """
 
 from __future__ import annotations
@@ -16,6 +30,7 @@ from __future__ import annotations
 import dataclasses
 from time import monotonic
 
+from qwen_research.domain.errors import RetrievalBackendUnavailable
 from qwen_research.retrieval.interface import Retriever
 from qwen_research.retrieval.models import (
     CorpusStats,
@@ -69,11 +84,25 @@ class HybridRetriever:
         final_k = options.final_k or self._final_k
         max_per_doc = options.max_chunks_per_document or self._max_chunks_per_document
 
-        lexical_result = self._safe_search(self._lexical, query, options, lexical_k)
-        semantic_result = self._safe_search(self._semantic, query, options, semantic_k)
+        lexical_opts = dataclasses.replace(
+            options, limit=lexical_k, mode=RetrievalMode.HYBRID
+        )
+        semantic_opts = dataclasses.replace(
+            options, limit=semantic_k, mode=RetrievalMode.HYBRID
+        )
 
-        lexical_chunks = lexical_result.chunks
-        semantic_chunks = semantic_result.chunks
+        # Narrow, explicit backend handling: only RetrievalBackendUnavailable
+        # subclasses trigger fallback. Anything else propagates.
+        lexical_result, lexical_available = self._try(self._lexical, query, lexical_opts)
+        semantic_result, semantic_available = self._try(self._semantic, query, semantic_opts)
+
+        if not lexical_available and not semantic_available:
+            raise RetrievalBackendUnavailable(
+                "all retrieval backends unavailable; cannot satisfy query"
+            )
+
+        lexical_chunks = lexical_result.chunks if lexical_result else ()
+        semantic_chunks = semantic_result.chunks if semantic_result else ()
 
         # Candidate fusion: rank-based RRF over each retriever's ordered list.
         fused: dict[str, tuple[RetrievedChunk, float]] = {}
@@ -97,7 +126,6 @@ class HybridRetriever:
             key=lambda pair: (-pair[1], pair[0].chunk_id),
         )
 
-        # Attach per-component scores and fusion score.
         lexical_score = {c.chunk_id: c.score for c in lexical_chunks}
         semantic_score = {c.chunk_id: c.score for c in semantic_chunks}
         merged: list[RetrievedChunk] = []
@@ -116,11 +144,19 @@ class HybridRetriever:
         merged = self._diversify(merged, max_per_doc)
         merged = self._reranker.rerank(query, merged)
         for rank, chunk in enumerate(merged):
-            merged[rank] = dataclasses.replace(chunk, rank=rank, score=chunk.score)
+            merged[rank] = dataclasses.replace(chunk, rank=rank)
         merged = merged[:final_k]
 
         lex_ids = {c.chunk_id for c in lexical_chunks}
         sem_ids = {c.chunk_id for c in semantic_chunks}
+        degraded = not (lexical_available and semantic_available)
+        if not lexical_available:
+            reason = "lexical_backend_unavailable"
+        elif not semantic_available:
+            reason = "semantic_backend_unavailable"
+        else:
+            reason = None
+
         return SearchResult(
             chunks=tuple(merged),
             query=query,
@@ -131,21 +167,25 @@ class HybridRetriever:
             lexical_hits=len(lex_ids),
             semantic_hits=len(sem_ids),
             intersection_count=len(lex_ids & sem_ids),
+            degraded=degraded,
+            degradation_reason=reason,
+            semantic_available=semantic_available,
+            lexical_available=lexical_available,
         )
 
-    def _safe_search(
-        self, retriever: Retriever, query: str, options: SearchOptions, k: int
-    ) -> SearchResult:
-        """Run a sub-retriever, degrading to an empty result on failure.
+    @staticmethod
+    def _try(
+        retriever: Retriever, query: str, options: SearchOptions
+    ) -> tuple[SearchResult | None, bool]:
+        """Run a sub-retriever, mapping only backend outages to ``(None, False)``.
 
-        A semantic-backend failure must never destroy lexical retrieval; the
-        empty result is surfaced in the hybrid metrics (semantic_hits=0).
+        Unexpected exceptions propagate: a semantic failure must never be
+        silently converted to zero hits if it was a programming error.
         """
         try:
-            opts = dataclasses.replace(options, limit=k, mode=RetrievalMode.HYBRID)
-            return retriever.search(query, opts)
-        except Exception:  # noqa: BLE001 — graceful fallback
-            return SearchResult((), query, 0, 0, 0.0)
+            return retriever.search(query, options), True
+        except RetrievalBackendUnavailable:
+            return None, False
 
     def _diversify(self, chunks: list[RetrievedChunk], max_per_doc: int) -> list[RetrievedChunk]:
         out: list[RetrievedChunk] = []

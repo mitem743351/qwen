@@ -51,12 +51,25 @@ incompatible models are **never silently mixed**.
 
 ---
 
-## Retrieval integration
+## Retrieval integration & filter-correct search (Phase 4.1)
 
 `SemanticRetriever` embeds the query, searches the vector index, and joins chunk
 metadata back from the corpus index to produce `RetrievedChunk`s with
-`semantic_score` set and `lexical_score` absent. It preserves all existing
-filters (roots, document types, path prefix).
+`semantic_score` set and `lexical_score` absent.
+
+Because the vector backend has no native metadata filtering, the retriever
+**overfetches** candidates (`candidate_limit = max(final_k ×
+semantic_overfetch_factor, minimum_candidate_pool)`, defaults `5×` and `20`),
+applies filters, and only then truncates to the final `limit`. The pipeline is:
+
+```text
+query → candidate retrieval (overfetch) → roots → document_types → path_prefix
+      → date_range → minimum_score → ranking → diversity → final K
+```
+
+`candidate_limit` (how many the vector index is asked for) is distinct from
+`final_limit` (`SearchOptions.limit`, what the retriever returns). Overfetch is
+a **recall safeguard**, never a confidence measure.
 
 ---
 

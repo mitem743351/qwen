@@ -285,11 +285,17 @@ class SqliteCorpusIndex:
                 )
                 params.append(prefix)
                 params.append(f"{escaped}/%")
+        if filters.date_from is not None:
+            clauses.append("d.modified_at >= ?")
+            params.append(filters.date_from.isoformat())
+        if filters.date_to is not None:
+            clauses.append("d.modified_at <= ?")
+            params.append(filters.date_to.isoformat())
         where = " AND ".join(clauses)
         sql = f"""
             SELECT c.chunk_id, c.document_id, c.source_id, c.text, c.page, c.section,
                    c.start_offset, c.end_offset, d.relative_path, d.root_id, d.media_type,
-                   bm25(chunks_fts) AS bm25
+                   d.modified_at, bm25(chunks_fts) AS bm25
             FROM chunks_fts
             JOIN chunks c ON c.rowid = chunks_fts.rowid
             JOIN documents d ON d.document_id = c.document_id
@@ -315,6 +321,7 @@ class SqliteCorpusIndex:
                     root_id=row["root_id"],
                     relative_path=row["relative_path"],
                     media_type=row["media_type"],
+                    modified_at=_parse_dt(row["modified_at"]),
                 )
             )
         return results
@@ -390,7 +397,7 @@ class SqliteCorpusIndex:
         rows = db.execute(
             f"""
             SELECT c.chunk_id, c.document_id, c.source_id, c.text, c.page, c.section,
-                   d.relative_path, d.root_id, d.media_type
+                   d.relative_path, d.root_id, d.media_type, d.modified_at
             FROM chunks c
             JOIN documents d ON d.document_id = c.document_id
             WHERE c.chunk_id IN ({placeholders})
@@ -411,6 +418,7 @@ class SqliteCorpusIndex:
                 root_id=by_id[cid]["root_id"],
                 relative_path=by_id[cid]["relative_path"],
                 media_type=by_id[cid]["media_type"],
+                modified_at=_parse_dt(by_id[cid]["modified_at"]),
             )
             for cid in ids
             if cid in by_id

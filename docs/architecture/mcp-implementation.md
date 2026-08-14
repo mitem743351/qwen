@@ -1,15 +1,18 @@
 # MCP Implementation
 
-> **Status:** Phases 2 and 3 implemented. This documents what **exists** in
-> `python/qwen_research/mcp/`, and distinguishes it from future MCP capability.
+> **Status:** Phases 2, 3, 4, and 4.1 implemented. This documents what **exists**
+> in `python/qwen_research/mcp/`, and distinguishes it from future MCP
+> capability.
 
 ---
 
-## What Phase 2 delivers
+## What the MCP layer delivers
 
 A **real, testable external adapter**: Qwen Studio (or another MCP client)
-connects over stdio to an MCP server that exposes a minimal set of Research
-Runtime operations. The MCP layer is an **adapter**, not the research system.
+connects over stdio to an MCP server that exposes Research Runtime operations —
+session/task management (Phase 2), corpus retrieval (Phase 3), and hybrid
+search + persistent memory (Phase 4). The MCP layer is an **adapter**, not the
+research system.
 
 ```text
 Qwen Studio ── MCP (stdio) ──▶ MCP Server ──▶ Research Runtime ──▶ Domain
@@ -60,8 +63,12 @@ or retrieval logic lives in the MCP layer.
 | `continue_task` | ANALYZE | `continue_task` | 2 |
 | `get_task_state` | READ | `inspect_task` | 2 |
 | `get_research_state` | READ | `get_state` | 2 |
-| `search_corpus` | READ | `search_corpus` | 3 |
+| `search_corpus` | READ | `search_corpus` (lexical/semantic/hybrid) | 3–4 |
 | `get_source` | READ | `get_source` | 3 |
+| `get_project_memory` | READ | `get_project_memory` | 4 |
+| `get_research_memory` | READ | `get_research_memory` | 4 |
+| `get_open_questions` | READ | `get_open_questions` | 4 |
+| `save_research_memory` | WRITE | `save_research_memory` | 4 |
 
 Input schemas are **derived from the handler signatures** — the authoritative
 MCP wire schema. `schemas.py` holds the parameter *types* (as
@@ -103,6 +110,10 @@ chain-of-thought:
 |----------------|-----------------|
 | `ValidationError` / `InvalidTransitionError` | `INVALID_PARAMS` — "invalid arguments" |
 | `PermissionError` | `INVALID_PARAMS` — "permission denied" |
+| `ProvenanceError` | `INVALID_PARAMS` — "invalid reference: …" (category + id, no private data) |
+| `DocumentNotFoundError` | `INVALID_PARAMS` — "not found" |
+| `PathSecurityError` | `INVALID_PARAMS` — "access denied" (path never echoed) |
+| `RetrievalBackendUnavailable` | `INTERNAL_ERROR` — "retrieval unavailable" |
 | `UnsupportedOperationError` | `INTERNAL_ERROR` — "capability unavailable" |
 | other `DomainError` | `INTERNAL_ERROR` — safe message |
 
@@ -145,7 +156,7 @@ transport, and the registered tool list — no sensitive data.
   semantics exist
 - Streamable HTTP / SSE transports
 - Remote transport / authentication
-- Qwen API, semantic/vector retrieval, real persistence, computation engine
+- Qwen API, verification, computation engine
 
 See [`mcp.md`](mcp.md) for the architecture contract and
 [`../setup/mcp.md`](../setup/mcp.md) for running instructions.
