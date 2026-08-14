@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from mcp.shared.exceptions import MCPError
 
@@ -90,3 +92,37 @@ def test_guarded_call_maps_permission_domain_error() -> None:
     with pytest.raises(MCPError) as exc:
         guarded_call(_policy(), "get_session", deny)
     assert "permission denied" in exc.value.message
+
+
+def test_tool_catalog_async_inside_running_loop() -> None:
+    app = MCPServerApp(_runtime())
+
+    async def run() -> dict[str, dict]:
+        return await app.tool_catalog_async()
+
+    catalog = asyncio.run(run())
+    assert sorted(catalog) == [
+        "continue_task",
+        "create_session",
+        "execute_task",
+        "get_research_state",
+        "get_session",
+        "get_task_state",
+    ]
+    assert "input_schema" in catalog["get_session"]
+    assert "description" in catalog["get_session"]
+
+
+def test_tool_catalog_sync_raises_clear_error_inside_loop() -> None:
+    app = MCPServerApp(_runtime())
+
+    async def run() -> None:
+        with pytest.raises(RuntimeError, match="tool_catalog_async"):
+            app.tool_catalog()
+
+    asyncio.run(run())
+
+
+def test_tool_catalog_sync_and_async_agree() -> None:
+    app = MCPServerApp(_runtime())
+    assert app.tool_catalog() == asyncio.run(app.tool_catalog_async())

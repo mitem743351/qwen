@@ -119,22 +119,45 @@ class MCPServerApp:
 
     # -- diagnostics ------------------------------------------------------
 
+    def _build_catalog(self, tools: list[Any]) -> dict[str, dict[str, Any]]:
+        """Project SDK tool descriptors into the catalog dict."""
+        return {
+            tool.name: {"description": tool.description, "input_schema": tool.input_schema}
+            for tool in tools
+        }
+
+    async def tool_catalog_async(self) -> dict[str, dict[str, Any]]:
+        """Return the authoritative MCP wire tool surface (awaitable).
+
+        Use this from within a running event loop (``await app.tool_catalog_async()``).
+        """
+        return self._build_catalog(await self._server.list_tools())
+
     def tool_catalog(self) -> dict[str, dict[str, Any]]:
-        """Return the authoritative MCP wire tool surface.
+        """Return the authoritative MCP wire tool surface (sync).
 
         Keys are tool names; values carry the tool's ``description`` and
         ``input_schema`` exactly as the SDK exposes them on the wire. This is
         the single source of truth for tests and diagnostics — there is no
         parallel hand-written schema to drift.
 
-        (``asyncio.run`` is used because the SDK's ``list_tools`` is async;
-        call this from a sync context only.)
+        This method is synchronous and drives its own event loop via
+        ``asyncio.run``. If a running event loop exists (e.g. inside an async
+        tool handler or a client callback), call
+        :meth:`tool_catalog_async` instead; calling this method there raises a
+        clear ``RuntimeError`` rather than the ambiguous
+        ``asyncio.run() cannot be called from a running event loop``.
         """
-        tools = asyncio.run(self._server.list_tools())
-        return {
-            tool.name: {"description": tool.description, "input_schema": tool.input_schema}
-            for tool in tools
-        }
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        else:
+            raise RuntimeError(
+                "tool_catalog() is synchronous and cannot be used inside a "
+                "running event loop; await tool_catalog_async() instead"
+            )
+        return asyncio.run(self.tool_catalog_async())
 
     def list_tools(self) -> list[str]:
         """Return the registered tool names (derived from the wire catalog)."""
