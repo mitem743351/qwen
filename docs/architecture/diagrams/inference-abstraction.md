@@ -9,8 +9,13 @@ flowchart TD
     end
 
     subgraph SEAM["Capability Negotiation (translation layer)"]
-        CAP["ProviderCapabilities<br/>(reasoning, reasoning_budget, max_output_tokens,<br/>temperature, top_p, preserved_thinking, tool_calling,<br/>structured_output, streaming, parallel, context_caching)"]
-        NEG["outcome per policy element:<br/>APPLY · DEGRADE · EMULATE · REJECT"]
+        CAP["ProviderCapabilities + ProviderLimits<br/>(reasoning, reasoning_budget, max_output_tokens,<br/>temperature, top_p, preserved_thinking, tool_calling,<br/>structured_output, streaming, parallel, context_caching)"]
+        NEG["outcome per requested capability:<br/>APPLY · DEGRADE · EMULATE · REJECT<br/>+ CapabilityClass (NATIVE | WORKFLOW_EMULATABLE | NON_EMULATABLE)"]
+    end
+
+    subgraph RESULT["NegotiationResult"]
+        PP["ProviderInferencePolicy<br/>(what the backend actually receives)"]
+        WP["WorkflowEmulationPlan<br/>(what the Research Runtime does externally)"]
     end
 
     subgraph PROVIDERS["InferenceProvider implementations"]
@@ -24,16 +29,33 @@ flowchart TD
     RP -->|"Reasoning Policy Engine"| IP
     IP --> NEG
     CAP --> NEG
-    NEG --> Q1
-    NEG --> Q2
-    NEG --> Q3
-    NEG --> Q4
+    NEG --> PP
+    NEG --> WP
+    PP --> Q1
+    PP --> Q2
+    PP --> Q3
+    PP --> Q4
 
     Q1 -.-> B1["Qwen API"]
     Q2 -.-> B2["Qwen-compatible endpoint"]
     Q3 -.-> B3["local Qwen runtime"]
     Q4 -.-> B4["alternative provider"]
 ```
+
+**Key property (Phase 1.2)**
+
+`ReasoningProfile`/`ReasoningBudget` (behavior + resource allocation) and
+`InferencePolicy` (how to call) are provider-neutral. Negotiation intersects
+`InferencePolicy` with `ProviderCapabilities` (+ `ProviderLimits`) and produces
+a `NegotiationResult` that **separates**:
+
+- `ProviderInferencePolicy` — only what the backend will actually receive
+  (native + degraded values). Emulated capabilities are **absent**.
+- `WorkflowEmulationPlan` — the external workflow approximations for emulated
+  capabilities (`EMULATE` ≠ pretending the provider supports a parameter).
+
+This whole pipeline is exercised **only in `GATEWAY_INFERENCE`/`HYBRID` modes**;
+in `STUDIO_NATIVE` it is not present in the execution path at all.
 
 **Interface**
 

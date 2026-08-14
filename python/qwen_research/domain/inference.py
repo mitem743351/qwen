@@ -5,6 +5,17 @@ Qwen-specific parameters. The negotiation layer is independent of any backend,
 accounts for **every** declared capability, and never lets an unsupported
 requirement silently disappear.
 
+Key Phase 1.2 boundary:
+
+    Provider capability  ≠  Research Runtime capability
+
+``EMULATE`` means *"the requested intent can be approximated by an external
+workflow mechanism"* — it must **not** mean *"pretend the provider supports the
+requested native parameter."* Consequently the negotiated result separates the
+:class:`ProviderInferencePolicy` (what the backend will actually receive) from
+the :class:`WorkflowEmulationPlan` (what the Research Runtime must do
+externally). Emulated capabilities never appear as provider parameters.
+
 Model selection has a single authority: ``InferencePolicy.model_requirement``.
 ``InferenceRequest`` is a pure envelope and does not carry an independent model
 requirement (Phase 1.1).
@@ -25,10 +36,11 @@ class NegotiationOutcome(StrEnum):
     """Outcome of intersecting an ``InferencePolicy`` with ``ProviderCapabilities``.
 
     - ``APPLY``   — the provider can directly satisfy the requested policy.
-    - ``DEGRADE`` — the provider cannot fully satisfy the request, but a weaker
-      valid behavior is accepted (e.g. a bounded lower output budget).
-    - ``EMULATE`` — the provider cannot natively satisfy the capability, but the
-      Research Runtime can approximate it via external workflow behavior.
+    - ``DEGRADE`` — a weaker but semantically valid provider behavior satisfies
+      the request (e.g. a bounded lower output budget, or accepting the
+      provider default for an optional refinement).
+    - ``EMULATE`` — the provider lacks the capability, but the Research Runtime
+      can approximate the intent via an external workflow mechanism.
     - ``REJECT``  — the capability is required and cannot be satisfied or
       safely approximated; negotiation fails explicitly.
     """
@@ -37,6 +49,22 @@ class NegotiationOutcome(StrEnum):
     DEGRADE = "degrade"
     EMULATE = "emulate"
     REJECT = "reject"
+
+
+class CapabilityClass(StrEnum):
+    """Provider-neutral classification of a negotiated capability.
+
+    - ``NATIVE`` — the provider directly supports it.
+    - ``WORKFLOW_EMULATABLE`` — the provider does not support it, but the
+      Research Runtime can approximate the intent externally.
+    - ``NON_EMULATABLE`` — the provider does not support it and the system
+      cannot safely approximate it. If the request is required this is a
+      ``REJECT``; if optional it degrades to the provider default.
+    """
+
+    NATIVE = "native"
+    WORKFLOW_EMULATABLE = "workflow_emulatable"
+    NON_EMULATABLE = "non_emulatable"
 
 
 @serializable
@@ -59,6 +87,20 @@ class ProviderCapabilities:
     supports_streaming: bool = False
     supports_parallel_generation: bool = False
     supports_context_caching: bool = False
+
+
+@serializable
+@dataclasses.dataclass(frozen=True)
+class ProviderLimits:
+    """Quantitative limits a provider imposes on otherwise-supported capabilities.
+
+    Used for ``DEGRADE`` when a requested numeric value exceeds the provider's
+    bound (e.g. requested ``max_output_tokens=100000`` with a provider maximum
+    of ``32000``). ``None`` means "no known bound".
+    """
+
+    max_output_tokens: int | None = None
+    max_reasoning_budget: int | None = None
 
 
 @serializable
@@ -157,173 +199,294 @@ class InferenceResult:
 class NegotiationDecision:
     """The outcome for a single requested capability.
 
-    Exposes everything a caller needs to reason about a decision:
-    the requested capability, whether the provider supports it, the decision,
-    the reason, and the effective value applied to the resulting policy.
+    Exposes everything a caller needs to reason about a decision: the requested
+    capability, whether the provider supports it, its capability class, the
+    decision, the reason, the effective provider value (if any), and the
+    workflow emulation strategy (if emulated).
+
+    - ``APPLY``  → ``capability_class = NATIVE``, ``effective_value`` = value.
+    - ``DEGRADE`` → a weaker value (``effective_value`` = bound or ``None``).
+    - ``EMULATE`` → ``capability_class = WORKFLOW_EMULATABLE``,
+      ``emulation_strategy`` set, ``effective_value = None`` (no fake provider
+      parameter).
+    - ``REJECT``  → ``capability_class = NON_EMULATABLE``.
     """
 
     element: str
     requested: bool
     supported: bool
+    capability_class: CapabilityClass
     outcome: NegotiationOutcome
     reason: str
     effective_value: Any | None = None
+    emulation_strategy: str | None = None
+
+
+@serializable
+@dataclasses.dataclass(frozen=True)
+class EmulationDirective:
+    """A single workflow emulation the Research Runtime must execute externally."""
+
+    capability: str
+    strategy: str
+
+
+@serializable
+@dataclasses.dataclass(frozen=True)
+class WorkflowEmulationPlan:
+    """The set of external workflow approximations for emulated capabilities.
+
+    These are **not** provider parameters — they describe what the Research
+    Runtime must do outside the model call (multi-pass reasoning, sequential
+    trajectories, structured-output post-processing, etc.).
+    """
+
+    directives: tuple[EmulationDirective, ...] = ()
+
+    def is_empty(self) -> bool:
+        return not self.directives
+
+
+@serializable
+@dataclasses.dataclass(frozen=True)
+class NegotiationResult:
+    """The outcome of capability negotiation.
+
+    ``provider_policy`` contains only what the backend will actually receive
+    (native and degraded values). ``workflow_emulation_plan`` contains the
+    external work for emulated capabilities. ``decisions`` records every
+    requested capability explicitly.
+    """
+
+    provider_policy: InferencePolicy
+    workflow_emulation_plan: WorkflowEmulationPlan
+    decisions: tuple[NegotiationDecision, ...]
 
 
 def negotiate(
-    policy: InferencePolicy, capabilities: ProviderCapabilities
-) -> tuple[InferencePolicy, tuple[NegotiationDecision, ...]]:
-    """Intersect *policy* with *capabilities*.
+    policy: InferencePolicy,
+    capabilities: ProviderCapabilities,
+    limits: ProviderLimits | None = None,
+) -> NegotiationResult:
+    """Intersect *policy* with *capabilities* (and optional *limits*).
 
-    Returns ``(applied_policy, decisions)`` where ``decisions`` contains an
-    explicit record for **every** requested capability (``APPLY``, ``DEGRADE``,
-    ``EMULATE``, or ``REJECT``). If any requested capability is ``REJECT``,
-    raises :class:`InferenceError` — unsupported requirements never silently
-    disappear and never silently continue.
+    Returns a :class:`NegotiationResult` whose ``decisions`` records every
+    requested capability as ``APPLY``, ``DEGRADE``, ``EMULATE``, or ``REJECT``:
+
+    - Native + supported → ``APPLY`` (``capability_class=NATIVE``).
+    - Native + over the provider limit → ``DEGRADE`` to the bound.
+    - Optional + unsupported → ``DEGRADE`` to the provider default.
+    - Workflow-emulatable + unsupported → ``EMULATE`` (never a provider
+      parameter; recorded in the emulation plan).
+    - Required + non-emulatable → ``REJECT``, raising :class:`InferenceError`.
+
+    Unsupported requirements never silently disappear and never silently
+    continue.
     """
+    limits = limits or ProviderLimits()
     decisions: list[NegotiationDecision] = []
-    applied: dict[str, Any] = {"model_requirement": policy.model_requirement}
+    emulations: list[EmulationDirective] = []
+    # provider_policy defaults: only native/degraded values are written back.
+    provider_values: dict[str, Any] = {"model_requirement": policy.model_requirement}
 
-    def decide(
-        element: str,
-        requested: bool,
-        supported: bool,
-        *,
-        apply: Any,
-        degrade: Any,
-        degrade_reason: str,
-        emulate: Any | None = None,
-        emulate_reason: str = "",
-        reject_reason: str = "",
+    def apply_native(element: str, value: Any) -> None:
+        decisions.append(
+            NegotiationDecision(
+                element=element,
+                requested=True,
+                supported=True,
+                capability_class=CapabilityClass.NATIVE,
+                outcome=NegotiationOutcome.APPLY,
+                reason="supported",
+                effective_value=value,
+            )
+        )
+        provider_values[element] = value
+
+    def degrade_to_bound(
+        element: str, value: Any, bound: int, reason: str
     ) -> None:
-        if not requested:
-            return
-        if supported:
-            decisions.append(
-                NegotiationDecision(
-                    element, True, True, NegotiationOutcome.APPLY, "supported", apply
-                )
+        decisions.append(
+            NegotiationDecision(
+                element=element,
+                requested=True,
+                supported=True,
+                capability_class=CapabilityClass.NATIVE,
+                outcome=NegotiationOutcome.DEGRADE,
+                reason=reason,
+                effective_value=bound,
             )
-            applied[element] = apply
-        elif emulate is not None:
-            decisions.append(
-                NegotiationDecision(
-                    element, True, False, NegotiationOutcome.EMULATE, emulate_reason, emulate
-                )
-            )
-            applied[element] = emulate
-        elif reject_reason:
-            decisions.append(
-                NegotiationDecision(
-                    element, True, False, NegotiationOutcome.REJECT, reject_reason, None
-                )
-            )
-        else:
-            decisions.append(
-                NegotiationDecision(
-                    element, True, False, NegotiationOutcome.DEGRADE, degrade_reason, degrade
-                )
-            )
-            applied[element] = degrade
+        )
+        provider_values[element] = bound
 
-    decide(
-        "reasoning",
-        policy.reasoning,
-        capabilities.supports_reasoning,
-        apply=True,
-        degrade=False,  # unreachable: emulate takes precedence for reasoning
-        degrade_reason="",
-        emulate=True,
-        emulate_reason="reasoning approximated via workflow (multi-pass/critique)",
-    )
-    decide(
-        "reasoning_budget",
-        policy.reasoning_budget is not None,
-        capabilities.supports_reasoning_budget,
-        apply=policy.reasoning_budget,
-        degrade=None,
-        degrade_reason="reasoning budget not controllable by provider",
-    )
-    decide(
-        "max_output_tokens",
-        policy.max_output_tokens is not None,
-        capabilities.supports_max_output_tokens,
-        apply=policy.max_output_tokens,
-        degrade=None,
-        degrade_reason="provider cannot cap output tokens",
-    )
-    decide(
-        "temperature",
-        policy.temperature is not None,
-        capabilities.supports_temperature,
-        apply=policy.temperature,
-        degrade=None,
-        degrade_reason="provider exposes no temperature control",
-    )
-    decide(
-        "top_p",
-        policy.top_p is not None,
-        capabilities.supports_top_p,
-        apply=policy.top_p,
-        degrade=None,
-        degrade_reason="provider exposes no top_p control",
-    )
-    decide(
-        "preserved_thinking",
-        policy.preserved_thinking,
-        capabilities.supports_preserved_thinking,
-        apply=True,
-        degrade=False,
-        degrade_reason="",
-        reject_reason=(
-            "preserved thinking requested but not supported and cannot be safely approximated"
-        ),
-    )
-    decide(
-        "tool_calling",
-        policy.tool_calling,
-        capabilities.supports_tool_calling,
-        apply=True,
-        degrade=False,
-        degrade_reason="",
-        reject_reason="tool calling requested but not supported by provider",
-    )
-    decide(
-        "structured_output",
-        policy.structured_output,
-        capabilities.supports_structured_output,
-        apply=True,
-        degrade=False,
-        degrade_reason="",
-        emulate=True,
-        emulate_reason="structured output emulated via constrained prompt + post-validation",
-    )
-    decide(
-        "streaming",
-        policy.streaming,
-        capabilities.supports_streaming,
-        apply=True,
-        degrade=False,
-        degrade_reason="streaming unsupported; one-shot generation used",
-    )
-    decide(
-        "parallel_generation",
-        policy.parallel_generation,
-        capabilities.supports_parallel_generation,
-        apply=True,
-        degrade=False,
-        degrade_reason="",
-        emulate=True,
-        emulate_reason="parallel research emulated via sequential trajectories in the workflow",
-    )
-    decide(
-        "context_caching",
-        policy.context_caching,
-        capabilities.supports_context_caching,
-        apply=True,
-        degrade=False,
-        degrade_reason="context caching unsupported; accepted without caching",
-    )
+    def degrade_to_default(element: str, value: Any, reason: str) -> None:
+        decisions.append(
+            NegotiationDecision(
+                element=element,
+                requested=True,
+                supported=False,
+                capability_class=CapabilityClass.NON_EMULATABLE,
+                outcome=NegotiationOutcome.DEGRADE,
+                reason=reason,
+                effective_value=value,
+            )
+        )
+        provider_values[element] = value
+
+    def emulate(element: str, strategy: str, reason: str) -> None:
+        decisions.append(
+            NegotiationDecision(
+                element=element,
+                requested=True,
+                supported=False,
+                capability_class=CapabilityClass.WORKFLOW_EMULATABLE,
+                outcome=NegotiationOutcome.EMULATE,
+                reason=reason,
+                effective_value=None,
+                emulation_strategy=strategy,
+            )
+        )
+        emulations.append(EmulationDirective(capability=element, strategy=strategy))
+        # Do NOT write an emulated capability into provider_values.
+
+    def reject(element: str, reason: str) -> None:
+        decisions.append(
+            NegotiationDecision(
+                element=element,
+                requested=True,
+                supported=False,
+                capability_class=CapabilityClass.NON_EMULATABLE,
+                outcome=NegotiationOutcome.REJECT,
+                reason=reason,
+                effective_value=None,
+            )
+        )
+
+    # reasoning
+    if policy.reasoning:
+        if capabilities.supports_reasoning:
+            apply_native("reasoning", True)
+        else:
+            emulate(
+                "reasoning",
+                "multi_pass_reasoning",
+                "no native reasoning; approximated via multi-pass workflow",
+            )
+
+    # reasoning_budget
+    if policy.reasoning_budget is not None:
+        if capabilities.supports_reasoning_budget:
+            bound = limits.max_reasoning_budget
+            if bound is not None and policy.reasoning_budget > bound:
+                degrade_to_bound(
+                    "reasoning_budget",
+                    policy.reasoning_budget,
+                    bound,
+                    f"requested {policy.reasoning_budget} exceeds provider maximum {bound}",
+                )
+            else:
+                apply_native("reasoning_budget", policy.reasoning_budget)
+        else:
+            emulate(
+                "reasoning_budget",
+                "workflow_reasoning_budget",
+                "reasoning budget not provider-controllable; approximated via workflow passes",
+            )
+
+    # max_output_tokens
+    if policy.max_output_tokens is not None:
+        if capabilities.supports_max_output_tokens:
+            bound = limits.max_output_tokens
+            if bound is not None and policy.max_output_tokens > bound:
+                degrade_to_bound(
+                    "max_output_tokens",
+                    policy.max_output_tokens,
+                    bound,
+                    f"requested {policy.max_output_tokens} exceeds provider maximum {bound}",
+                )
+            else:
+                apply_native("max_output_tokens", policy.max_output_tokens)
+        else:
+            degrade_to_default(
+                "max_output_tokens",
+                None,
+                "provider cannot cap output tokens; accepted without a cap",
+            )
+
+    # temperature
+    if policy.temperature is not None:
+        if capabilities.supports_temperature:
+            apply_native("temperature", policy.temperature)
+        else:
+            degrade_to_default(
+                "temperature", None, "provider exposes no temperature control; using default"
+            )
+
+    # top_p
+    if policy.top_p is not None:
+        if capabilities.supports_top_p:
+            apply_native("top_p", policy.top_p)
+        else:
+            degrade_to_default(
+                "top_p", None, "provider exposes no top_p control; using default"
+            )
+
+    # preserved_thinking (required, non-emulatable)
+    if policy.preserved_thinking:
+        if capabilities.supports_preserved_thinking:
+            apply_native("preserved_thinking", True)
+        else:
+            reject(
+                "preserved_thinking",
+                "preserved thinking requested but not supported and cannot be safely approximated",
+            )
+
+    # tool_calling (required, non-emulatable)
+    if policy.tool_calling:
+        if capabilities.supports_tool_calling:
+            apply_native("tool_calling", True)
+        else:
+            reject("tool_calling", "tool calling requested but not supported by provider")
+
+    # structured_output (workflow-emulatable)
+    if policy.structured_output:
+        if capabilities.supports_structured_output:
+            apply_native("structured_output", True)
+        else:
+            emulate(
+                "structured_output",
+                "postprocess_structured_output",
+                "structured output emulated via constrained prompt + post-validation",
+            )
+
+    # streaming (optional)
+    if policy.streaming:
+        if capabilities.supports_streaming:
+            apply_native("streaming", True)
+        else:
+            degrade_to_default(
+                "streaming", False, "streaming unsupported; one-shot generation used"
+            )
+
+    # parallel_generation (workflow-emulatable)
+    if policy.parallel_generation:
+        if capabilities.supports_parallel_generation:
+            apply_native("parallel_generation", True)
+        else:
+            emulate(
+                "parallel_generation",
+                "sequential_trajectories",
+                "parallel research emulated via sequential trajectories in the workflow",
+            )
+
+    # context_caching (optional)
+    if policy.context_caching:
+        if capabilities.supports_context_caching:
+            apply_native("context_caching", True)
+        else:
+            degrade_to_default(
+                "context_caching", False, "context caching unsupported; accepted without caching"
+            )
 
     rejected = [d for d in decisions if d.outcome is NegotiationOutcome.REJECT]
     if rejected:
@@ -332,4 +495,8 @@ def negotiate(
             + "; ".join(f"{d.element} → {d.reason}" for d in rejected)
         )
 
-    return InferencePolicy(**applied), tuple(decisions)
+    return NegotiationResult(
+        provider_policy=InferencePolicy(**provider_values),
+        workflow_emulation_plan=WorkflowEmulationPlan(tuple(emulations)),
+        decisions=tuple(decisions),
+    )

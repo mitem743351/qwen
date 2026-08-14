@@ -93,23 +93,37 @@ is not a capability; `InferenceRequest` is a pure envelope that references the
 policy and carries no independent model requirement.
 
 **Capability negotiation:** the adapter intersects the `InferencePolicy` with
-`ProviderCapabilities` and assigns **every** requested capability an explicit
-outcome, recorded as a typed `NegotiationDecision` (`requested`, `supported`,
-`outcome`, `reason`, `effective_value`):
+`ProviderCapabilities` (and optional `ProviderLimits`) and assigns **every**
+requested capability an explicit outcome, recorded as a typed
+`NegotiationDecision` (`requested`, `supported`, `capability_class`, `outcome`,
+`reason`, `effective_value`, `emulation_strategy`):
 
 ```text
 APPLY    — supported: pass the parameter through
-DEGRADE  — unsupported: apply closest supported behavior, record the reduction
-EMULATE  — unsupported: reproduce the intent via external workflow behavior
+DEGRADE  — a weaker but valid provider behavior satisfies the request
+           (e.g. a numeric overage bounded to the provider limit)
+EMULATE  — unsupported: approximate the intent via external workflow behavior
 REJECT   — required but impossible: fail the policy explicitly
 ```
 
-Every non-`APPLY` outcome is recorded; a `REJECT` raises a typed
-`InferenceError` — no intent is silently dropped and nothing silently
-continues. This is what keeps `XHIGH` meaningful across backends: the
-*workflow* behavior (more passes, more verification) is provider-independent;
-only the low-level sampling hints are provider-specific — and where even those
-are unavailable, the system says so instead of pretending.
+Each decision carries a provider-neutral `CapabilityClass`
+(`NATIVE` / `WORKFLOW_EMULATABLE` / `NON_EMULATABLE`). The negotiated result is
+a `NegotiationResult` that **separates**:
+
+```text
+ProviderInferencePolicy   — only what the backend will actually receive
+                            (native + degraded values; emulated → absent)
+WorkflowEmulationPlan     — external workflow directives for emulated intents
+```
+
+`EMULATE` is a workflow strategy, **not** a native inference parameter: an
+emulated capability never appears in the provider policy and never fabricates
+an `effective_value`. A `REJECT` raises a typed `InferenceError` — no intent is
+silently dropped and nothing silently continues. This is what keeps `XHIGH`
+meaningful across backends: the *workflow* behavior (more passes, more
+verification) is provider-independent; only the low-level sampling hints are
+provider-specific — and where even those are unavailable, the system says so
+instead of pretending.
 
 ---
 

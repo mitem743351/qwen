@@ -39,7 +39,9 @@ Auxiliary value objects: `Hypothesis`, `Decision`, `UnresolvedQuestion`,
 
 - `ReasoningProfile` (in `reasoning.py`) — an abstract workflow/resource policy,
   **not** provider parameters. Built-in presets: `FAST`, `NORMAL`, `DEEP`,
-  `XHIGH`, `EXTREME`.
+  `XHIGH`, `EXTREME`. `ReasoningProfile.inference_policy()` expresses the
+  profile's intents as a provider-neutral `InferencePolicy` (a *request*, not a
+  claim of native control — Phase 1.2).
 - `ReasoningBudget` — the resource-allocation facet (`inference_budget`,
   `retrieval_budget`, `tool_budget`, `context_budget`, `verification_budget`,
   `output_budget`, `time_budget`, `parallelism_budget`). A data object only;
@@ -53,13 +55,32 @@ workflow dials (Phase 0.5).
 ## Inference (contracts)
 
 - `InferencePolicy`, `InferenceRequest`, `InferenceResult`, `ModelInfo`,
-  `ProviderCapabilities`, `NegotiationDecision` (in `inference.py`).
+  `ProviderCapabilities`, `ProviderLimits`, `NegotiationDecision`,
+  `EmulationDirective`, `WorkflowEmulationPlan`, `NegotiationResult`
+  (in `inference.py`).
 - `NegotiationOutcome`: `APPLY`, `DEGRADE`, `EMULATE`, `REJECT`.
-- `negotiate(policy, capabilities)` intersects policy with capabilities,
-  returning an applied policy plus an explicit `NegotiationDecision` for
-  **every** requested capability (`requested`, `supported`, `outcome`,
-  `reason`, `effective_value`) — unsupported capabilities never disappear
-  silently.
+- `CapabilityClass`: `NATIVE`, `WORKFLOW_EMULATABLE`, `NON_EMULATABLE`.
+- `negotiate(policy, capabilities, limits=None)` intersects policy with
+  capabilities and returns a `NegotiationResult` that **separates** the
+  provider policy from the workflow emulation plan (Phase 1.2):
+
+```text
+NegotiationResult
+    provider_policy           # only what the backend actually receives
+    workflow_emulation_plan   # external directives for emulated intents
+    decisions                 # explicit record per requested capability
+```
+
+Each `NegotiationDecision` records `requested`, `supported`,
+`capability_class`, `outcome`, `reason`, `effective_value`, and
+`emulation_strategy`. An emulated capability never appears in the provider
+policy and never fabricates a provider parameter (`effective_value=None`,
+`emulation_strategy` set).
+
+### Provider capability ≠ Research Runtime capability
+
+`EMULATE` means the intent can be approximated by an external workflow
+mechanism; it does **not** mean the provider supports the native parameter.
 
 ### Model-selection authority
 

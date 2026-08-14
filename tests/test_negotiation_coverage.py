@@ -11,6 +11,7 @@ import pytest
 
 from qwen_research.domain.errors import InferenceError
 from qwen_research.domain.inference import (
+    CapabilityClass,
     InferencePolicy,
     NegotiationOutcome,
     ProviderCapabilities,
@@ -35,7 +36,7 @@ CAPABILITIES: dict[str, tuple[str, dict]] = {
 # Expected outcome when the capability is requested but unsupported.
 UNSUPPORTED_OUTCOME: dict[str, NegotiationOutcome] = {
     "reasoning": NegotiationOutcome.EMULATE,
-    "reasoning_budget": NegotiationOutcome.DEGRADE,
+    "reasoning_budget": NegotiationOutcome.EMULATE,
     "max_output_tokens": NegotiationOutcome.DEGRADE,
     "temperature": NegotiationOutcome.DEGRADE,
     "top_p": NegotiationOutcome.DEGRADE,
@@ -47,16 +48,32 @@ UNSUPPORTED_OUTCOME: dict[str, NegotiationOutcome] = {
     "context_caching": NegotiationOutcome.DEGRADE,
 }
 
+# Capability class each unsupported outcome implies.
+UNSUPPORTED_CLASS: dict[str, CapabilityClass] = {
+    "reasoning": CapabilityClass.WORKFLOW_EMULATABLE,
+    "reasoning_budget": CapabilityClass.WORKFLOW_EMULATABLE,
+    "max_output_tokens": CapabilityClass.NON_EMULATABLE,
+    "temperature": CapabilityClass.NON_EMULATABLE,
+    "top_p": CapabilityClass.NON_EMULATABLE,
+    "preserved_thinking": CapabilityClass.NON_EMULATABLE,
+    "tool_calling": CapabilityClass.NON_EMULATABLE,
+    "structured_output": CapabilityClass.WORKFLOW_EMULATABLE,
+    "streaming": CapabilityClass.NON_EMULATABLE,
+    "parallel_generation": CapabilityClass.WORKFLOW_EMULATABLE,
+    "context_caching": CapabilityClass.NON_EMULATABLE,
+}
+
 
 @pytest.mark.parametrize("capability", list(CAPABILITIES))
 def test_apply_when_supported(capability: str) -> None:
     flag, request = CAPABILITIES[capability]
     caps = ProviderCapabilities(**{flag: True})
     policy = InferencePolicy(**request)
-    applied, decisions = negotiate(policy, caps)
-    decision = next(d for d in decisions if d.element == capability)
+    result = negotiate(policy, caps)
+    decision = next(d for d in result.decisions if d.element == capability)
     assert decision.outcome is NegotiationOutcome.APPLY
     assert decision.supported is True
+    assert decision.capability_class is CapabilityClass.NATIVE
 
 
 @pytest.mark.parametrize("capability", list(CAPABILITIES))
@@ -69,10 +86,11 @@ def test_unsupported_outcome(capability: str) -> None:
         with pytest.raises(InferenceError):
             negotiate(policy, caps)
     else:
-        applied, decisions = negotiate(policy, caps)
-        decision = next(d for d in decisions if d.element == capability)
+        result = negotiate(policy, caps)
+        decision = next(d for d in result.decisions if d.element == capability)
         assert decision.outcome is expected
         assert decision.supported is False
+        assert decision.capability_class is UNSUPPORTED_CLASS[capability]
         # A non-APPLY decision must carry a reason and never silently vanish.
         assert decision.reason
 
@@ -81,8 +99,8 @@ def test_untracked_capabilities_produce_no_decision() -> None:
     # A capability not requested yields no decision record.
     caps = ProviderCapabilities()
     policy = InferencePolicy()  # nothing requested
-    _, decisions = negotiate(policy, caps)
-    assert decisions == ()
+    result = negotiate(policy, caps)
+    assert result.decisions == ()
 
 
 def test_negotiation_accounts_for_every_requested_capability() -> None:
@@ -112,7 +130,8 @@ def test_negotiation_accounts_for_every_requested_capability() -> None:
         parallel_generation=True,
         context_caching=True,
     )
-    _, decisions = negotiate(policy, caps)
+    result = negotiate(policy, caps)
     # model_requirement is not a capability; 11 capabilities were requested.
-    assert {d.element for d in decisions} == set(CAPABILITIES)
-    assert all(d.outcome is NegotiationOutcome.APPLY for d in decisions)
+    assert {d.element for d in result.decisions} == set(CAPABILITIES)
+    assert all(d.outcome is NegotiationOutcome.APPLY for d in result.decisions)
+    assert result.workflow_emulation_plan.is_empty()

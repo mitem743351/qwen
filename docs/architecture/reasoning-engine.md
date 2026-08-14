@@ -103,6 +103,25 @@ XHIGH / EXTREME
   better retrieval, stronger evidence, verification tools, and structured
   workflow — **not** direct control over hidden model thinking tokens.
 
+### Native vs workflow-emulated effort (Phase 1.2)
+
+`XHIGH` requests *high reasoning effort*, *a reasoning budget*, *parallel
+trajectories*, and *long output* — but negotiation separates **native provider
+capabilities** from **external workflow capabilities**. For example, against a
+provider with native tool-calling but *no* reasoning budget and *no* parallel
+generation:
+
+```text
+tool calling       → APPLY   (native)
+reasoning budget   → EMULATE (workflow passes)
+parallel generation → EMULATE (sequential trajectories)
+```
+
+An emulated capability is a workflow directive, never a provider parameter:
+`ReasoningProfile.inference_policy()` expresses the *intent*; capability
+negotiation resolves it to native support or an external emulation strategy.
+The eventual workflow engine executes the emulation strategies.
+
 ---
 
 ## 3. Profile → Policy Translation

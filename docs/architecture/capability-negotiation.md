@@ -4,6 +4,15 @@ How the system discovers what an inference backend can actually do, and how it
 handles the gap between an abstract `InferencePolicy` and a real provider. The
 governing rule: **capabilities are facts to be discovered, never assumptions.**
 
+> ### Core boundary (Phase 1.2)
+>
+> **Provider capability ≠ Research Runtime capability.** A provider that lacks
+> `supports_reasoning_budget` cannot be "given" a reasoning budget just because
+> the Research Runtime can allocate more workflow passes. `EMULATE` means *"the
+> requested intent can be approximated by an external workflow mechanism"* —
+> it must **not** mean *"pretend the provider supports the requested native
+> parameter."*
+
 ---
 
 ## 1. ProviderCapabilities
@@ -63,26 +72,43 @@ ReasoningProfile
         ↓
 InferencePolicy
         ↓
-Capability negotiation      ← ProviderCapabilities
+Capability negotiation      ← ProviderCapabilities + ProviderLimits
         ↓
-Provider-specific parameters
+NegotiationResult
+   ├── ProviderInferencePolicy      (what the backend actually receives)
+   └── WorkflowEmulationPlan        (what the Research Runtime does externally)
 ```
 
 The negotiation layer intersects the `InferencePolicy` with
-`ProviderCapabilities` and assigns one of four outcomes to **every requested**
-policy element, recorded as a typed `NegotiationDecision` (`requested`,
-`supported`, `outcome`, `reason`, `effective_value`):
+`ProviderCapabilities` (and optional `ProviderLimits`) and assigns one of four
+outcomes to **every requested** policy element, recorded as a typed
+`NegotiationDecision` (`element`, `requested`, `supported`, `capability_class`,
+`outcome`, `reason`, `effective_value`, `emulation_strategy`):
 
 | Policy | Meaning | Example |
 |--------|---------|---------|
 | **APPLY** | Provider supports it; pass the parameter through. | `max_output_tokens` honored |
-| **DEGRADE** | Provider lacks it; apply the closest supported behavior and record the reduction. | `max_output_tokens` → no cap; `streaming` → one-shot |
-| **EMULATE** | Provider lacks it; reproduce the intent via external workflow behavior. | reasoning effort, parallel research, structured output |
+| **DEGRADE** | A weaker but semantically valid provider behavior satisfies the request. | `max_output_tokens=100000` vs provider max `32000` → `effective_value=32000` |
+| **EMULATE** | Provider lacks it; the Research Runtime approximates the intent via an external workflow strategy. | reasoning effort, parallel research, structured output |
 | **REJECT** | Cannot honor even approximately and it is required; fail the policy explicitly. | required tool-calling / preserved-thinking on a non-supporting backend |
 
 Every non-`APPLY` outcome is **recorded**; a `REJECT` raises the typed
 `InferenceError`. The system never silently drops an intent and never silently
 continues past a rejected requirement.
+
+### Capability classification
+
+Each decision carries a provider-neutral `capability_class`:
+
+| Class | Meaning | Outcome when unsupported |
+|-------|---------|--------------------------|
+| `NATIVE` | provider directly supports it | `APPLY` (or `DEGRADE` on numeric overage) |
+| `WORKFLOW_EMULATABLE` | provider lacks it, but the Research Runtime can approximate the intent | `EMULATE` (with an `emulation_strategy`) |
+| `NON_EMULATABLE` | provider lacks it and the system cannot safely approximate it | `REJECT` if required; `DEGRADE` to default if optional |
+
+Emulated capabilities **never** appear in the `ProviderInferencePolicy` and
+never fabricate an `effective_value`; they appear only in the
+`WorkflowEmulationPlan` with an explicit `emulation_strategy`.
 
 ### Model selection is not a capability
 

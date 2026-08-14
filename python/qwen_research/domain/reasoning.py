@@ -12,9 +12,13 @@ from __future__ import annotations
 
 import dataclasses
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from qwen_research.common.serialization import serializable
 from qwen_research.domain.errors import ValidationError
+
+if TYPE_CHECKING:  # pragma: no cover - type-checking only
+    from qwen_research.domain.inference import InferencePolicy
 
 
 class ContinuationPolicy(StrEnum):
@@ -80,6 +84,25 @@ class ReasoningProfile:
             output_budget=self.output_budget,
             time_budget=None,
             parallelism_budget=0 if self.parallelism is ParallelismMode.OFF else 1,
+        )
+
+    def inference_policy(self) -> InferencePolicy:
+        """Express this profile's intents as a provider-neutral ``InferencePolicy``.
+
+        Maps the profile's workflow dials onto capability-aligned intents. It
+        does **not** claim provider-native reasoning control: the resulting
+        policy *requests* reasoning effort and a reasoning budget, which
+        capability negotiation then resolves to native support or workflow
+        emulation (Phase 1.2). No provider parameter is produced here.
+        """
+        from qwen_research.domain.inference import InferencePolicy
+
+        budget = self.budget()
+        return InferencePolicy(
+            reasoning=True,
+            reasoning_budget=budget.inference_budget,
+            max_output_tokens=budget.output_budget,
+            parallel_generation=budget.parallelism_budget > 0,
         )
 
 
