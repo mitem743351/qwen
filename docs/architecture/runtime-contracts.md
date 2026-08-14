@@ -41,6 +41,20 @@ signature (statically enforced by mypy via a conformance test).
 - `retrieve_context` / `verify_claim` raise `UnsupportedOperationError` (no
   fabricated results — B23).
 
+### Retrieval (Phase 3–4)
+
+`search_corpus(query, options)` delegates to the configured `Retriever`
+(lexical, semantic, or hybrid). `get_source(document_id)` returns document
+metadata. No SQLite/FTS/vector objects reach the runtime — only `Retriever` and
+`SearchOptions`/`SearchResult`.
+
+### Memory (Phase 4)
+
+`get_project_memory` / `get_research_memory` / `get_open_questions` /
+`save_research_memory` delegate to a `MemoryService` (which wraps the neutral
+repository interfaces). `build_research_context(query, project_id=…)` assembles
+a bounded `ResearchContext` of evidence + memory + open questions.
+
 ### Reserved lifecycle operations
 
 `pause_task`, `resume_task`, `wait_for_input`, `provide_input`, and

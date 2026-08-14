@@ -60,6 +60,42 @@ class PathsConfig:
 
 @serializable
 @dataclasses.dataclass(frozen=True)
+class RetrievalConfig:
+    """Retrieval defaults (Phase 4 hybrid/semantic)."""
+
+    mode: str = "hybrid"
+    lexical_k: int = 20
+    semantic_k: int = 20
+    final_k: int = 10
+    max_chunks_per_document: int = 3
+    reranker_enabled: bool = False
+
+
+@serializable
+@dataclasses.dataclass(frozen=True)
+class EmbeddingsConfig:
+    """Embedding backend defaults."""
+
+    provider: str = "hash-ngram-v1"
+    model: str = "hash-ngram-v1"
+    batch_size: int = 64
+    dimension: int = 256
+    normalize: bool = True
+
+
+@serializable
+@dataclasses.dataclass(frozen=True)
+class MemoryConfig:
+    """Memory subsystem defaults."""
+
+    enabled: bool = True
+    max_items_per_context: int = 10
+    max_evidence_chunks: int = 10
+    max_open_questions: int = 5
+
+
+@serializable
+@dataclasses.dataclass(frozen=True)
 class Config:
     """The aggregate configuration model."""
 
@@ -68,3 +104,6 @@ class Config:
     runtime: RuntimeConfig = dataclasses.field(default_factory=RuntimeConfig)
     security: SecurityConfig = dataclasses.field(default_factory=SecurityConfig)
     paths: PathsConfig = dataclasses.field(default_factory=PathsConfig)
+    retrieval: RetrievalConfig = dataclasses.field(default_factory=RetrievalConfig)
+    embeddings: EmbeddingsConfig = dataclasses.field(default_factory=EmbeddingsConfig)
+    memory: MemoryConfig = dataclasses.field(default_factory=MemoryConfig)

@@ -140,6 +140,15 @@ Typed hierarchy in `domain/errors.py`: `DomainError` base; `ValidationError`,
 
 ---
 
+## Memory (Phase 4)
+
+Structured memory lives in `qwen_research/memory/` (not `domain/`): `ProjectMemory`,
+`ResearchMemory`, `DecisionRecord`, `ResearchQuestion`, `SourceMemory`,
+`SessionMemoryItem`, plus `MemoryType`/`QuestionStatus`/`MemoryOrigin` enums.
+Research-derived entries carry provenance (`source_refs`/`evidence_refs`/
+`claim_refs`); user metadata is marked `origin=user`. See
+[`memory.md`](memory.md).
+
 ## Serialization
 
 `common/serialization.py` provides `dumps`/`loads` (deterministic, version-aware

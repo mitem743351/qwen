@@ -14,6 +14,8 @@ from qwen_research.retrieval.models import (
     CorpusStats,
     DocumentView,
     IndexStatus,
+    RetrievalMode,
+    RetrievedChunk,
     SearchFilters,
     SearchOptions,
     SearchResult,
@@ -43,12 +45,17 @@ class LexicalRetriever:
         if options.minimum_score is not None:
             candidates = [c for c in candidates if c.score >= options.minimum_score]
         candidates = candidates[: max(0, options.limit)]
+        chunks = tuple(
+            _with_mode(c, RetrievalMode.LEXICAL, rank)
+            for rank, c in enumerate(candidates)
+        )
         return SearchResult(
-            chunks=tuple(candidates),
+            chunks=chunks,
             query=query,
-            candidate_count=len(candidates),
-            returned_count=len(candidates),
+            candidate_count=len(chunks),
+            returned_count=len(chunks),
             duration_ms=(monotonic() - started) * 1000,
+            mode=RetrievalMode.LEXICAL.value,
         )
 
     def get_document(self, document_id: str) -> DocumentView | None:
@@ -59,3 +66,14 @@ class LexicalRetriever:
 
     def status(self) -> IndexStatus:
         return self._index.status()
+
+
+def _with_mode(chunk: RetrievedChunk, mode: RetrievalMode, rank: int) -> RetrievedChunk:
+    import dataclasses
+
+    return dataclasses.replace(
+        chunk,
+        lexical_score=chunk.score if mode is RetrievalMode.LEXICAL else None,
+        retrieval_mode=mode.value,
+        rank=rank,
+    )

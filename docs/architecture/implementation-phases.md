@@ -95,16 +95,24 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
 - **Not yet:** verification; deep workflows; embeddings/vector search;
   reranking; hybrid retrieval; OCR; Office parsing; Rust indexer.
 
-## Phase 4 — Memory + persistence
+## Phase 4 — Semantic retrieval + persistent memory ✅ (complete)
 
-- **Objective:** differentiated stores + resumable state.
+- **Objective:** semantic + hybrid retrieval and persistent structured memory.
 - **Dependencies:** Phase 1–3.
-- **Components:** Memory Manager; repositories (sessions/tasks/claims/evidence/
-  sources/entities/decisions/questions/artifacts); entity model; scoped reads;
-  compaction; task state machine persistence.
-- **Acceptance criteria:** research state persists and is resumable by scope;
-  decisions append-only; task state machine survives restart.
-- **Not yet:** knowledge-graph DB; PostgreSQL (unless scale demands).
+- **Components:** `EmbeddingProvider` abstraction + `HashingEmbeddingProvider`
+  (deterministic, offline); `VectorIndex` + `SqliteVectorIndex` (brute-force
+  cosine); `EmbeddingManager` (incremental, versioned); `SemanticRetriever`;
+  `HybridRetriever` (RRF fusion + diversity + optional reranker); memory domain
+  objects + six repository interfaces + `SqliteMemoryStore`; `MemoryRetriever`;
+  `ResearchContext`/`build_context`; Research Runtime memory methods; MCP tools
+  (`search_corpus(mode=…)`, `get_project_memory`, `get_research_memory`,
+  `get_open_questions`, `save_research_memory`).
+- **Acceptance criteria:** lexical + semantic + hybrid retrieval; deterministic
+  fusion; incremental embeddings; versioned vectors (no mixing); project/session
+  memory isolation; provenance; bounded context assembly; graceful semantic
+  fallback; persistence across restart.
+- **Not yet:** knowledge-graph DB; PostgreSQL; transformer embeddings; ANN
+  vector index; cross-encoder reranker; verification; deep workflows.
 
 ## Phase 5 — Reasoning/workflow engine
 

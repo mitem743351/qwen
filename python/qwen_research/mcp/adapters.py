@@ -22,6 +22,8 @@ from qwen_research.domain.reasoning import ReasoningProfile, get_profile
 from qwen_research.domain.research import ResearchState
 from qwen_research.domain.session import Session
 from qwen_research.domain.task import Task
+from qwen_research.memory.models import ResearchMemory, ResearchQuestion
+from qwen_research.memory.retriever import MemoryHit
 from qwen_research.retrieval.models import DocumentView, SearchResult
 from qwen_research.tools.base import Tool
 
@@ -90,6 +92,7 @@ class SchemaAdapter:
         """Project a search result into a concise, model-friendly response."""
         return {
             "query": result.query,
+            "mode": result.mode,
             "results": [
                 {
                     "chunk_id": c.chunk_id,
@@ -99,6 +102,10 @@ class SchemaAdapter:
                     "section": c.section,
                     "excerpt": c.text,
                     "score": c.score,
+                    "lexical_score": c.lexical_score,
+                    "semantic_score": c.semantic_score,
+                    "fusion_score": c.fusion_score,
+                    "rank": c.rank,
                 }
                 for c in result.chunks
             ],
@@ -120,6 +127,54 @@ class SchemaAdapter:
             "sections": [
                 {"page": page, "heading": heading} for page, heading in view.sections
             ],
+        }
+
+
+    def memory_hits_result(self, hits: list[MemoryHit]) -> dict[str, Any]:
+        """Project memory hits into a concise, model-friendly response."""
+        return {
+            "memories": [
+                {
+                    "memory_type": h.memory_type.value,
+                    "memory_id": h.memory_id,
+                    "project_id": h.project_id,
+                    "content": h.content,
+                    "refs": list(h.refs),
+                    "status": h.status,
+                    "score": h.score,
+                }
+                for h in hits
+            ]
+        }
+
+    def research_questions_result(self, questions: list[ResearchQuestion]) -> dict[str, Any]:
+        return {
+            "questions": [
+                {
+                    "question_id": q.question_id,
+                    "project_id": q.project_id,
+                    "question": q.question,
+                    "priority": q.priority,
+                    "status": q.status.value,
+                    "related_claims": list(q.related_claims),
+                    "related_sources": list(q.related_sources),
+                }
+                for q in questions
+            ]
+        }
+
+    def research_memory_result(self, memory: ResearchMemory) -> dict[str, Any]:
+        return {
+            "memory_id": memory.memory_id,
+            "project_id": memory.project_id,
+            "content": memory.content,
+            "source_refs": list(memory.source_refs),
+            "evidence_refs": list(memory.evidence_refs),
+            "claim_refs": list(memory.claim_refs),
+            "status": memory.status,
+            "provenance": dict(memory.provenance),
+            "origin": memory.origin.value,
+            "version": memory.version,
         }
 
 

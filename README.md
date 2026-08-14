@@ -7,12 +7,12 @@ persistent research memory, verification/citation/provenance, and deterministic
 computation — while Qwen Studio keeps its native conversational and web-search
 capabilities.
 
-> **Current status: Phase 3 — Local Corpus, Document Pipeline, and Retrieval Foundation.**
+> **Current status: Phase 4 — Semantic Retrieval, Hybrid Search, and Persistent Research Memory.**
 > The architecture (Phases 0, 0.5, 0.75) is the approved baseline; Phases 1–1.2
-> established and hardened the core contracts; Phase 2 added the MCP server;
-> Phase 3 adds local corpus ingestion, SQLite FTS5 indexing, and lexical
-> retrieval exposed as `search_corpus` / `get_source`. Still **no** Qwen API,
-> embeddings, or real persistence.
+> established and hardened the core contracts; Phases 2–3 added the MCP server
+> and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
+> persistent structured memory. Still **no** Qwen API, verification engine, or
+> dashboard.
 
 ## What this is
 
@@ -82,6 +82,13 @@ Phase 3 (corpus + retrieval):
 - [`docs/architecture/retrieval.md`](docs/architecture/retrieval.md) — indexing, lexical retrieval, evidence
 - [`docs/setup/corpus.md`](docs/setup/corpus.md) — configuring a local corpus
 
+Phase 4 (semantic/hybrid retrieval + memory):
+
+- [`docs/architecture/semantic-retrieval.md`](docs/architecture/semantic-retrieval.md) — embedding provider, vector index
+- [`docs/architecture/hybrid-retrieval.md`](docs/architecture/hybrid-retrieval.md) — fusion, diversity, reranker
+- [`docs/architecture/memory.md`](docs/architecture/memory.md) — structured persistent memory
+- [`docs/setup/semantic-retrieval.md`](docs/setup/semantic-retrieval.md) — enabling hybrid search + memory
+
 Full architecture docs:
 
 | Area | Document |
@@ -111,17 +118,22 @@ Full architecture docs:
 | Corpus | [`corpus.md`](docs/architecture/corpus.md) |
 | Document pipeline | [`document-pipeline.md`](docs/architecture/document-pipeline.md) |
 | Retrieval | [`retrieval.md`](docs/architecture/retrieval.md) |
+| Semantic retrieval | [`semantic-retrieval.md`](docs/architecture/semantic-retrieval.md) |
+| Hybrid retrieval | [`hybrid-retrieval.md`](docs/architecture/hybrid-retrieval.md) |
+| Memory | [`memory.md`](docs/architecture/memory.md) |
 | Corpus setup | [`setup/corpus.md`](docs/setup/corpus.md) |
+| Semantic setup | [`setup/semantic-retrieval.md`](docs/setup/semantic-retrieval.md) |
 | Decisions (ADRs) | [`decisions/`](docs/architecture/decisions/) |
 | Mermaid diagrams | [`diagrams/`](docs/architecture/diagrams/) |
 
 ## Status
 
 Phase 0.75 (architecture) is the approved baseline. Phases 1, 1.1, 1.2 (core
-contracts + hardening), Phase 2 (MCP server), and Phase 3 (local corpus,
-document pipeline, and retrieval foundation) are **complete**. The Research
-Runtime remains provider- and transport-independent; the MCP server is a thin
-adapter over it, now serving ranked lexical evidence from a local corpus. See
+contracts + hardening), Phase 2 (MCP server), Phase 3 (local corpus + lexical
+retrieval), and Phase 4 (semantic + hybrid retrieval and persistent memory) are
+**complete**. The Research Runtime remains provider- and transport-independent;
+the MCP server is a thin adapter over it, now serving hybrid evidence plus
+project-scoped memory. See
 [`implementation-phases.md`](docs/architecture/implementation-phases.md).
 
 ### Develop

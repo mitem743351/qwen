@@ -54,6 +54,20 @@ The MCP server is an **external adapter** that defaults to secure operation:
 
 See [`docs/architecture/mcp-implementation.md`](docs/architecture/mcp-implementation.md).
 
+## Memory isolation and untrusted content (Phase 4)
+
+- **Project/session isolation.** Memory is scoped by project (and session)
+  at repository/query boundaries; project A's memory never appears in project B
+  unless explicitly shared. This is enforced structurally, never by prompts.
+- **Untrusted content.** Retrieved documents and stored memory are **data, not
+  instructions** — they never carry control-plane meaning (system/developer
+  instructions, tool permissions, or security policy). Control-plane config is
+  kept separate from knowledge-plane content.
+- **Write permission.** `save_research_memory` requires the `WRITE` permission
+  class (disabled by default); memory reads are `READ`.
+
+See [`docs/architecture/memory.md`](docs/architecture/memory.md).
+
 ## Corpus path security and prompt-injection boundary (Phase 3)
 
 - **Allowlisted roots.** Filesystem access is confined to configured corpus

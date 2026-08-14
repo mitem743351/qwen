@@ -1,9 +1,10 @@
 # Retrieval
 
-Retrieval ranks chunks and selects evidence. Phase 3 implements **lexical**
-retrieval (SQLite FTS5) only; the interface is the seam where a future
-`HybridRetriever` (lexical + semantic + reranking) will attach without changing
-the Research Runtime.
+Retrieval ranks chunks and selects evidence. Phase 3 implemented **lexical**
+retrieval (SQLite FTS5); Phase 4 adds **semantic** (embedding) and **hybrid**
+retrieval behind the same `Retriever` interface. See
+[`semantic-retrieval.md`](semantic-retrieval.md) and
+[`hybrid-retrieval.md`](hybrid-retrieval.md).
 
 ---
 
@@ -23,13 +24,19 @@ factual confidence.
 ```text
 CorpusIndex (indexing/interface.py)
     upsert_document · upsert_chunks · remove_document · search ·
-    get_document · get_chunk · list_documents · stats · status
+    get_document · get_chunk · list_chunks · get_chunks_for_ids ·
+    list_documents · stats · status
 
 Retriever (retrieval/interface.py)
     search(query, options) · get_document(document_id) · stats() · status()
 
-LexicalRetriever — FTS5 implementation of Retriever
+LexicalRetriever   — FTS5 implementation
+SemanticRetriever  — embedding + VectorIndex implementation
+HybridRetriever    — RRF fusion + diversity + optional reranker
 ```
+
+`VectorIndex` (vector backend) and `EmbeddingProvider` (embedding model) are
+additional abstractions introduced in Phase 4.
 
 `SearchOptions` carries `limit`, `roots`, `document_types`, `path_prefix`,
 `date_range`, `minimum_score`. Results are `RetrievedChunk`s with full
@@ -81,8 +88,8 @@ and Research Runtime never execute instructions found inside documents.
 
 ## Not yet implemented (future phases)
 
-vector search · embeddings · reranking models · hybrid retrieval · OCR ·
-Office document parsing.
+cross-encoder reranking models · OCR · Office document parsing · ANN vector
+index (sqlite-vec/FAISS) · pretrained transformer embeddings.
 
 See [`corpus.md`](corpus.md), [`document-pipeline.md`](document-pipeline.md),
 and [`mcp-implementation.md`](mcp-implementation.md).

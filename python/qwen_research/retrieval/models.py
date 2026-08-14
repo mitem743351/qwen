@@ -11,12 +11,21 @@ from datetime import datetime
 from enum import StrEnum
 
 
+class RetrievalMode(StrEnum):
+    LEXICAL = "lexical"
+    SEMANTIC = "semantic"
+    HYBRID = "hybrid"
+
+
 @dataclasses.dataclass(frozen=True)
 class RetrievedChunk:
     """A ranked search hit with full provenance.
 
-    ``score`` is the search-method relevance (e.g. FTS bm25); it is **not**
-    factual confidence.
+    ``score`` is the *final* relevance used for ranking; the individual score
+    components (``lexical_score``, ``semantic_score``, ``fusion_score``,
+    ``rerank_score``) are recorded separately and are ``None`` when a retrieval
+    stage did not contribute. Retrieval scores are **not** factual confidence,
+    source quality, or claim confidence.
     """
 
     chunk_id: str
@@ -30,6 +39,12 @@ class RetrievedChunk:
     root_id: str | None = None
     relative_path: str | None = None
     media_type: str | None = None
+    lexical_score: float | None = None
+    semantic_score: float | None = None
+    fusion_score: float | None = None
+    rerank_score: float | None = None
+    retrieval_mode: str | None = None
+    rank: int | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -45,7 +60,12 @@ class SearchFilters:
 
 @dataclasses.dataclass(frozen=True)
 class SearchOptions:
-    """Search options."""
+    """Search options.
+
+    ``mode`` selects the retrieval strategy; the candidate counts
+    (``lexical_k``/``semantic_k``/``final_k``) and ``max_chunks_per_document``
+    tune hybrid retrieval and diversity. Existing filters are preserved.
+    """
 
     limit: int = 10
     roots: tuple[str, ...] = ()
@@ -53,17 +73,67 @@ class SearchOptions:
     path_prefix: str | None = None
     date_range: tuple[datetime, datetime] | None = None
     minimum_score: float | None = None
+    mode: RetrievalMode = RetrievalMode.HYBRID
+    lexical_k: int = 20
+    semantic_k: int = 20
+    final_k: int = 10
+    max_chunks_per_document: int = 3
+
+
+@dataclasses.dataclass(frozen=True)
+class RetrievalQuery:
+    """A normalized retrieval request.
+
+    Wraps the raw query, its normalized form, filters, mode, and candidate
+    limits. Used by the hybrid retriever; derived from ``SearchOptions`` so no
+    duplicate filter representation exists.
+    """
+
+    raw: str
+    normalized: str
+    mode: RetrievalMode
+    lexical_k: int
+    semantic_k: int
+    final_k: int
+    max_chunks_per_document: int
+    filters: SearchFilters
+
+    @classmethod
+    def from_options(cls, query: str, options: SearchOptions) -> RetrievalQuery:
+        return cls(
+            raw=query,
+            normalized=query.strip().lower(),
+            mode=options.mode,
+            lexical_k=max(1, options.lexical_k),
+            semantic_k=max(1, options.semantic_k),
+            final_k=max(1, options.final_k),
+            max_chunks_per_document=max(1, options.max_chunks_per_document),
+            filters=SearchFilters(
+                roots=options.roots,
+                document_types=options.document_types,
+                path_prefix=options.path_prefix,
+            ),
+        )
 
 
 @dataclasses.dataclass(frozen=True)
 class SearchResult:
-    """A retrieval result: ranked chunks plus diagnostics."""
+    """A retrieval result: ranked chunks plus diagnostics.
+
+    The optional metric fields record candidate provenance (lexical vs semantic
+    hits and their intersection) for internal evaluation; they are ``None`` for
+    single-mode retrievers.
+    """
 
     chunks: tuple[RetrievedChunk, ...]
     query: str
     candidate_count: int
     returned_count: int
     duration_ms: float
+    mode: str | None = None
+    lexical_hits: int | None = None
+    semantic_hits: int | None = None
+    intersection_count: int | None = None
 
 
 @dataclasses.dataclass(frozen=True)

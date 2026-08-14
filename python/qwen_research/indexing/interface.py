@@ -86,6 +86,17 @@ class CorpusIndex(Protocol):
         """Return a chunk by id, or None."""
         ...
 
+    def list_chunks(self) -> list[Chunk]:
+        """Return every indexed chunk (for incremental embedding)."""
+        ...
+
+    def get_chunks_for_ids(self, chunk_ids: Iterable[str]) -> list[RetrievedChunk]:
+        """Return ``RetrievedChunk`` records (chunk + document join) for ids.
+
+        Scores are ``0.0`` and component scores ``None``; callers set them.
+        """
+        ...
+
     def list_documents(self) -> list[Document]:
         """Return all indexed document metadata."""
         ...

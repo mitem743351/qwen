@@ -53,10 +53,14 @@ def test_mcp_roundtrip() -> None:
                 "continue_task",
                 "create_session",
                 "execute_task",
+                "get_open_questions",
+                "get_project_memory",
+                "get_research_memory",
                 "get_research_state",
                 "get_session",
                 "get_source",
                 "get_task_state",
+                "save_research_memory",
                 "search_corpus",
             ]
 

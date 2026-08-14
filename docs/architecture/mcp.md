@@ -50,8 +50,12 @@ A **small number of high-value semantic tools** — never a reflection of every
 internal function, and **never** a universal `execute_anything`.
 
 ```text
-search_corpus           # query the local corpus, return ranked evidence  ✅ (Phase 3)
+search_corpus           # query the local corpus (lexical/semantic/hybrid) ✅ (Phases 3–4)
 get_source              # document metadata + structure for a source id   ✅ (Phase 3)
+get_project_memory      # project-scoped memory                           ✅ (Phase 4)
+get_research_memory     # research-derived claims with provenance         ✅ (Phase 4)
+get_open_questions      # unresolved research questions                   ✅ (Phase 4)
+save_research_memory    # save research memory (WRITE)                    ✅ (Phase 4)
 retrieve_evidence       # fetch evidence for a claim/question with citations (future)
 read_source             # read a specific source (permission-gated)      (future)
 get_research_state      # session/project research state summary          ✅ (Phase 2)
@@ -105,9 +109,9 @@ Permissions are **classes**, independently controllable per tool and per
 session:
 
 ```text
-read        — observe (search, read_source, get_* )
-analyze     — compute/derive without side effects (query_database, run_analysis, verify_claim)
-write       — create new data (save_artifact)
+read        — observe (search, get_source, get_*_memory, get_open_questions)
+analyze     — compute/derive without side effects (create_session, execute_task, query_database, run_analysis, verify_claim)
+write       — create new data (save_research_memory, save_artifact)
 execute     — run code/processes (run_analysis execution, git commands)
 destructive — delete/overwrite/mutate existing data
 ```

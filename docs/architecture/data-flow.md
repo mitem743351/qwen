@@ -68,7 +68,14 @@ raw chat text.
 
 ---
 
-## 2. Ingest Path (corpus material) — implemented in Phase 3
+## 2. Retrieval Path (Phases 3–4)
+
+```text
+query → Retriever (lexical FTS5 + semantic vector) → hybrid fusion
+      → diversity → ranked evidence → ResearchContext (evidence + memory)
+```
+
+## 3. Ingest Path (corpus material) — implemented in Phase 3
 
 ```text
 Filesystem ──discovery──▶ Identification ──▶ Hasher

@@ -363,6 +363,59 @@ class SqliteCorpusIndex:
             end_offset=row["end_offset"],
         )
 
+    def list_chunks(self) -> list[Chunk]:
+        rows = self._db().execute(
+            "SELECT * FROM chunks ORDER BY chunk_id"
+        ).fetchall()
+        return [
+            Chunk(
+                chunk_id=r["chunk_id"],
+                document_id=r["document_id"],
+                source_id=r["source_id"],
+                text=r["text"],
+                page=r["page"],
+                section=r["section"],
+                start_offset=r["start_offset"],
+                end_offset=r["end_offset"],
+            )
+            for r in rows
+        ]
+
+    def get_chunks_for_ids(self, chunk_ids: Iterable[str]) -> list[RetrievedChunk]:
+        ids = list(chunk_ids)
+        if not ids:
+            return []
+        db = self._db()
+        placeholders = ",".join("?" * len(ids))
+        rows = db.execute(
+            f"""
+            SELECT c.chunk_id, c.document_id, c.source_id, c.text, c.page, c.section,
+                   d.relative_path, d.root_id, d.media_type
+            FROM chunks c
+            JOIN documents d ON d.document_id = c.document_id
+            WHERE c.chunk_id IN ({placeholders})
+            """,
+            ids,
+        ).fetchall()
+        by_id = {r["chunk_id"]: r for r in rows}
+        return [
+            RetrievedChunk(
+                chunk_id=cid,
+                document_id=by_id[cid]["document_id"],
+                source_id=by_id[cid]["source_id"],
+                text=by_id[cid]["text"],
+                score=0.0,
+                page=by_id[cid]["page"],
+                section=by_id[cid]["section"],
+                path=by_id[cid]["relative_path"],
+                root_id=by_id[cid]["root_id"],
+                relative_path=by_id[cid]["relative_path"],
+                media_type=by_id[cid]["media_type"],
+            )
+            for cid in ids
+            if cid in by_id
+        ]
+
     def list_documents(self) -> list[Document]:
         rows = self._db().execute("SELECT * FROM documents ORDER BY relative_path").fetchall()
         return [

@@ -27,24 +27,32 @@ from qwen_research.mcp.permissions import DEFAULT_TOOL_PERMISSIONS, ToolPermissi
 from qwen_research.mcp.schemas import (
     DEFAULT_TOOLS,
     TOOL_DESCRIPTIONS,
+    ContentParam,
     DescriptionParam,
     DocumentIdParam,
     DocumentTypesParam,
+    LexicalKParam,
     LimitParam,
+    MaxChunksPerDocumentParam,
     MetadataParam,
     ModeParam,
+    OptionalQueryParam,
     OptionalSessionIdParam,
     PathPrefixParam,
     ProjectIdParam,
     QueryParam,
     ReasoningProfileParam,
+    RetrievalModeParam,
     RootsParam,
+    SemanticKParam,
     SessionIdParam,
+    StatusParam,
+    StringListParam,
     TaskIdParam,
 )
 from qwen_research.mcp.transport import MCPTransport, create_transport
 from qwen_research.research.interfaces import ResearchRuntime
-from qwen_research.retrieval.models import SearchOptions
+from qwen_research.retrieval.models import RetrievalMode, SearchOptions
 
 logger = logging.getLogger("qwen_research.mcp")
 
@@ -253,6 +261,10 @@ class MCPServerApp:
             roots: RootsParam = None,
             document_types: DocumentTypesParam = None,
             path_prefix: PathPrefixParam = None,
+            mode: RetrievalModeParam = "hybrid",
+            lexical_k: LexicalKParam = 20,
+            semantic_k: SemanticKParam = 20,
+            max_chunks_per_document: MaxChunksPerDocumentParam = 3,
         ) -> dict[str, Any]:
             def run() -> dict[str, Any]:
                 result = runtime.search_corpus(
@@ -262,6 +274,10 @@ class MCPServerApp:
                         roots=tuple(roots or ()),
                         document_types=tuple(document_types or ()),
                         path_prefix=path_prefix,
+                        mode=RetrievalMode(mode),
+                        lexical_k=lexical_k,
+                        semantic_k=semantic_k,
+                        max_chunks_per_document=max_chunks_per_document,
                     ),
                 )
                 return adapter.search_result(result)
@@ -275,6 +291,58 @@ class MCPServerApp:
 
             return guarded_call(policy, "get_source", run)
 
+        def get_project_memory(
+            project_id: ProjectIdParam = "default",
+            limit: LimitParam = 10,
+        ) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                hits = runtime.get_project_memory(project_id, limit=limit)
+                return adapter.memory_hits_result(hits)
+
+            return guarded_call(policy, "get_project_memory", run)
+
+        def get_research_memory(
+            project_id: ProjectIdParam = "default",
+            query: OptionalQueryParam = None,
+            limit: LimitParam = 10,
+        ) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                hits = runtime.get_research_memory(project_id, query, limit=limit)
+                return adapter.memory_hits_result(hits)
+
+            return guarded_call(policy, "get_research_memory", run)
+
+        def get_open_questions(
+            project_id: ProjectIdParam = "default",
+            limit: LimitParam = 5,
+        ) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                questions = runtime.get_open_questions(project_id, limit=limit)
+                return adapter.research_questions_result(questions)
+
+            return guarded_call(policy, "get_open_questions", run)
+
+        def save_research_memory(
+            content: ContentParam,
+            project_id: ProjectIdParam = "default",
+            source_refs: StringListParam = None,
+            evidence_refs: StringListParam = None,
+            claim_refs: StringListParam = None,
+            status: StatusParam = "proposed",
+        ) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                memory = runtime.save_research_memory(
+                    project_id,
+                    content,
+                    source_refs=tuple(source_refs or ()),
+                    evidence_refs=tuple(evidence_refs or ()),
+                    claim_refs=tuple(claim_refs or ()),
+                    status=status or "proposed",
+                )
+                return adapter.research_memory_result(memory)
+
+            return guarded_call(policy, "save_research_memory", run)
+
         handlers: dict[str, Callable[..., Any]] = {
             "get_session": get_session,
             "create_session": create_session,
@@ -284,6 +352,10 @@ class MCPServerApp:
             "get_research_state": get_research_state,
             "search_corpus": search_corpus,
             "get_source": get_source,
+            "get_project_memory": get_project_memory,
+            "get_research_memory": get_research_memory,
+            "get_open_questions": get_open_questions,
+            "save_research_memory": save_research_memory,
         }
 
         enabled = self._config.enabled_tools or DEFAULT_TOOLS

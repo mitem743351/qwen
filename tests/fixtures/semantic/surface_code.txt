@@ -1,0 +1,3 @@
+Fault-tolerant quantum computation requires suppressing logical error rates.
+The surface code is a leading approach because it achieves a high threshold
+using local stabilizer measurements on a two-dimensional lattice of qubits.

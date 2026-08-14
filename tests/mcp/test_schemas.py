@@ -29,6 +29,10 @@ def test_default_tool_set() -> None:
         "get_research_state",
         "search_corpus",
         "get_source",
+        "get_project_memory",
+        "get_research_memory",
+        "get_open_questions",
+        "save_research_memory",
     )
 
 
@@ -41,8 +45,16 @@ def test_required_fields_match_tool_contract() -> None:
     assert catalog["get_research_state"]["input_schema"]["required"] == ["task_id"]
     assert catalog["search_corpus"]["input_schema"]["required"] == ["query"]
     assert catalog["get_source"]["input_schema"]["required"] == ["document_id"]
+    assert catalog["save_research_memory"]["input_schema"]["required"] == ["content"]
     # create_session has no required args (all defaulted) → no "required" key.
     assert "required" not in catalog["create_session"]["input_schema"]
+
+
+def test_retrieval_mode_enum_on_search_corpus() -> None:
+    schema = _catalog()["search_corpus"]["input_schema"]
+    mode = schema["properties"]["mode"]
+    assert mode["enum"] == ["lexical", "semantic", "hybrid"]
+    assert mode["default"] == "hybrid"
 
 
 def test_wire_tools_match_default_set() -> None:

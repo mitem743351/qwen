@@ -1,0 +1,4 @@
+Techniques for suppressing decoherence and reducing logical error frequency in
+quantum processors have advanced considerably. Dynamical decoupling, optimal
+control pulses, and improved qubit materials all contribute to lower logical
+error rates during computation.

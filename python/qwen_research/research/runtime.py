@@ -24,6 +24,10 @@ from qwen_research.domain.research import ResearchPlan, ResearchState
 from qwen_research.domain.session import Session
 from qwen_research.domain.task import Task, TaskStatus, next_active_status
 from qwen_research.domain.verification import VerificationResult
+from qwen_research.memory.context import ContextBudget, ResearchContext, build_context
+from qwen_research.memory.models import ResearchMemory, ResearchQuestion
+from qwen_research.memory.retriever import MemoryHit
+from qwen_research.memory.service import MemoryService
 from qwen_research.research.state import (
     InMemoryArtifactStore,
     InMemoryResearchStateStore,
@@ -48,6 +52,7 @@ class InMemoryResearchRuntime:
         artifact_store: InMemoryArtifactStore | None = None,
         workflow_registry: WorkflowRegistry | None = None,
         retriever: Retriever | None = None,
+        memory: MemoryService | None = None,
     ) -> None:
         self._session_store = session_store or InMemorySessionStore()
         self._task_store = task_store or InMemoryTaskStore()
@@ -55,6 +60,7 @@ class InMemoryResearchRuntime:
         self._artifact_store = artifact_store or InMemoryArtifactStore()
         self._workflow_registry = workflow_registry or WorkflowRegistry()
         self._retriever = retriever
+        self._memory = memory
 
     # -- sessions ---------------------------------------------------------
 
@@ -168,6 +174,73 @@ class InMemoryResearchRuntime:
         if view is None:
             raise DocumentNotFoundError(f"document {document_id!r} not found")
         return view
+
+    # -- memory ------------------------------------------------------------
+
+    def _require_memory(self) -> MemoryService:
+        if self._memory is None:
+            raise UnsupportedOperationError("no memory store configured")
+        return self._memory
+
+    def get_project_memory(self, project_id: str, *, limit: int = 10) -> list[MemoryHit]:
+        return self._require_memory().get_project_memory(project_id, limit=limit)
+
+    def get_research_memory(
+        self, project_id: str, query: str | None = None, *, limit: int = 10
+    ) -> list[MemoryHit]:
+        return self._require_memory().get_research_memory(project_id, query, limit=limit)
+
+    def get_open_questions(self, project_id: str, *, limit: int = 5) -> list[ResearchQuestion]:
+        return self._require_memory().get_open_questions(project_id, limit=limit)
+
+    def save_research_memory(
+        self,
+        project_id: str,
+        content: str,
+        *,
+        source_refs: tuple[str, ...] = (),
+        evidence_refs: tuple[str, ...] = (),
+        claim_refs: tuple[str, ...] = (),
+        status: str = "proposed",
+        provenance: dict[str, str] | None = None,
+    ) -> ResearchMemory:
+        return self._require_memory().save_research_memory(
+            project_id,
+            content,
+            source_refs=source_refs,
+            evidence_refs=evidence_refs,
+            claim_refs=claim_refs,
+            status=status,
+            provenance=provenance,
+        )
+
+    def build_research_context(
+        self, query: str, *, project_id: str = "default"
+    ) -> ResearchContext:
+        """Assemble a bounded evidence + memory context for a query."""
+        budget = ContextBudget()
+        evidence: list = []
+        if self._retriever is not None:
+            result = self._retriever.search(
+                query, SearchOptions(limit=budget.max_evidence_chunks)
+            )
+            evidence = list(result.chunks)
+        memories: list[MemoryHit] = []
+        questions: list[ResearchQuestion] = []
+        if self._memory is not None:
+            memories = self._memory.search_memory(
+                project_id, query, limit=budget.max_memory_items
+            )
+            questions = self._memory.get_open_questions(
+                project_id, limit=budget.max_open_questions
+            )
+        return build_context(
+            query,
+            evidence=evidence,
+            memories=memories,
+            open_questions=questions,
+            budget=budget,
+        )
 
     def verify_claim(self, claim_id: ClaimId) -> VerificationResult:
         raise UnsupportedOperationError("verification is not implemented until Phase 6")

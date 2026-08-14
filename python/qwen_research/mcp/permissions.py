@@ -56,4 +56,8 @@ DEFAULT_TOOL_PERMISSIONS: dict[str, MCPPermission] = {
     "continue_task": MCPPermission.ANALYZE,
     "search_corpus": MCPPermission.READ,
     "get_source": MCPPermission.READ,
+    "get_project_memory": MCPPermission.READ,
+    "get_research_memory": MCPPermission.READ,
+    "get_open_questions": MCPPermission.READ,
+    "save_research_memory": MCPPermission.WRITE,
 }

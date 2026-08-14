@@ -1,8 +1,8 @@
-"""Retrieval layer: ranking, evidence selection, and models.
+"""Retrieval layer: lexical, semantic, hybrid, reranking, and models.
 
-``LexicalRetriever`` lives in :mod:`qwen_research.retrieval.lexical` and is
-imported lazily (it depends on the index interface, which in turn imports the
-leaf ``models`` module); importing it here eagerly would create a cycle.
+Concrete retrievers are imported lazily (they depend on the index/vector
+interfaces, which import the leaf ``models`` module); importing them eagerly
+would create a cycle.
 """
 
 from qwen_research.retrieval.evidence import to_evidence
@@ -12,18 +12,25 @@ from qwen_research.retrieval.models import (
     DocumentView,
     IndexState,
     IndexStatus,
+    RetrievalMode,
+    RetrievalQuery,
     RetrievedChunk,
     SearchFilters,
     SearchOptions,
     SearchResult,
 )
+from qwen_research.retrieval.reranker import NoOpReranker, Reranker
 
 __all__ = [
     "CorpusStats",
     "DocumentView",
     "IndexState",
     "IndexStatus",
+    "NoOpReranker",
+    "Reranker",
     "RetrievedChunk",
+    "RetrievalMode",
+    "RetrievalQuery",
     "Retriever",
     "SearchFilters",
     "SearchOptions",
@@ -37,4 +44,12 @@ def __getattr__(name: str) -> type:
         from qwen_research.retrieval.lexical import LexicalRetriever
 
         return LexicalRetriever
+    if name == "SemanticRetriever":
+        from qwen_research.retrieval.semantic import SemanticRetriever
+
+        return SemanticRetriever
+    if name == "HybridRetriever":
+        from qwen_research.retrieval.hybrid import HybridRetriever
+
+        return HybridRetriever
     raise AttributeError(name)

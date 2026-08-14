@@ -58,6 +58,23 @@ PathPrefixParam = Annotated[
 ]
 DocumentIdParam = Annotated[str, Field(description="The document identifier.")]
 
+# Phase 4 retrieval params.
+RetrievalModeName = Literal["lexical", "semantic", "hybrid"]
+RetrievalModeParam = Annotated[RetrievalModeName, Field(description="Retrieval mode.")]
+LexicalKParam = Annotated[int, Field(description="Lexical candidate count.", ge=1, le=100)]
+SemanticKParam = Annotated[int, Field(description="Semantic candidate count.", ge=1, le=100)]
+MaxChunksPerDocumentParam = Annotated[
+    int, Field(description="Maximum chunks per document (diversity).", ge=1, le=50)
+]
+
+# Phase 4 memory params.
+OptionalQueryParam = Annotated[str | None, Field(description="Optional query text.")]
+ContentParam = Annotated[str, Field(description="The memory content (structured text).")]
+StringListParam = Annotated[
+    list[str] | None, Field(description="Optional list of reference ids.")
+]
+StatusParam = Annotated[str | None, Field(description="Optional status value.")]
+
 TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_session": "Return a session by its session id.",
     "create_session": (
@@ -76,6 +93,10 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "evidence with source provenance (file, page/section, score, excerpt)."
     ),
     "get_source": "Return metadata and structure for a document by its id.",
+    "get_project_memory": "Return project-scoped memory (goals, scope, sources, notes).",
+    "get_research_memory": "Return research-derived memory (claims/conclusions) with provenance.",
+    "get_open_questions": "Return unresolved research questions for a project.",
+    "save_research_memory": "Save research-derived memory with explicit provenance.",
 }
 
 #: The Phase 2 minimal tool set, in registration order.
@@ -88,4 +109,8 @@ DEFAULT_TOOLS: tuple[str, ...] = (
     "get_research_state",
     "search_corpus",
     "get_source",
+    "get_project_memory",
+    "get_research_memory",
+    "get_open_questions",
+    "save_research_memory",
 )

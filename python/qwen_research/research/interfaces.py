@@ -20,6 +20,9 @@ from qwen_research.domain.research import ResearchState
 from qwen_research.domain.session import Session
 from qwen_research.domain.task import Task
 from qwen_research.domain.verification import VerificationResult
+from qwen_research.memory.context import ResearchContext
+from qwen_research.memory.models import ResearchMemory, ResearchQuestion
+from qwen_research.memory.retriever import MemoryHit
 from qwen_research.retrieval.models import DocumentView, SearchOptions, SearchResult
 from qwen_research.workflows.base import WorkflowResult
 
@@ -86,6 +89,30 @@ class ResearchRuntime(Protocol):
     def search_corpus(self, query: str, options: SearchOptions | None = None) -> SearchResult: ...
 
     def get_source(self, document_id: str) -> DocumentView: ...
+
+    def get_project_memory(self, project_id: str, *, limit: int = 10) -> list[MemoryHit]: ...
+
+    def get_research_memory(
+        self, project_id: str, query: str | None = None, *, limit: int = 10
+    ) -> list[MemoryHit]: ...
+
+    def get_open_questions(self, project_id: str, *, limit: int = 5) -> list[ResearchQuestion]: ...
+
+    def save_research_memory(
+        self,
+        project_id: str,
+        content: str,
+        *,
+        source_refs: tuple[str, ...] = (),
+        evidence_refs: tuple[str, ...] = (),
+        claim_refs: tuple[str, ...] = (),
+        status: str = "proposed",
+        provenance: dict[str, str] | None = None,
+    ) -> ResearchMemory: ...
+
+    def build_research_context(
+        self, query: str, *, project_id: str = "default"
+    ) -> ResearchContext: ...
 
     def verify_claim(self, claim_id: ClaimId) -> VerificationResult: ...
 

@@ -1,10 +1,10 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 3 — Local Corpus, Document Pipeline, and Retrieval Foundation.
-> The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1, 1.1,
-> and 1.2 established and hardened the core contracts; Phase 2 added the MCP
-> server adapter; Phase 3 adds corpus ingestion, indexing (SQLite FTS5), and
-> lexical retrieval exposed as `search_corpus` / `get_source` MCP tools.
+> **Status:** Phase 4 — Semantic Retrieval, Hybrid Search, and Persistent Research Memory.
+> The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1–1.2
+> established and hardened the core contracts; Phases 2–3 added the MCP server
+> and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
+> persistent structured memory, still with no Qwen-API inference.
 > **Audience:** Implementers, code agents, reviewers
 > **Scope:** This document is the stable, binding architecture contract for the
 > "local AI research infrastructure" that extends **Qwen Studio** through MCP.
@@ -581,6 +581,9 @@ Rust library.
 | [corpus](docs/architecture/corpus.md) | Corpus roots, security boundary, scanner |
 | [document-pipeline](docs/architecture/document-pipeline.md) | Parsers, normalization, chunking, PDF handling |
 | [retrieval](docs/architecture/retrieval.md) | Pipeline, ranking, corpus, document pipeline |
+| [semantic-retrieval](docs/architecture/semantic-retrieval.md) | Embedding provider, vector index, versioning |
+| [hybrid-retrieval](docs/architecture/hybrid-retrieval.md) | Fusion, diversity, reranker, fallback |
+| [memory](docs/architecture/memory.md) | Structured persistent memory, provenance, isolation |
 | [memory](docs/architecture/memory.md) | Stores, entity model, lifecycle |
 | [inference](docs/architecture/inference.md) | Provider abstraction, policy translation, capability negotiation |
 | [security](docs/architecture/security.md) | Threat model, boundaries, sandboxing |
