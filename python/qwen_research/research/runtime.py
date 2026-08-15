@@ -9,7 +9,7 @@ that depend on unimplemented subsystems (retrieval, verification) raise
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from qwen_research.claims.models import Claim, ClaimType, QuantitativeClaim, Scope
@@ -60,6 +60,8 @@ from qwen_research.orchestration.models import (
     ResearchPlan as OrchestrationResearchPlan,
 )
 from qwen_research.orchestration.service import OrchestrationService
+from qwen_research.research.budget_store import BudgetStore
+from qwen_research.research.high_effort import HighEffortResult
 from qwen_research.research.state import (
     InMemoryArtifactStore,
     InMemoryResearchStateStore,
@@ -431,6 +433,32 @@ class InMemoryResearchRuntime:
     def stream_inference(self, request: InferenceRequest) -> Iterable[InferenceStreamEvent]:
         """Stream normalized inference events through the Inference Runtime."""
         return self._require_inference().stream(request)
+
+    def run_high_effort(
+        self,
+        *,
+        profile: str,
+        store: BudgetStore | None = None,
+        run_id: str = "",
+        task_description: str = "",
+        stages: Callable[[Any], Any] | None = None,
+        trajectory_strategies: tuple[Any, ...] = (),
+    ) -> HighEffortResult:
+        """Run a bounded high-effort research execution (Phase 10).
+
+        Exposes the GATEWAY_INFERENCE high-effort path: the Research Runtime
+        owns profile/budget/workflow/tool policy; Qwen owns actual inference.
+        """
+        from qwen_research.research.high_effort import run_high_effort as _run
+
+        return _run(
+            profile_name=profile,
+            store=store,
+            run_id=run_id,
+            task_description=task_description,
+            stages=stages,
+            trajectory_strategies=trajectory_strategies,
+        )
 
     def synthesize(
         self,

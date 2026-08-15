@@ -305,6 +305,7 @@ class InferencePolicy:
     model_requirement: str | None = None
     reasoning: bool = False
     reasoning_budget: int | None = None
+    reasoning_effort: str = ""
     max_output_tokens: int | None = None
     temperature: float | None = None
     top_p: float | None = None
@@ -326,6 +327,12 @@ class InferencePolicy:
             raise ValidationError("temperature must be non-negative")
         if self.top_p is not None and not 0.0 < self.top_p <= 1.0:
             raise ValidationError("top_p must be within (0.0, 1.0]")
+        # reasoning_effort and reasoning_budget are mutually exclusive intents:
+        # a policy must not request both native controls at once.
+        if self.reasoning_effort and self.reasoning_budget is not None:
+            raise ValidationError(
+                "reasoning_effort and reasoning_budget are mutually exclusive"
+            )
 
 
 @serializable

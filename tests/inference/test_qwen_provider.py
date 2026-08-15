@@ -400,3 +400,23 @@ def test_non_object_tool_arguments_flagged() -> None:
     result = provider.generate(_request(tool_calling=True))
     call = result.tool_calls_structured[0]
     assert call.arguments_error is not None
+
+
+def test_reasoning_effort_emitted_for_effort_model() -> None:
+    provider, transport = make_provider(lambda *_: completion_response("ok"))
+    provider.generate(
+        _request(model_requirement="qwen3.8-max-preview", reasoning=True, reasoning_effort="xhigh")
+    )
+    body = transport.calls[0][2]
+    assert body["reasoning_effort"] == "xhigh"
+    assert "thinking_budget" not in body
+
+
+def test_reasoning_effort_not_emitted_for_budget_model() -> None:
+    provider, transport = make_provider(lambda *_: completion_response("ok"))
+    provider.generate(
+        _request(model_requirement="qwen3.7-max", reasoning=True, reasoning_effort="xhigh")
+    )
+    body = transport.calls[0][2]
+    # qwen3.7-max has no reasoning_effort_levels → no reasoning_effort emitted.
+    assert "reasoning_effort" not in body

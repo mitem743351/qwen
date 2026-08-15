@@ -7,7 +7,7 @@ persistent research memory, verification/citation/provenance, and deterministic
 computation — while Qwen Studio keeps its native conversational and web-search
 capabilities.
 
-> **Current status: Phase 9.6 — Final reliability closure (Phase 9 complete & frozen).**
+> **Current status: Phase 10 — Bounded XHIGH / EXTREME test-time scaling.**
 > The architecture (Phases 0, 0.5, 0.75) is the approved baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
@@ -134,6 +134,15 @@ Phase 9 (controlled tool loop + hybrid boundary):
 - [`docs/architecture/hybrid-mode.md`](docs/architecture/hybrid-mode.md) — hybrid Studio/Gateway boundary contract
 - [`docs/setup/gateway-inference.md`](docs/setup/gateway-inference.md) — enabling gateway inference
 
+Phase 10 (bounded XHIGH/EXTREME test-time scaling):
+
+- [`docs/architecture/test-time-scaling.md`](docs/architecture/test-time-scaling.md) — test-time compute budgets & profiles
+- [`docs/architecture/xhigh.md`](docs/architecture/xhigh.md) — XHIGH execution
+- [`docs/architecture/extreme.md`](docs/architecture/extreme.md) — EXTREME execution
+- [`docs/architecture/trajectory-orchestration.md`](docs/architecture/trajectory-orchestration.md) — research trajectories
+- [`docs/architecture/adaptive-budgeting.md`](docs/architecture/adaptive-budgeting.md) — adaptive budget reallocation
+- [`docs/setup/high-effort-research.md`](docs/setup/high-effort-research.md) — enabling high-effort research
+
 Full architecture docs:
 
 | Area | Document |
@@ -215,9 +224,11 @@ integrity, budget-exhaustion semantics, and continuation hardening), and
 Phase 9.3 (tool-execution persistence and crash/restart idempotency),
 Phase 9.4 (transactional tool execution with atomic claims, leases, UNKNOWN
 crash semantics, and call-id conflict rejection), Phase 9.5 (lease heartbeats
-and long-running tool ownership), and Phase 9.6 (final ownership-integrity
-closure and terminal-state immutability) are **complete** — **Phase 9 is now
-frozen**.
+and long-running tool ownership), Phase 9.6 (final ownership-integrity closure
+and terminal-state immutability — **Phase 9 is frozen**), and Phase 10 (bounded
+XHIGH/EXTREME test-time scaling: explicit profile budgets, restart-safe budget
+persistence, adaptive reallocation, bounded trajectories and critique, and
+native Qwen reasoning control) are **complete**.
 The Research Runtime remains
 provider- and transport-independent; the MCP server is a thin adapter over it,
 now serving hybrid evidence, project-scoped memory, deterministic claim

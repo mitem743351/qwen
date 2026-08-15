@@ -230,6 +230,18 @@ is a conditional update verified by `rowcount == 1`. Persisted tool results
 remain untrusted DATA and can never alter permissions, lease ownership, workflow
 state, or provider configuration.
 
+## Test-time scaling (Phase 10)
+
+XHIGH/EXTREME **never** increase permissions: `EXECUTE`/`DESTRUCTIVE` remain
+independent of `FAST/NORMAL/DEEP/XHIGH/EXTREME`, and `run_python` stays
+unavailable to the model. The test-time budget is a *resource* control, not a
+privilege control: nested trajectories inherit the remaining global budget and
+can never exceed it, and budget consumption is monotonic (a restart cannot reset
+it). Native reasoning (`reasoning_effort` / `thinking_budget`) is translated per
+model/endpoint and never fabricated; hidden reasoning is never persisted. Tool
+and document output remain untrusted DATA — they cannot alter permissions,
+budgets, provider configuration, or system policy.
+
 ## Hidden chain-of-thought
 
 The system **never** stores, transmits, logs, or exposes hidden

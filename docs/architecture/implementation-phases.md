@@ -484,16 +484,31 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
   tested; restart replay is tested; Phase 9 marked complete/frozen.
 - **Phase 9 is now FROZEN.** No Phase 9.7 or later 9.x hardening phases.
 
-## Phase 10 — Advanced XHigh / EXTREME workflows
+## Phase 10 — Advanced XHigh / EXTREME workflows ✅ (complete)
 
-- **Objective:** high-effort profiles behave as designed.
-- **Dependencies:** Phase 5–6, 8.
-- **Components:** iterative multi-pass reasoning; critique→correct→verify
-  loops; counterargument generation; parallel trajectories (A–E) behind
-  `Trajectory`; long-output assembly at scale.
-- **Acceptance criteria:** XHIGH/EXTREME produce verifiably deeper, cited,
-  contradiction-checked output than DEEP, within budgeted cost.
-- **Not yet:** distributed agents (trajectories in-process).
+- **Objective:** make FAST/NORMAL/DEEP/XHIGH/EXTREME materially different in
+  how much bounded useful test-time computation they perform, while preserving
+  security/state/budget/provenance/persistence boundaries.
+- **Dependencies:** Phase 5–6, 8–9.
+- **Components:** `domain/test_time.py` (`TestTimeComputePolicy` with explicit
+  numeric ceilings per profile, `TestTimeComputeBudget` reserve/commit/
+  remaining, `ResearchQuerySet`, `ResearchTrajectory`, `CritiqueRequest`/
+  `CritiqueResult`, `ResearchSynthesisInput`, `RunStatus`);
+  `research/scheduler.py` (`TestTimeScheduler` adaptive reallocation,
+  `BudgetMeter`); `research/budget_store.py` (restart-safe budget persistence);
+  `research/high_effort.py` (`run_high_effort`, `run_trajectory`,
+  `perform_critique`, `reallocate_after_signal`); `inference/providers/
+  qwen_reasoning.py` (`QwenReasoningControl`, `translate_native_reasoning`,
+  `native_reasoning_for_profile`); `InferencePolicy.reasoning_effort`;
+  `reasoning_effort` emission in the Qwen provider.
+- **Acceptance criteria:** explicit bounded policies; restart-safe budgets;
+  native Qwen reasoning translated per model/endpoint with `reasoning_effort`
+  XOR `thinking_budget`; adaptive budget allocation; global ceilings never
+  exceeded through nested trajectories; bounded trajectories/critique;
+  Phase-9 guarantees survive scaling; fake-provider XHIGH/EXTREME traces pass.
+- **Not yet:** distributed agents / parallel model trajectories / remote
+  workers; autonomous multi-provider routing; automatic Studio→Gateway
+  escalation; Qwen built-in web search invocation.
 
 ## Phase 11 — Dashboard / observability
 

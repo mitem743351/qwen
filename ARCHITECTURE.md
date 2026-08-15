@@ -1,6 +1,6 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 9.6 — Final reliability closure (Phase 9 complete & frozen).
+> **Status:** Phase 10 — Bounded XHIGH / EXTREME test-time scaling.
 > The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
@@ -607,6 +607,14 @@ See [`docs/architecture/inference.md`](docs/architecture/inference.md) and
 > authority to mutate the record. **Phase 9 is complete and frozen** — atomic
 > claim, lease ownership, heartbeat liveness, terminal integrity, durable
 > replay, explicit `UNKNOWN`, and restart-safe continuation.
+>
+> **Phase 10 (implemented).** FAST/NORMAL/DEEP/XHIGH/EXTREME now have explicit
+> bounded test-time compute policies (`TestTimeComputePolicy`/`Budget`),
+> restart-safe budget persistence, adaptive reallocation, bounded trajectories
+> and critique, and native Qwen reasoning control translated per model/endpoint
+> (`reasoning_effort` XOR `thinking_budget`). XHIGH/EXTREME mean more bounded
+> useful work — never more permissions or hidden-reasoning storage — and the
+> frozen Phase-9 execution guarantees survive scaling.
 
 ---
 
@@ -731,6 +739,11 @@ Rust library.
 | [hybrid-mode](docs/architecture/hybrid-mode.md) | Hybrid Studio/Gateway boundary contract |
 | [tool-execution-reliability](docs/architecture/tool-execution-reliability.md) | Transactional tool execution, claims, leases, UNKNOWN (Phase 9.4) |
 | [tool-store](docs/architecture/tool-store.md) | Durable tool-execution store (SQLite, atomic claims) |
+| [test-time-scaling](docs/architecture/test-time-scaling.md) | Test-time compute budgets & profiles (Phase 10) |
+| [xhigh](docs/architecture/xhigh.md) | XHIGH bounded high-effort execution |
+| [extreme](docs/architecture/extreme.md) | EXTREME bounded high-effort execution |
+| [trajectory-orchestration](docs/architecture/trajectory-orchestration.md) | Bounded research trajectories |
+| [adaptive-budgeting](docs/architecture/adaptive-budgeting.md) | Adaptive budget reallocation |
 | [security](docs/architecture/security.md) | Threat model, boundaries, sandboxing |
 | [architecture-review](docs/architecture/architecture-review.md) | Risks, failure modes, Rust-value analysis |
 | [implementation-phases](docs/architecture/implementation-phases.md) | Phase 0–12 roadmap |

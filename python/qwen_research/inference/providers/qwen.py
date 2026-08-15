@@ -506,6 +506,11 @@ class QwenProvider:
             payload["enable_thinking"] = True
         if policy.reasoning_budget is not None and caps.supports_reasoning_budget:
             payload["thinking_budget"] = policy.reasoning_budget
+        # Native reasoning_effort (Phase 10): emitted only for models that
+        # catalog it, and only when the policy requests it — never alongside a
+        # thinking_budget (enforced below).
+        if policy.reasoning_effort and self._resolve_spec(model).reasoning_effort_levels:
+            payload["reasoning_effort"] = policy.reasoning_effort
         if policy.preserved_thinking and caps.supports_preserved_thinking:
             payload["preserve_thinking"] = True
         if request.tools and caps.supports_tool_calling:
