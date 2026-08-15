@@ -201,6 +201,25 @@ def test_thinking_budget_omitted_on_non_supporting_model() -> None:
     assert "thinking_budget" not in body
 
 
+def test_preserve_thinking_emitted_on_supporting_model() -> None:
+    provider, transport = make_provider(lambda *_: completion_response("ok"))
+    provider.generate(
+        _request(model_requirement="qwen3.7-max", preserved_thinking=True)
+    )
+    body = transport.calls[0][2]
+    assert body["preserve_thinking"] is True
+
+
+def test_preserve_thinking_omitted_on_non_supporting_model() -> None:
+    # qwen-max does not support preserve_thinking.
+    provider, transport = make_provider(lambda *_: completion_response("ok"))
+    provider.generate(
+        _request(model_requirement="qwen-max", preserved_thinking=True)
+    )
+    body = transport.calls[0][2]
+    assert "preserve_thinking" not in body
+
+
 def test_full_tool_definitions_emitted() -> None:
     provider, transport = make_provider(lambda *_: completion_response("ok"))
     request = _request(tool_calling=True)

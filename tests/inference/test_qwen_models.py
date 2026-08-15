@@ -1,10 +1,11 @@
-"""Model-specific capability discovery for the Qwen adapter (Phase 8.1)."""
+"""Model-specific capability discovery for the Qwen adapter (Phases 8.1/8.2)."""
 
 from __future__ import annotations
 
 from inference_helpers import completion_response, make_provider
 from qwen_research.domain.inference import ModelInfo
 from qwen_research.inference.providers.qwen_models import (
+    QWEN_MODEL_TABLE,
     QWEN_MODELS,
     QwenModelSpec,
     resolve_spec,
@@ -21,6 +22,50 @@ def test_catalog_is_model_specific() -> None:
     assert specs["qwen-max"].thinking is True
     assert specs["qwen-max"].thinking_budget is False
     assert specs["qwen-max"].context_window == 32_768
+
+
+def test_qwen_37_max_documented_capabilities() -> None:
+    """qwen3.7-max capabilities match the official 2026 documentation."""
+    spec = QWEN_MODEL_TABLE["qwen3.7-max"]
+    assert spec.context_window == 1_000_000
+    assert spec.max_output_tokens == 65_536
+    assert spec.thinking is True
+    assert spec.thinking_budget is True
+    assert spec.preserve_thinking is True
+    assert spec.structured_output is True
+    assert spec.tool_calling is True
+    assert spec.streaming is True
+
+
+def test_qwen_38_max_is_not_listed() -> None:
+    # qwen3.8-max was removed as unverified (see catalog maintenance note).
+    assert "qwen3.8-max" not in QWEN_MODEL_TABLE
+    assert "qwen3.8-max" not in {s.model for s in QWEN_MODELS}
+
+
+def test_preserve_thinking_is_model_specific() -> None:
+    provider, _ = make_provider(lambda *_: completion_response("ok"))
+    assert provider.capabilities("qwen3.7-max").supports_preserved_thinking is True
+    assert provider.capabilities("qwen3.7-plus").supports_preserved_thinking is True
+    # Other models (even Qwen3.x) do not support preserve_thinking.
+    assert provider.capabilities("qwen3.6-plus").supports_preserved_thinking is False
+    assert provider.capabilities("qwen-max").supports_preserved_thinking is False
+
+
+def test_structured_output_and_tool_calling_are_model_specific() -> None:
+    provider, _ = make_provider(lambda *_: completion_response("ok"))
+    # Hybrid chat models support both.
+    assert provider.capabilities("qwen3.7-max").supports_structured_output is True
+    assert provider.capabilities("qwen3.7-max").supports_tool_calling is True
+    # Thinking-only qwq models support neither (no non-thinking mode).
+    assert provider.capabilities("qwq-32b").supports_structured_output is False
+    assert provider.capabilities("qwq-32b").supports_tool_calling is False
+
+
+def test_streaming_is_uniformly_supported() -> None:
+    provider, _ = make_provider(lambda *_: completion_response("ok"))
+    for model in ("qwen3.7-max", "qwen-max", "qwq-32b"):
+        assert provider.capabilities(model).supports_streaming is True
 
 
 def test_capabilities_depend_on_model() -> None:

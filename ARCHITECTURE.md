@@ -1,6 +1,6 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 8.1 — Qwen contract currency & model specificity.
+> **Status:** Phase 8.2 — Qwen catalog model-specificity & verification.
 > The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
@@ -9,7 +9,9 @@
 > Phase 7 adds the deterministic orchestration layer; Phase 8 connects the
 > Research Runtime to real model providers (beginning with Qwen) through a
 > strict provider-neutral inference boundary; Phase 8.1 makes Qwen capability
-> discovery model-specific and brings the contract current (2026).
+> discovery model-specific and current (2026); Phase 8.2 completes per-model
+> capability coverage (preserve_thinking / structured output / tool calling /
+> streaming) and pins the catalog to official docs.
 > **Audience:** Implementers, code agents, reviewers
 > **Scope:** This document is the stable, binding architecture contract for the
 > "local AI research infrastructure" that extends **Qwen Studio** through MCP.
@@ -526,6 +528,14 @@ See [`docs/architecture/inference.md`](docs/architecture/inference.md) and
 > remains Phase 9); structured output is validated against the requested JSON
 > Schema; streaming enforces a real `stream_idle_seconds` idle timeout; and the
 > Qwen API documentation reflects the current 2026 contract.
+>
+> **Phase 8.2 (implemented).** The catalog now also carries per-model
+> `preserve_thinking`, `structured_output`, `tool_calling`, and `streaming`
+> facts; `preserve_thinking` is emitted only on the models that support it
+> (`qwen3.7-max`/`qwen3.7-plus`); thinking-only `qwq-*` models are marked
+> without structured output/tool calling; the unverified `qwen3.8-max` entry was
+> removed; and `qwen3.7-max` is pinned against official docs (1M context,
+> 65,536 max output) with a documented catalog-maintenance process.
 
 ---
 

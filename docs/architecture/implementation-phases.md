@@ -270,6 +270,25 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
 - **Not yet:** tool **execution** (Phase 9); hybrid escalation (Phase 9);
   XHIGH/EXTREME orchestration (Phase 10).
 
+## Phase 8.2 — Qwen catalog model-specificity & verification ✅ (complete)
+
+- **Objective:** make `preserve_thinking`, `structured_output`, `tool_calling`,
+  and `streaming` model-specific; remove unverified entries; pin `qwen3.7-max`
+  against official docs; establish catalog maintenance.
+- **Dependencies:** Phase 8.1.
+- **Components:** `QwenModelSpec` gains `preserve_thinking`,
+  `structured_output`, `tool_calling`, `streaming`; `capabilities(model)` maps
+  each from the catalog; `preserve_thinking` emitted on `qwen3.7-max` /
+  `qwen3.7-plus`; `qwen3.8-max` removed as unverified; `qwq-*` marked
+  thinking-only (no structured output / tool calling); `qwen3.7-max` pinned
+  (1M context, 65,536 max output, thinking + budget + preserve_thinking);
+  catalog-maintenance process documented.
+- **Acceptance criteria:** per-model preserve/structured/tool/stream
+  capabilities; `qwen3.8-max` absent; `qwen3.7-max` documented facts asserted
+  in tests; official-doc sources recorded in the catalog.
+- **Not yet:** tool **execution** (Phase 9); hybrid escalation (Phase 9);
+  XHIGH/EXTREME orchestration (Phase 10).
+
 ## Phase 9 — Hybrid escalation
 
 - **Objective:** HYBRID mode is real.

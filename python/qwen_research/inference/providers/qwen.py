@@ -7,11 +7,12 @@ Translates provider-neutral ``InferenceRequest`` into the Qwen OpenAI-compatible
 Verified contract (2026): OpenAI-compatible base ``/compatible-mode/v1``, Bearer
 ``DASHSCOPE_API_KEY``; model ids ``qwen3.x`` flagships + ``qwen-max/plus/turbo/
 flash`` + ``qwq-*`` (see ``qwen_models.py``); reasoning via ``enable_thinking``
-with a numeric ``thinking_budget`` on Qwen3-era thinking models; finish reasons
-``stop``/``length``/``tool_calls``/``content_filter``; ``usage`` token
-accounting. Capability discovery is **model-specific** (per ``QwenModelSpec``),
-and structured output is validated against the requested JSON Schema. Only
-documented parameters are emitted.
+with a numeric ``thinking_budget`` and ``preserve_thinking`` on the models that
+support them; finish reasons ``stop``/``length``/``tool_calls``/
+``content_filter``; ``usage`` token accounting. Capability discovery is
+**model-specific** (per ``QwenModelSpec``: thinking, budget, preserved thinking,
+structured output, tool calling, streaming), and structured output is validated
+against the requested JSON Schema. Only documented parameters are emitted.
 """
 
 from __future__ import annotations
@@ -141,10 +142,10 @@ class QwenProvider:
             supports_max_output_tokens=True,
             supports_temperature=True,
             supports_top_p=True,
-            supports_preserved_thinking=False,
-            supports_tool_calling=True,
-            supports_structured_output=True,
-            supports_streaming=True,
+            supports_preserved_thinking=spec.preserve_thinking,
+            supports_tool_calling=spec.tool_calling,
+            supports_structured_output=spec.structured_output,
+            supports_streaming=spec.streaming,
             supports_parallel_generation=False,
             supports_context_caching=False,
         )
@@ -331,6 +332,8 @@ class QwenProvider:
             payload["enable_thinking"] = True
         if policy.reasoning_budget is not None and caps.supports_reasoning_budget:
             payload["thinking_budget"] = policy.reasoning_budget
+        if policy.preserved_thinking and caps.supports_preserved_thinking:
+            payload["preserve_thinking"] = True
         if request.tools and caps.supports_tool_calling:
             payload["tools"] = [self._tool_definition(tool) for tool in request.tools]
         if structured is not None:
