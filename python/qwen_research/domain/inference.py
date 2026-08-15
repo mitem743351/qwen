@@ -72,6 +72,29 @@ class ToolCall:
 
 @serializable
 @dataclasses.dataclass(frozen=True)
+class ToolSpec:
+    """A complete tool definition the model is allowed to call.
+
+    Carries the full contract — name, human description, and an argument JSON
+    Schema — so a provider can pass the *entire* tool schema to the model.
+    Execution of any resulting :class:`ToolCall` remains a later phase; here we
+    only represent the definition, never run it.
+
+    ``parameters`` is a JSON Schema object describing the tool's arguments. It
+    defaults to the empty object (no arguments).
+    """
+
+    name: str
+    description: str = ""
+    parameters: dict[str, Any] = dataclasses.field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValidationError("tool name must not be empty")
+
+
+@serializable
+@dataclasses.dataclass(frozen=True)
 class Message:
     """A provider-neutral chat message."""
 
@@ -249,7 +272,7 @@ class InferenceRequest:
     task_reference: TaskId
     inference_policy: InferencePolicy
     context: tuple[str, ...] = ()
-    tools: tuple[str, ...] = ()
+    tools: tuple[ToolSpec, ...] = ()
     response_format: str | None = None
     continuation_state: str | None = None
     #: Prepared provider-neutral messages (system/user/assistant/tool). When

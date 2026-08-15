@@ -7,7 +7,10 @@ from collections.abc import Callable
 
 from qwen_research.inference.config import ProviderConfig
 from qwen_research.inference.providers.qwen import QwenProvider
-from qwen_research.inference.transport import TransportResponse
+from qwen_research.inference.transport import (
+    StreamingResponse,
+    TransportResponse,
+)
 
 
 class FakeQwenTransport:
@@ -23,6 +26,7 @@ class FakeQwenTransport:
     ) -> None:
         self._handler = handler
         self.calls: list[tuple[str, dict, dict, float]] = []
+        self.stream_calls: list[tuple[str, dict, dict, float]] = []
 
     def post(
         self,
@@ -35,6 +39,23 @@ class FakeQwenTransport:
         payload = json.loads(body.decode("utf-8"))
         self.calls.append((url, headers, payload, timeout_seconds))
         return self._handler(url, headers, payload, timeout_seconds)
+
+    def stream(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        body: bytes,
+        idle_timeout_seconds: float,
+    ) -> StreamingResponse:
+        payload = json.loads(body.decode("utf-8"))
+        self.stream_calls.append((url, headers, payload, idle_timeout_seconds))
+        response = self._handler(url, headers, payload, idle_timeout_seconds)
+        return StreamingResponse(
+            status=response.status,
+            headers=response.headers,
+            chunks=iter((response.body,)),
+        )
 
 
 def make_provider(

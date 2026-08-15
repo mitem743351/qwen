@@ -25,6 +25,7 @@ from qwen_research.domain.inference import (
     StructuredOutputSpec,
     ToolCall,
     ToolResult,
+    ToolSpec,
 )
 
 __all__ = [
@@ -40,6 +41,7 @@ __all__ = [
     "StructuredOutputSpec",
     "ToolCall",
     "ToolResult",
+    "ToolSpec",
 ]
 
 

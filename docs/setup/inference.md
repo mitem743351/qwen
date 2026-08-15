@@ -13,7 +13,7 @@ are read from the environment and are **never** exposed to MCP or persisted.
 | `QWEN_RESEARCH_ENABLE_INFERENCE` | `"1"` to enable the inference runtime |
 | `DASHSCOPE_API_KEY` | Qwen API key (Bearer; required at invocation) |
 | `QWEN_RESEARCH_INFERENCE_ENDPOINT` | optional endpoint override (default `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`) |
-| `QWEN_RESEARCH_INFERENCE_MODEL` | optional default model (default `qwen-max`) |
+| `QWEN_RESEARCH_INFERENCE_MODEL` | optional default model (default `qwen3.7-max`) |
 | `QWEN_RESEARCH_INFERENCE_DB` | optional SQLite path for invocation metadata |
 
 ---
@@ -30,7 +30,7 @@ are read from the environment and are **never** exposed to MCP or persisted.
       "env": {
         "QWEN_RESEARCH_ENABLE_INFERENCE": "1",
         "DASHSCOPE_API_KEY": "<your-key>",
-        "QWEN_RESEARCH_INFERENCE_MODEL": "qwen-max"
+        "QWEN_RESEARCH_INFERENCE_MODEL": "qwen3.7-max"
       }
     }
   }
@@ -39,6 +39,20 @@ are read from the environment and are **never** exposed to MCP or persisted.
 
 The credential lives only in the MCP launch environment; the model and MCP tool
 payloads never contain it.
+
+---
+
+## Model selection & capability discovery
+
+Model capabilities are discovered **per model** from the catalog in
+`python/qwen_research/inference/providers/qwen_models.py` (context window,
+thinking mode, numeric `thinking_budget`). Select a model with
+`QWEN_RESEARCH_INFERENCE_MODEL` or a per-request `model_requirement`; an
+unknown model id is passed through conservatively (no reasoning assumed) and
+only rejected by the API itself. Qwen3-era thinking models (e.g. `qwen3.7-max`)
+accept a numeric `thinking_budget` via the reasoning profile's budget; the
+Qwen2.5-era `qwen-max`/`qwen-plus` hybrid models support `enable_thinking` but
+not a numeric budget.
 
 ---
 

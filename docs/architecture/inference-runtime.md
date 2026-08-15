@@ -71,17 +71,21 @@ ReasoningProfile → InferencePolicy → negotiate() → NegotiationResult
 The provider receives only parameters it actually supports; emulated
 capabilities are never emitted as fake native parameters (Phase 1.2 preserved).
 `InferencePolicy.model_requirement` remains the single model-selection
-authority.
+authority. Negotiation is now fed **model-specific** capabilities and limits
+(`provider.capabilities(model)` / `provider.limits(model)`), so a reasoning
+budget is applied natively on models that support it and emulated elsewhere.
 
 ---
 
 ## Streaming & structured output
 
 - `stream()` yields normalized `InferenceStreamEvent` values (text/tool deltas,
-  usage, terminal) — never provider-specific SSE.
-- `structured()` requests a `StructuredOutputSpec`; when the provider cannot
-  produce valid structured output, a `StructuredOutputError` is raised rather
-  than returning invalid data.
+  usage, terminal) — never provider-specific SSE. The transport reads the body
+  **incrementally** and enforces a genuine `stream_idle_seconds` idle timeout
+  between chunks (`ProviderTimeoutError` on a stall).
+- `structured()` requests a `StructuredOutputSpec`; the returned JSON is
+  validated **against the requested schema** (bounded JSON Schema subset).
+  Invalid output raises a `StructuredOutputError` rather than being returned.
 
 ---
 
@@ -90,7 +94,8 @@ authority.
 Retries apply **only** to known transient failures (429, 5xx, connection reset)
 with exponential backoff; auth/invalid/content errors are never retried.
 Separate timeouts (connection / request / stream-idle) are configured per
-provider.
+provider, and `stream_idle_seconds` now actually gates the gap between streamed
+chunks.
 
 ---
 

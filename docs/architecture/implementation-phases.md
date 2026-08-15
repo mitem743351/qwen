@@ -249,6 +249,27 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
   tool loops (Phase 9); hybrid escalation (Phase 9); XHIGH/EXTREME
   orchestration (Phase 10).
 
+## Phase 8.1 — Qwen contract currency & model specificity ✅ (complete)
+
+- **Objective:** make Qwen capability discovery/model mapping current and
+  model-specific; implement `thinking_budget`; represent full tool schemas;
+  validate structured output against the requested schema; implement real
+  stream-idle semantics; refresh the 2026 API documentation.
+- **Dependencies:** Phase 8.
+- **Components:** `qwen_models.py` model catalog (`QwenModelSpec`);
+  model-specific `capabilities(model)`/`limits(model)`/`model_info(model)`/
+  `models()`; `ToolSpec` (name + description + argument JSON Schema) replacing
+  bare tool names; `thinking_budget` emission on Qwen3-era thinking models;
+  `schema_validation.py` (bounded JSON Schema validator); incremental
+  `HttpTransport.stream` with `stream_idle_seconds` idle timeout; default model
+  raised to `qwen3.7-max`.
+- **Acceptance criteria:** per-model capabilities/context windows; numeric
+  thinking budget emitted only where supported; complete tool schemas passed
+  through; schema-nonconforming structured output rejected; a stalled stream
+  raises `ProviderTimeoutError`; docs reflect the current contract.
+- **Not yet:** tool **execution** (Phase 9); hybrid escalation (Phase 9);
+  XHIGH/EXTREME orchestration (Phase 10).
+
 ## Phase 9 — Hybrid escalation
 
 - **Objective:** HYBRID mode is real.

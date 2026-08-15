@@ -68,9 +68,13 @@ class InferenceRuntime:
 
     # -- capability / model discovery -------------------------------------
 
-    def capabilities(self, provider_id: str | None = None) -> ProviderCapabilities:
-        route = self._router.select(InferencePolicy(), provider_id=provider_id)
-        return route.provider.capabilities()
+    def capabilities(
+        self, provider_id: str | None = None, *, model: str | None = None
+    ) -> ProviderCapabilities:
+        route = self._router.select(
+            InferencePolicy(model_requirement=model), provider_id=provider_id
+        )
+        return route.provider.capabilities(route.model)
 
     def models(self, provider_id: str | None = None) -> tuple[ModelInfo, ...]:
         return tuple(self._router.models(provider_id))
@@ -97,7 +101,11 @@ class InferenceRuntime:
     ) -> InferenceResult:
         """One-shot generation with negotiation, retry, and usage accounting."""
         route = self._router.select(request.inference_policy, provider_id=provider_id)
-        negotiation = negotiate(request.inference_policy, route.provider.capabilities())
+        negotiation = negotiate(
+            request.inference_policy,
+            route.provider.capabilities(route.model),
+            route.provider.limits(route.model),
+        )
         # Re-seat the policy to only what the provider actually receives.
         request = _with_policy(request, negotiation.provider_policy)
         metadata = InvocationMetadata.create(
@@ -124,7 +132,11 @@ class InferenceRuntime:
     ) -> Iterator[InferenceStreamEvent]:
         """Normalized streaming (events, not raw provider SSE)."""
         route = self._router.select(request.inference_policy, provider_id=provider_id)
-        negotiation = negotiate(request.inference_policy, route.provider.capabilities())
+        negotiation = negotiate(
+            request.inference_policy,
+            route.provider.capabilities(route.model),
+            route.provider.limits(route.model),
+        )
         request = _with_policy(request, negotiation.provider_policy)
         stream_events = getattr(route.provider, "stream_events", None)
         if stream_events is not None:
@@ -154,7 +166,7 @@ class InferenceRuntime:
         profile: str = "",
     ) -> InferenceResult:
         route = self._router.select(request.inference_policy, provider_id=provider_id)
-        capabilities = route.provider.capabilities()
+        capabilities = route.provider.capabilities(route.model)
         if not capabilities.supports_structured_output:
             # Structured output is workflow-emulatable; the Research Runtime may
             # post-validate, but this runtime will not fabricate native support.

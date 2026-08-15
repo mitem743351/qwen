@@ -11,6 +11,7 @@ from qwen_research.domain.inference import (
     InferenceRequest,
     InferenceResult,
     ProviderCapabilities,
+    ToolSpec,
 )
 from qwen_research.domain.reasoning import DEEP
 from qwen_research.domain.research import Hypothesis, ResearchState
@@ -72,7 +73,7 @@ def test_roundtrip_inference_objects() -> None:
         task_reference=TaskId("task_1"),
         inference_policy=policy,
         context=("evidence-1", "evidence-2"),
-        tools=("retrieve",),
+        tools=(ToolSpec(name="retrieve", description="search", parameters={"type": "object"}),),
     )
     result = InferenceResult(
         status="ok",

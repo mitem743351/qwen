@@ -7,14 +7,15 @@ persistent research memory, verification/citation/provenance, and deterministic
 computation — while Qwen Studio keeps its native conversational and web-search
 capabilities.
 
-> **Current status: Phase 8 — Provider-Neutral Inference Runtime and Qwen Backend Integration.**
+> **Current status: Phase 8.1 — Qwen contract currency & model specificity.**
 > The architecture (Phases 0, 0.5, 0.75) is the approved baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
 > persistent structured memory; Phase 5 adds the deterministic evidence-integrity
 > and verification foundation; Phase 6 adds the deterministic computation layer;
 > Phase 7 adds the deterministic orchestration layer; Phase 8 adds the real
-> provider-neutral Inference Runtime with a Qwen backend. Still **no** LLM
+> provider-neutral Inference Runtime with a Qwen backend; Phase 8.1 makes Qwen
+> capability discovery model-specific and current (2026). Still **no** LLM
 > verification, hybrid escalation, XHIGH orchestration, or dashboard.
 
 ## What this is
@@ -120,7 +121,7 @@ Phase 8 (inference runtime + Qwen):
 
 - [`docs/architecture/inference-runtime.md`](docs/architecture/inference-runtime.md) — provider-neutral Inference Runtime
 - [`docs/architecture/providers.md`](docs/architecture/providers.md) — provider abstraction & configuration
-- [`docs/architecture/qwen-provider.md`](docs/architecture/qwen-provider.md) — Qwen backend adapter
+- [`docs/architecture/qwen-provider.md`](docs/architecture/qwen-provider.md) — Qwen backend adapter (model-specific capability discovery, `thinking_budget`, schema validation)
 - [`docs/setup/inference.md`](docs/setup/inference.md) — enabling inference
 
 Full architecture docs:
@@ -186,8 +187,11 @@ contracts + hardening), Phase 2 (MCP server), Phase 3 (local corpus + lexical
 retrieval), Phase 4 (semantic + hybrid retrieval and persistent memory),
 Phase 5 (evidence integrity and verification foundation), Phase 6
 (deterministic computation and sandboxed analysis), Phase 7 (research
-orchestration and workflow execution), and Phase 8 (provider-neutral inference
-runtime + Qwen backend) are **complete**. The Research Runtime remains
+orchestration and workflow execution), Phase 8 (provider-neutral inference
+runtime + Qwen backend), and Phase 8.1 (model-specific Qwen capability
+discovery, `thinking_budget`, full tool schemas, structured-output schema
+validation, and stream-idle semantics) are **complete**. The Research Runtime
+remains
 provider- and transport-independent; the MCP server is a thin adapter over it,
 now serving hybrid evidence, project-scoped memory, deterministic claim
 verification, bounded computation, deterministic research workflows, and a

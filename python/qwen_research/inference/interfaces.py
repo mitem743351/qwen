@@ -17,19 +17,34 @@ from qwen_research.domain.inference import (
     InferenceResult,
     ModelInfo,
     ProviderCapabilities,
+    ProviderLimits,
 )
 
 
 @runtime_checkable
 class InferenceProvider(Protocol):
-    """Provider-neutral model invocation surface."""
+    """Provider-neutral model invocation surface.
 
-    def capabilities(self) -> ProviderCapabilities:
-        """Advertise what this provider actually supports (facts, not assumptions)."""
+    Capability discovery is **model-specific**: ``capabilities``/``limits``/
+    ``model_info`` accept an optional model id (defaulting to the provider's
+    default model) so a multi-model provider can advertise per-model facts
+    instead of a single blanket for the whole family.
+    """
+
+    def capabilities(self, model: str | None = None) -> ProviderCapabilities:
+        """Advertise what the (selected) model actually supports."""
         ...
 
-    def model_info(self) -> ModelInfo:
-        """Return identity and context-window information."""
+    def limits(self, model: str | None = None) -> ProviderLimits:
+        """Return the quantitative limits of the (selected) model."""
+        ...
+
+    def model_info(self, model: str | None = None) -> ModelInfo:
+        """Return identity and context-window information for a model."""
+        ...
+
+    def models(self) -> tuple[ModelInfo, ...]:
+        """Return the catalog of models this provider exposes."""
         ...
 
     def generate(self, request: InferenceRequest) -> InferenceResult:

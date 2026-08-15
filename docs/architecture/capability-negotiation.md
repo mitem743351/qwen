@@ -155,3 +155,8 @@ The `InferenceRuntime` runs `negotiate()` before every invocation and re-seats
 the request's policy to the negotiated `provider_policy`, so the Qwen adapter
 receives only parameters it actually supports. Emulated capabilities never
 appear as native parameters (see [`inference-runtime.md`](inference-runtime.md)).
+
+Negotiation is fed **model-specific** capabilities and limits
+(`provider.capabilities(model)` / `provider.limits(model)`, Phase 8.1), so a
+numeric reasoning/thinking budget is applied natively on models that support it
+(e.g. Qwen3-era thinking models) and emulated via workflow passes elsewhere.

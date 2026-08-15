@@ -162,7 +162,15 @@ assumed safe because "the model wrote it".
   (execution requires the Research Runtime's permission model — Phase 9+).
 - **Retries/timeouts.** Retries apply only to known transient failures; auth,
   invalid, and content-rejection errors are never retried. Timeouts are
-  enforced per provider.
+  enforced per provider, including a real `stream_idle_seconds` idle timeout on
+  streamed responses.
+- **Model-specific discovery (Phase 8.1).** Capability discovery is driven by
+  an operator-overridable, static model catalog; unknown model ids resolve
+  conservatively (no reasoning assumed) rather than trusting a blanket family
+  claim.
+- **Structured-output validation (Phase 8.1).** Provider output is validated
+  against the requested JSON Schema before being returned; non-conforming
+  output raises `StructuredOutputError` instead of being accepted.
 
 ## Hidden chain-of-thought
 

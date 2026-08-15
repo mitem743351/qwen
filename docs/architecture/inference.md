@@ -175,3 +175,8 @@ See [`diagrams/inference-abstraction.md`](diagrams/inference-abstraction.md).
 The provider-neutral `InferenceRuntime` and the first production adapter
 (`QwenProvider`) are implemented. See [`inference-runtime.md`](inference-runtime.md),
 [`providers.md`](providers.md), and [`qwen-provider.md`](qwen-provider.md).
+
+Phase 8.1 makes capability discovery **model-specific** (per-model context
+windows, thinking mode, numeric `thinking_budget`), represents full tool
+schemas, validates structured output against the requested JSON Schema, and
+enforces a real stream-idle timeout.

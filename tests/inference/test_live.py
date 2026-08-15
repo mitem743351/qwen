@@ -33,7 +33,7 @@ def test_live_single_generation() -> None:
             "QWEN_RESEARCH_INFERENCE_ENDPOINT", DEFAULT_QWEN_PROVIDER.api_endpoint
         ),
         credential_env=DEFAULT_QWEN_PROVIDER.credential_env,
-        default_model=os.environ.get("QWEN_RESEARCH_INFERENCE_MODEL", "qwen-max"),
+        default_model=os.environ.get("QWEN_RESEARCH_INFERENCE_MODEL", "qwen3.7-max"),
     )
     provider = QwenProvider(config)
     runtime = InferenceRuntime(

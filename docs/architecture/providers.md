@@ -43,8 +43,12 @@ leak into the generic `InferencePolicy`.
 
 `InferencePolicy.model_requirement` is authoritative. The provider maps a
 generic requirement to a Qwen model id; an unknown model raises
-`ModelNotFoundError` (no silent substitution). `ModelRegistry` caches model
-metadata with a TTL so a task does not trigger a network call each time.
+`ModelNotFoundError` (no silent substitution). Capability discovery is
+**model-specific**: each provider exposes a `models()` catalog and
+`capabilities(model)`/`limits(model)`/`model_info(model)` resolve per model
+against a static, operator-overridable table (for Qwen:
+`qwen_models.QWEN_MODELS`). `ModelRegistry` caches model metadata with a TTL so
+a task does not trigger a network call each time.
 
 ---
 

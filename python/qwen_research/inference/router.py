@@ -55,4 +55,7 @@ class InferenceRouter:
         provider = self._providers.get(provider_id)
         if provider is None:
             return ()
+        models = getattr(provider, "models", None)
+        if models is not None:
+            return tuple(models())
         return (provider.model_info(),)

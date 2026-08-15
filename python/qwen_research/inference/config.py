@@ -70,5 +70,5 @@ DEFAULT_QWEN_PROVIDER = ProviderConfig(
     # OpenAI-compatible international endpoint (see docs/setup/inference.md).
     api_endpoint="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
     credential_env="DASHSCOPE_API_KEY",
-    default_model="qwen-max",
+    default_model="qwen3.7-max",
 )

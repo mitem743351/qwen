@@ -61,7 +61,10 @@ def test_capabilities_and_models() -> None:
     assert caps.supports_streaming is True
     assert caps.supports_tool_calling is True
     models = runtime.models("qwen")
-    assert models[0].model == "qwen-max"
+    model_ids = {m.model for m in models}
+    # The default model is present, and the catalog now spans the full line-up.
+    assert "qwen-max" in model_ids
+    assert "qwen3.7-max" in model_ids
 
 
 def test_negotiation_degrades_unsupported_before_dispatch() -> None:

@@ -25,6 +25,7 @@ from qwen_research.domain.inference import (
     Message,
     MessageRole,
     StreamEventType,
+    ToolSpec,
 )
 
 
@@ -177,3 +178,99 @@ def test_model_not_found() -> None:
     )
     with pytest.raises(ModelNotFoundError):
         provider.generate(_request(model_requirement="qwen-bogus"))
+
+
+def test_thinking_budget_emitted_on_supporting_model() -> None:
+    provider, transport = make_provider(lambda *_: completion_response("ok"))
+    provider.generate(
+        _request(model_requirement="qwen3.7-max", reasoning=True, reasoning_budget=500)
+    )
+    body = transport.calls[0][2]
+    assert body["enable_thinking"] is True
+    assert body["thinking_budget"] == 500
+
+
+def test_thinking_budget_omitted_on_non_supporting_model() -> None:
+    # qwen-max is hybrid thinking but has no numeric thinking_budget.
+    provider, transport = make_provider(lambda *_: completion_response("ok"))
+    provider.generate(
+        _request(model_requirement="qwen-max", reasoning=True, reasoning_budget=500)
+    )
+    body = transport.calls[0][2]
+    assert body["enable_thinking"] is True
+    assert "thinking_budget" not in body
+
+
+def test_full_tool_definitions_emitted() -> None:
+    provider, transport = make_provider(lambda *_: completion_response("ok"))
+    request = _request(tool_calling=True)
+    request = InferenceRequest(
+        task_reference=request.task_reference,
+        inference_policy=request.inference_policy,
+        tools=(
+            ToolSpec(
+                name="search_corpus",
+                description="Search the local corpus.",
+                parameters={
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            ),
+        ),
+    )
+    provider.generate(request)
+    body = transport.calls[0][2]
+    assert body["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "search_corpus",
+                "description": "Search the local corpus.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            },
+        }
+    ]
+
+
+def test_structured_output_validated_against_schema() -> None:
+    provider, _ = make_provider(
+        lambda *_: completion_response('{"summary": "ok"}')
+    )
+    schema: dict[str, object] = {
+        "type": "object",
+        "properties": {"summary": {"type": "string"}},
+        "required": ["summary"],
+    }
+    result = provider.structured_output(_request(structured_output=True), schema)
+    assert result.structured_output == {"summary": "ok"}
+
+
+def test_structured_output_schema_violation_rejected() -> None:
+    provider, _ = make_provider(
+        lambda *_: completion_response('{"other": 1}')
+    )
+    schema: dict[str, object] = {
+        "type": "object",
+        "properties": {"summary": {"type": "string"}},
+        "required": ["summary"],
+    }
+    with pytest.raises(StructuredOutputError):
+        provider.structured_output(_request(structured_output=True), schema)
+
+
+def test_structured_output_wrong_type_rejected() -> None:
+    provider, _ = make_provider(
+        lambda *_: completion_response('{"summary": 42}')
+    )
+    schema: dict[str, object] = {
+        "type": "object",
+        "properties": {"summary": {"type": "string"}},
+        "required": ["summary"],
+    }
+    with pytest.raises(StructuredOutputError):
+        provider.structured_output(_request(structured_output=True), schema)

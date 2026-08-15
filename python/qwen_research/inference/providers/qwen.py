@@ -5,17 +5,20 @@ Translates provider-neutral ``InferenceRequest`` into the Qwen OpenAI-compatible
 ``InferenceStreamEvent``. No OpenAI SDK and no Qwen request models leak upward.
 
 Verified contract (2026): OpenAI-compatible base ``/compatible-mode/v1``, Bearer
-``DASHSCOPE_API_KEY``, model ids ``qwen-max/plus/turbo/flash`` + ``qwq-*``
-(reasoning), ``reasoning_effort``/``enable_thinking`` for reasoning, finish
-reasons ``stop``/``length``/``tool_calls``/``content_filter``, and
-``usage`` token accounting. Only documented parameters are emitted.
+``DASHSCOPE_API_KEY``; model ids ``qwen3.x`` flagships + ``qwen-max/plus/turbo/
+flash`` + ``qwq-*`` (see ``qwen_models.py``); reasoning via ``enable_thinking``
+with a numeric ``thinking_budget`` on Qwen3-era thinking models; finish reasons
+``stop``/``length``/``tool_calls``/``content_filter``; ``usage`` token
+accounting. Capability discovery is **model-specific** (per ``QwenModelSpec``),
+and structured output is validated against the requested JSON Schema. Only
+documented parameters are emitted.
 """
 
 from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from typing import Any
 
 from qwen_research.domain.errors import (
@@ -40,9 +43,16 @@ from qwen_research.domain.inference import (
     StreamEventType,
     StructuredOutputSpec,
     ToolCall,
+    ToolSpec,
 )
 from qwen_research.inference.config import ProviderConfig
 from qwen_research.inference.models import ProviderErrorStatus, ProviderHealth
+from qwen_research.inference.providers.qwen_models import (
+    QWEN_MODEL_TABLE,
+    QwenModelSpec,
+    resolve_spec,
+)
+from qwen_research.inference.schema_validation import validate_against_schema
 from qwen_research.inference.transport import (
     HttpTransport,
     TransportResponse,
@@ -92,24 +102,13 @@ def _raise_for_status(status: int, body: bytes, model: str) -> None:
 
 
 class QwenProvider:
-    """A production provider adapter for the Qwen OpenAI-compatible API."""
+    """A production provider adapter for the Qwen OpenAI-compatible API.
 
-    #: The capabilities this adapter actually exercises (facts, not assumptions).
-    CAPABILITIES = ProviderCapabilities(
-        supports_reasoning=True,
-        supports_reasoning_budget=False,  # reasoning_effort is discrete, not a numeric budget
-        supports_max_output_tokens=True,
-        supports_temperature=True,
-        supports_top_p=True,
-        supports_preserved_thinking=False,
-        supports_tool_calling=True,
-        supports_structured_output=True,
-        supports_streaming=True,
-        supports_parallel_generation=False,
-        supports_context_caching=False,
-    )
-
-    LIMITS = ProviderLimits(max_output_tokens=131072)
+    Capability discovery is model-specific: ``capabilities``/``limits``/
+    ``model_info`` resolve the requested model against the (operator-
+    overridable) :mod:`qwen_models` catalog rather than advertising one blanket
+    for the whole family.
+    """
 
     def __init__(
         self,
@@ -117,23 +116,64 @@ class QwenProvider:
         *,
         transport: HttpTransport | None = None,
         credential_resolver: Callable[[str], str | None] | None = None,
+        model_catalog: Mapping[str, QwenModelSpec] | None = None,
     ) -> None:
         self._config = config
         self._transport = transport or UrllibHttpTransport()
         self._resolve_credential = credential_resolver or (
             lambda name: os.environ.get(name)
         )
+        self._catalog: dict[str, QwenModelSpec] = dict(
+            model_catalog if model_catalog is not None else QWEN_MODEL_TABLE
+        )
 
     # -- InferenceProvider surface ----------------------------------------
 
-    def capabilities(self) -> ProviderCapabilities:
-        return self.CAPABILITIES
+    def _resolve_spec(self, model: str | None) -> QwenModelSpec:
+        model = model or self._config.default_model or ""
+        return resolve_spec(model, self._catalog)
 
-    def model_info(self) -> ModelInfo:
+    def capabilities(self, model: str | None = None) -> ProviderCapabilities:
+        spec = self._resolve_spec(model)
+        return ProviderCapabilities(
+            supports_reasoning=spec.thinking,
+            supports_reasoning_budget=spec.thinking_budget,
+            supports_max_output_tokens=True,
+            supports_temperature=True,
+            supports_top_p=True,
+            supports_preserved_thinking=False,
+            supports_tool_calling=True,
+            supports_structured_output=True,
+            supports_streaming=True,
+            supports_parallel_generation=False,
+            supports_context_caching=False,
+        )
+
+    def limits(self, model: str | None = None) -> ProviderLimits:
+        spec = self._resolve_spec(model)
+        return ProviderLimits(max_output_tokens=spec.max_output_tokens)
+
+    def model_info(self, model: str | None = None) -> ModelInfo:
+        model = model or self._config.default_model
+        spec = self._resolve_spec(model)
         return ModelInfo(
             provider=self._config.provider_id,
-            model=self._config.default_model,
-            context_window=None,  # unknown without a live model catalog
+            model=model,
+            context_window=spec.context_window,
+        )
+
+    def models(self) -> tuple[ModelInfo, ...]:
+        models = {spec.model: spec for spec in self._catalog.values()}
+        default = self._config.default_model
+        if default and default not in models:
+            models[default] = self._resolve_spec(default)
+        return tuple(
+            ModelInfo(
+                provider=self._config.provider_id,
+                model=name,
+                context_window=spec.context_window,
+            )
+            for name, spec in sorted(models.items())
         )
 
     def generate(self, request: InferenceRequest) -> InferenceResult:
@@ -169,12 +209,21 @@ class QwenProvider:
     # -- streaming ---------------------------------------------------------
 
     def stream_events(self, request: InferenceRequest) -> Iterator[InferenceStreamEvent]:
-        """Yield normalized stream events (text/tool deltas, usage, terminal)."""
+        """Yield normalized stream events (text/tool deltas, usage, terminal).
+
+        Uses the transport's incremental ``stream`` path so the configured
+        ``stream_idle_seconds`` is a genuine idle timeout between chunks.
+        """
         body = self._build_request(request, stream=True)
-        response = self._post(body, stream=True)
+        response = self._transport.stream(
+            self._endpoint(),
+            headers=self._headers(),
+            body=encode_json(body),
+            idle_timeout_seconds=self._config.timeout.stream_idle_seconds,
+        )
         if response.status != 200:
-            _raise_for_status(response.status, response.body, self._model(request))
-        yield from self._parse_stream(response.body)
+            _raise_for_status(response.status, b"", self._model(request))
+        yield from self._parse_stream_chunks(response.chunks)
 
     # -- diagnostics -------------------------------------------------------
 
@@ -188,7 +237,7 @@ class QwenProvider:
             # Lightweight availability check: no network by default.
             return ProviderHealth(
                 available=True,
-                models_available=(self._config.default_model,),
+                models_available=tuple(m.model for m in self.models()),
                 capabilities=self.capabilities(),
             )
         except ProviderConfigurationError as exc:
@@ -235,22 +284,19 @@ class QwenProvider:
         self, request: InferenceRequest, *, structured: StructuredOutputSpec | None = None
     ) -> InferenceResult:
         body = self._build_request(request, stream=False, structured=structured)
-        response = self._post(body, stream=False)
+        response = self._post(body)
         if response.status != 200:
             _raise_for_status(response.status, response.body, self._model(request))
-        return self._normalize(json.loads(response.body.decode("utf-8")), request)
-
-    def _post(self, body: dict[str, Any], *, stream: bool) -> TransportResponse:
-        timeout = (
-            self._config.timeout.request_seconds
-            if not stream
-            else self._config.timeout.connection_seconds
+        return self._normalize(
+            json.loads(response.body.decode("utf-8")), request, structured=structured
         )
+
+    def _post(self, body: dict[str, Any]) -> TransportResponse:
         return self._transport.post(
             self._endpoint(),
             headers=self._headers(),
             body=encode_json(body),
-            timeout_seconds=timeout,
+            timeout_seconds=self._config.timeout.request_seconds,
         )
 
     def _build_request(
@@ -261,40 +307,50 @@ class QwenProvider:
         structured: StructuredOutputSpec | None = None,
     ) -> dict[str, Any]:
         policy = request.inference_policy
+        model = self._model(request)
+        caps = self.capabilities(model)
         payload: dict[str, Any] = {
-            "model": self._model(request),
+            "model": model,
             "messages": self._messages(request),
         }
         if stream:
             payload["stream"] = True
             payload["stream_options"] = {"include_usage": True}
-        if policy.temperature is not None and self.capabilities().supports_temperature:
+        if policy.temperature is not None and caps.supports_temperature:
             payload["temperature"] = policy.temperature
-        if policy.top_p is not None and self.capabilities().supports_top_p:
+        if policy.top_p is not None and caps.supports_top_p:
             payload["top_p"] = policy.top_p
-        if policy.max_output_tokens is not None and self.capabilities().supports_max_output_tokens:
+        if policy.max_output_tokens is not None and caps.supports_max_output_tokens:
             payload["max_tokens"] = policy.max_output_tokens
-        if policy.reasoning and self.capabilities().supports_reasoning:
-            # Qwen thinking mode; discrete, so no numeric budget is emitted.
+        # Thinking mode: enable it for either reasoning or a numeric budget, and
+        # emit the numeric budget only on models that actually support it.
+        thinking = policy.reasoning or (
+            policy.reasoning_budget is not None and caps.supports_reasoning_budget
+        )
+        if thinking and caps.supports_reasoning:
             payload["enable_thinking"] = True
-        if request.tools and self.capabilities().supports_tool_calling:
-            payload["tools"] = [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": name,
-                        "description": "",
-                        "parameters": {"type": "object", "properties": {}},
-                    },
-                }
-                for name in request.tools
-            ]
+        if policy.reasoning_budget is not None and caps.supports_reasoning_budget:
+            payload["thinking_budget"] = policy.reasoning_budget
+        if request.tools and caps.supports_tool_calling:
+            payload["tools"] = [self._tool_definition(tool) for tool in request.tools]
         if structured is not None:
             # Qwen OpenAI-compatible json_object mode (documented).
             payload["response_format"] = {"type": "json_object"}
         elif request.response_format:
             payload["response_format"] = {"type": request.response_format}
         return payload
+
+    def _tool_definition(self, tool: ToolSpec) -> dict[str, Any]:
+        """Map a full :class:`ToolSpec` to a Qwen function-tool definition."""
+        parameters = tool.parameters or {"type": "object", "properties": {}}
+        return {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": parameters,
+            },
+        }
 
     def _messages(self, request: InferenceRequest) -> list[dict[str, Any]]:
         if request.messages:
@@ -324,7 +380,13 @@ class QwenProvider:
             ]
         return item
 
-    def _normalize(self, data: dict[str, Any], request: InferenceRequest) -> InferenceResult:
+    def _normalize(
+        self,
+        data: dict[str, Any],
+        request: InferenceRequest,
+        *,
+        structured: StructuredOutputSpec | None = None,
+    ) -> InferenceResult:
         choices = data.get("choices") or []
         if not choices:
             return InferenceResult(
@@ -343,8 +405,11 @@ class QwenProvider:
         if finish is FinishReason.LENGTH:
             warnings.append("output truncated (length)")
         structured_output = None
-        if request.inference_policy.structured_output and content:
+        if content and (request.inference_policy.structured_output or structured is not None):
             structured_output = self._parse_json_content(content)
+            if structured is not None:
+                # Enforce conformance to the *requested* schema, not just JSON.
+                validate_against_schema(structured_output, structured.schema)
         return InferenceResult(
             status="ok",
             model=self._model(request),
@@ -421,9 +486,15 @@ class QwenProvider:
         return FinishReason.UNKNOWN
 
     def _parse_stream(self, body: bytes) -> Iterator[InferenceStreamEvent]:
-        text = body.decode("utf-8", errors="replace")
-        for line in text.splitlines():
-            line = line.strip()
+        yield from self._parse_stream_lines(body.decode("utf-8", errors="replace").splitlines())
+
+    def _parse_stream_chunks(self, chunks: Iterator[bytes]) -> Iterator[InferenceStreamEvent]:
+        """Parse SSE lines incrementally across chunk boundaries."""
+        yield from self._parse_stream_lines(_iter_sse_lines(chunks))
+
+    def _parse_stream_lines(self, lines: Iterable[str]) -> Iterator[InferenceStreamEvent]:
+        for raw_line in lines:
+            line = raw_line.strip()
             if not line.startswith("data:"):
                 continue
             payload = line[len("data:"):].strip()
@@ -459,3 +530,15 @@ class QwenProvider:
             usage = self._normalize_usage(chunk.get("usage"))
             if usage:
                 yield InferenceStreamEvent(type=StreamEventType.USAGE, usage=usage)
+
+
+def _iter_sse_lines(chunks: Iterator[bytes]) -> Iterator[str]:
+    """Yield decoded SSE lines, re-assembling lines split across chunk boundaries."""
+    buffer = b""
+    for chunk in chunks:
+        buffer += chunk
+        while b"\n" in buffer:
+            line, buffer = buffer.split(b"\n", 1)
+            yield line.decode("utf-8", errors="replace")
+    if buffer:
+        yield buffer.decode("utf-8", errors="replace")

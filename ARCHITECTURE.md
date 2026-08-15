@@ -1,6 +1,6 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 8 — Provider-Neutral Inference Runtime and Qwen Backend Integration.
+> **Status:** Phase 8.1 — Qwen contract currency & model specificity.
 > The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
@@ -8,7 +8,8 @@
 > and verification foundation; Phase 6 adds the deterministic computation layer;
 > Phase 7 adds the deterministic orchestration layer; Phase 8 connects the
 > Research Runtime to real model providers (beginning with Qwen) through a
-> strict provider-neutral inference boundary.
+> strict provider-neutral inference boundary; Phase 8.1 makes Qwen capability
+> discovery model-specific and brings the contract current (2026).
 > **Audience:** Implementers, code agents, reviewers
 > **Scope:** This document is the stable, binding architecture contract for the
 > "local AI research infrastructure" that extends **Qwen Studio** through MCP.
@@ -518,6 +519,13 @@ See [`docs/architecture/inference.md`](docs/architecture/inference.md) and
 > isolated from the domain model and hidden reasoning never persisted. The
 > single-invocation `GATEWAY_INFERENCE` flow works end-to-end. See
 > [`docs/architecture/inference-runtime.md`](docs/architecture/inference-runtime.md).
+>
+> **Phase 8.1 (implemented).** Capability discovery is now **model-specific**
+> (a `qwen_models.py` catalog drives per-model context windows, thinking mode,
+> and numeric `thinking_budget`); full tool schemas are represented (execution
+> remains Phase 9); structured output is validated against the requested JSON
+> Schema; streaming enforces a real `stream_idle_seconds` idle timeout; and the
+> Qwen API documentation reflects the current 2026 contract.
 
 ---
 
