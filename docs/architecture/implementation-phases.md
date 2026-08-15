@@ -230,17 +230,24 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
 > delivered in the actual Phase 6. Remaining here: the full Internal Tool
 > Registry-driven `run_analysis` dispatch, and hardened OS-level isolation.
 
-## Phase 8 — Inference Runtime
+## Phase 8 — Inference Runtime ✅ (complete)
 
-- **Objective:** GATEWAY_INFERENCE mode is real.
+- **Objective:** GATEWAY_INFERENCE mode is real (single reliable inference call).
 - **Dependencies:** Phase 1–5.
-- **Components:** Inference Runtime (provider routing, capability discovery,
-  policy translation, invocation, retries, response normalization);
-  `QwenProvider`/`QwenCompatProvider`; `APPLY/DEGRADE/EMULATE/REJECT`
-  negotiation; token usage.
+- **Components:** `InferenceRuntime` (provider selection, capability
+  negotiation, request validation, retries, timeouts, usage accounting,
+  response normalization); `InferenceRouter`; `ModelRegistry`;
+  `SqliteInvocationStore`; `QwenProvider` (OpenAI-compatible adapter with
+  injectable transport, credential handling, streaming, structured output,
+  tool-call representation); `synthesis_to_inference` adapter; Research Runtime
+  `invoke_inference` / `stream_inference` / `synthesize`.
 - **Acceptance criteria:** provider swap changes no workflow code; unsupported
-  capabilities negotiated and recorded; Inference Runtime never calls upward.
-- **Not yet:** local Qwen / alternative providers (interfaces ready).
+  capabilities negotiated and recorded; credentials isolated from domain/MCP;
+  hidden reasoning never persisted; single-invocation GATEWAY_INFERENCE flow
+  works end-to-end; provider contract + fake-transport tests pass.
+- **Not yet:** local Qwen / alternative providers (interfaces ready); iterative
+  tool loops (Phase 9); hybrid escalation (Phase 9); XHIGH/EXTREME
+  orchestration (Phase 10).
 
 ## Phase 9 — Hybrid escalation
 

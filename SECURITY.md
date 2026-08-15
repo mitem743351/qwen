@@ -145,6 +145,25 @@ assumed safe because "the model wrote it".
   loops and resource use; failures produce explicit states, never fabricated
   completion.
 
+## Inference boundary (Phase 8)
+
+- **Credentials isolated.** Qwen API credentials are referenced by
+  environment-variable name and resolved only inside the provider adapter; they
+  never appear in domain objects, `ResearchState`, memory, artifacts, MCP
+  arguments, model context, workflow events, logs, or serialized requests. MCP
+  never receives provider credentials.
+- **No privilege/endpoint mutation by the model.** Provider configuration is
+  operator-controlled; model-generated content cannot select arbitrary
+  credentials, change endpoints, or alter security policy.
+- **No hidden reasoning.** Hidden chain-of-thought / internal thinking is never
+  persisted or returned; only bounded reasoning metadata is recorded.
+- **No autonomous tool execution.** Tool calls are normalized and returned to
+  the Research Runtime; they are never executed by the provider adapter
+  (execution requires the Research Runtime's permission model — Phase 9+).
+- **Retries/timeouts.** Retries apply only to known transient failures; auth,
+  invalid, and content-rejection errors are never retried. Timeouts are
+  enforced per provider.
+
 ## Hidden chain-of-thought
 
 The system **never** stores, transmits, logs, or exposes hidden

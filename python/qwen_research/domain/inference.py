@@ -32,6 +32,89 @@ from qwen_research.common.serialization import serializable
 from qwen_research.domain.errors import InferenceError, ValidationError
 
 
+class MessageRole(StrEnum):
+    """Provider-neutral message roles."""
+
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL = "tool"
+
+
+class FinishReason(StrEnum):
+    """Normalized termination reasons (mapped from provider-specific values)."""
+
+    STOP = "stop"
+    LENGTH = "length"
+    TOOL_CALL = "tool_calls"
+    CONTENT_FILTER = "content_filter"
+    ERROR = "error"
+    UNKNOWN = "unknown"
+
+
+class StreamEventType(StrEnum):
+    TEXT_DELTA = "text_delta"
+    TOOL_CALL_DELTA = "tool_call_delta"
+    USAGE = "usage"
+    COMPLETED = "completed"
+    ERROR = "error"
+
+
+@serializable
+@dataclasses.dataclass(frozen=True)
+class ToolCall:
+    """A model-generated tool request (represented, never executed here)."""
+
+    call_id: str
+    tool_name: str
+    arguments: dict[str, Any] = dataclasses.field(default_factory=dict)
+
+
+@serializable
+@dataclasses.dataclass(frozen=True)
+class Message:
+    """A provider-neutral chat message."""
+
+    role: MessageRole
+    content: str
+    name: str | None = None
+    tool_call_id: str | None = None
+    tool_calls: tuple[ToolCall, ...] = ()
+
+
+@serializable
+@dataclasses.dataclass(frozen=True)
+class ToolResult:
+    """The result of executing a tool call (returned by the Research Runtime)."""
+
+    call_id: str
+    content: str
+    structured_data: dict[str, Any] | None = None
+
+
+@serializable
+@dataclasses.dataclass(frozen=True)
+class StructuredOutputSpec:
+    """A provider-neutral structured-output request."""
+
+    schema: dict[str, Any]
+    name: str | None = None
+    strict: bool = False
+
+
+@serializable
+@dataclasses.dataclass(frozen=True)
+class InferenceStreamEvent:
+    """A normalized streaming event (no provider-specific SSE structure)."""
+
+    type: StreamEventType
+    text_delta: str = ""
+    tool_call_delta: dict[str, Any] | None = None
+    usage: dict[str, int] | None = None
+    finish_reason: str = ""
+    error: str | None = None
+
+
 class NegotiationOutcome(StrEnum):
     """Outcome of intersecting an ``InferencePolicy`` with ``ProviderCapabilities``.
 
@@ -169,6 +252,9 @@ class InferenceRequest:
     tools: tuple[str, ...] = ()
     response_format: str | None = None
     continuation_state: str | None = None
+    #: Prepared provider-neutral messages (system/user/assistant/tool). When
+    #: empty, the provider builds a single user message from ``context``.
+    messages: tuple[Message, ...] = ()
 
 
 @serializable
@@ -176,7 +262,10 @@ class InferenceRequest:
 class InferenceResult:
     """A normalized inference response returned to the Research Runtime.
 
-    Never contains hidden chain-of-thought.
+    Never contains hidden chain-of-thought. ``finish_reason`` is a normalized
+    value (``stop`` / ``length`` / ``tool_calls`` / ``content_filter`` /
+    ``error`` / ``unknown``); ``provider`` is the adapter id. Both are
+    informational and default to empty/None for backward compatibility.
     """
 
     status: str
@@ -184,10 +273,14 @@ class InferenceResult:
     content: str = ""
     structured_output: dict[str, Any] | None = None
     tool_calls: tuple[str, ...] = ()
+    #: Rich tool-call representation (legacy ``tool_calls`` holds names/ids).
+    tool_calls_structured: tuple[ToolCall, ...] = ()
     usage: dict[str, int] | None = None
     provider_metadata: dict[str, str] = dataclasses.field(default_factory=dict)
     warnings: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
+    finish_reason: str = ""
+    provider: str = ""
 
     @property
     def ok(self) -> bool:

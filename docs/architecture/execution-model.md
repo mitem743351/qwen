@@ -86,6 +86,11 @@ Client
 - MCP is **one possible entry mechanism**, not the only one — a CLI/API client
   calls the Research Runtime directly.
 
+> **Phase 8 (implemented).** The single-invocation `GATEWAY_INFERENCE` flow is
+> live: `SynthesisRequest → InferenceRequest → Inference Runtime → Qwen Provider
+> → InferenceResult`. Iterative reasoning loops, hybrid escalation, and
+> multi-model trajectories remain future phases.
+
 ---
 
 ## 3. HYBRID

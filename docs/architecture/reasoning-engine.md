@@ -313,3 +313,10 @@ workflow-level resource behavior (retrieval/verification/computation budgets,
 parallelism) from `FAST`/`NORMAL`/`DEEP`/`XHIGH`/`EXTREME`, bounded by
 `ReasoningBudget`. See [`orchestration.md`](orchestration.md) and
 [`planning.md`](planning.md).
+
+## Phase 8 — profile → policy → negotiation
+
+Profiles now flow end-to-end: `ReasoningProfile.inference_policy()` →
+`InferencePolicy` → `negotiate()` → `NegotiationResult.provider_policy` → the
+Qwen adapter. No provider-specific parameters are produced in the reasoning
+layer. See [`inference-runtime.md`](inference-runtime.md).

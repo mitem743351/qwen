@@ -148,3 +148,10 @@ independent model requirement.
 - [0015 — Capability negotiation (APPLY/DEGRADE/EMULATE/REJECT)](decisions/0015-capability-negotiation.md)
 
 Diagram: [`diagrams/inference-abstraction.md`](diagrams/inference-abstraction.md).
+
+## Phase 8 — enforced before dispatch
+
+The `InferenceRuntime` runs `negotiate()` before every invocation and re-seats
+the request's policy to the negotiated `provider_policy`, so the Qwen adapter
+receives only parameters it actually supports. Emulated capabilities never
+appear as native parameters (see [`inference-runtime.md`](inference-runtime.md)).

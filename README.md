@@ -7,15 +7,15 @@ persistent research memory, verification/citation/provenance, and deterministic
 computation — while Qwen Studio keeps its native conversational and web-search
 capabilities.
 
-> **Current status: Phase 7 — Research Orchestration, Task Planning, Workflow Execution, and Evidence-Driven Synthesis.**
+> **Current status: Phase 8 — Provider-Neutral Inference Runtime and Qwen Backend Integration.**
 > The architecture (Phases 0, 0.5, 0.75) is the approved baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
 > persistent structured memory; Phase 5 adds the deterministic evidence-integrity
 > and verification foundation; Phase 6 adds the deterministic computation layer;
-> Phase 7 adds the deterministic orchestration layer (planning + workflow
-> execution). Still **no** Qwen API, gateway inference, LLM verification, or
-> dashboard.
+> Phase 7 adds the deterministic orchestration layer; Phase 8 adds the real
+> provider-neutral Inference Runtime with a Qwen backend. Still **no** LLM
+> verification, hybrid escalation, XHIGH orchestration, or dashboard.
 
 ## What this is
 
@@ -116,6 +116,13 @@ Phase 7 (research orchestration):
 - [`docs/architecture/research-state-machine.md`](docs/architecture/research-state-machine.md) — state ownership and lifecycle
 - [`docs/setup/research-workflows.md`](docs/setup/research-workflows.md) — enabling workflow tools
 
+Phase 8 (inference runtime + Qwen):
+
+- [`docs/architecture/inference-runtime.md`](docs/architecture/inference-runtime.md) — provider-neutral Inference Runtime
+- [`docs/architecture/providers.md`](docs/architecture/providers.md) — provider abstraction & configuration
+- [`docs/architecture/qwen-provider.md`](docs/architecture/qwen-provider.md) — Qwen backend adapter
+- [`docs/setup/inference.md`](docs/setup/inference.md) — enabling inference
+
 Full architecture docs:
 
 | Area | Document |
@@ -160,11 +167,15 @@ Full architecture docs:
 | Planning | [`planning.md`](docs/architecture/planning.md) |
 | Workflows | [`workflows.md`](docs/architecture/workflows.md) |
 | Research state machine | [`research-state-machine.md`](docs/architecture/research-state-machine.md) |
+| Inference runtime | [`inference-runtime.md`](docs/architecture/inference-runtime.md) |
+| Providers | [`providers.md`](docs/architecture/providers.md) |
+| Qwen provider | [`qwen-provider.md`](docs/architecture/qwen-provider.md) |
 | Corpus setup | [`setup/corpus.md`](docs/setup/corpus.md) |
 | Semantic setup | [`setup/semantic-retrieval.md`](docs/setup/semantic-retrieval.md) |
 | Verification setup | [`setup/verification.md`](docs/setup/verification.md) |
 | Computation setup | [`setup/computation.md`](docs/setup/computation.md) |
 | Workflow setup | [`setup/research-workflows.md`](docs/setup/research-workflows.md) |
+| Inference setup | [`setup/inference.md`](docs/setup/inference.md) |
 | Decisions (ADRs) | [`decisions/`](docs/architecture/decisions/) |
 | Mermaid diagrams | [`diagrams/`](docs/architecture/diagrams/) |
 
@@ -174,12 +185,14 @@ Phase 0.75 (architecture) is the approved baseline. Phases 1, 1.1, 1.2 (core
 contracts + hardening), Phase 2 (MCP server), Phase 3 (local corpus + lexical
 retrieval), Phase 4 (semantic + hybrid retrieval and persistent memory),
 Phase 5 (evidence integrity and verification foundation), Phase 6
-(deterministic computation and sandboxed analysis), and Phase 7 (research
-orchestration and workflow execution) are **complete**. The Research Runtime
-remains provider- and transport-independent; the MCP server is a thin adapter
-over it, now serving hybrid evidence, project-scoped memory, deterministic
-claim verification, bounded computation, and deterministic research workflows.
-See [`implementation-phases.md`](docs/architecture/implementation-phases.md).
+(deterministic computation and sandboxed analysis), Phase 7 (research
+orchestration and workflow execution), and Phase 8 (provider-neutral inference
+runtime + Qwen backend) are **complete**. The Research Runtime remains
+provider- and transport-independent; the MCP server is a thin adapter over it,
+now serving hybrid evidence, project-scoped memory, deterministic claim
+verification, bounded computation, deterministic research workflows, and a
+single-invocation inference flow (credentials never exposed to MCP). See
+[`implementation-phases.md`](docs/architecture/implementation-phases.md).
 
 ### Develop
 

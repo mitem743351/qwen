@@ -9,6 +9,7 @@ Phase 2.
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Iterable
 from typing import Any, Protocol, runtime_checkable
 
 from qwen_research.claims.models import Claim, ClaimType, QuantitativeClaim, Scope
@@ -25,6 +26,12 @@ from qwen_research.computation.models import (
 )
 from qwen_research.contradictions.models import Contradiction
 from qwen_research.domain.artifact import Artifact
+from qwen_research.domain.inference import (
+    InferencePolicy,
+    InferenceRequest,
+    InferenceResult,
+    InferenceStreamEvent,
+)
 from qwen_research.domain.modes import OperatingMode
 from qwen_research.domain.reasoning import ReasoningProfile
 from qwen_research.domain.research import ResearchState
@@ -38,6 +45,7 @@ from qwen_research.orchestration.models import (
     ResearchPlan,
     ResearchStatus,
     ResearchTask,
+    SynthesisRequest,
     TaskType,
     WorkflowEvent,
     WorkflowRun,
@@ -239,6 +247,21 @@ class ResearchRuntime(Protocol):
     def get_research_plan(self, plan_id: str) -> ResearchPlan: ...
 
     def get_research_events(self, run_id: str) -> list[WorkflowEvent]: ...
+
+    def invoke_inference(
+        self, request: InferenceRequest, *, profile: str = ""
+    ) -> InferenceResult: ...
+
+    def stream_inference(
+        self, request: InferenceRequest
+    ) -> Iterable[InferenceStreamEvent]: ...
+
+    def synthesize(
+        self,
+        synthesis: SynthesisRequest,
+        *,
+        policy: InferencePolicy | None = None,
+    ) -> InferenceResult: ...
 
     def run_workflow(self, workflow_id: WorkflowId, task_id: TaskId) -> WorkflowResult: ...
 

@@ -1,9 +1,45 @@
-"""Inference Runtime contracts.
+"""Inference Runtime (Phase 8).
 
-Only the provider-neutral ``InferenceProvider`` protocol lives here in
-Phase 1. No Qwen API, local model, or network implementation exists.
+The provider-neutral boundary beneath the Research Runtime: the
+``InferenceProvider`` contract, the application ``InferenceRuntime``, the Qwen
+provider adapter, routing, model registry, and invocation-metadata persistence.
 """
 
-from qwen_research.inference.interfaces import InferenceProvider
+from qwen_research.inference.config import (
+    DEFAULT_QWEN_PROVIDER,
+    InferenceConfig,
+    ProviderConfig,
+    RetryConfig,
+    TimeoutConfig,
+)
+from qwen_research.inference.interfaces import InferenceProvider, build_policy
+from qwen_research.inference.models import (
+    InferenceStatus,
+    InvocationMetadata,
+    ProviderErrorStatus,
+    ProviderHealth,
+)
+from qwen_research.inference.providers.qwen import QwenProvider
+from qwen_research.inference.registry import ModelRegistry
+from qwen_research.inference.router import InferenceRouter
+from qwen_research.inference.runtime import InferenceRuntime
+from qwen_research.inference.store import SqliteInvocationStore
 
-__all__ = ["InferenceProvider"]
+__all__ = [
+    "DEFAULT_QWEN_PROVIDER",
+    "InferenceConfig",
+    "InferenceProvider",
+    "InferenceRouter",
+    "InferenceRuntime",
+    "InferenceStatus",
+    "InvocationMetadata",
+    "ModelRegistry",
+    "ProviderConfig",
+    "ProviderErrorStatus",
+    "ProviderHealth",
+    "QwenProvider",
+    "RetryConfig",
+    "SqliteInvocationStore",
+    "TimeoutConfig",
+    "build_policy",
+]

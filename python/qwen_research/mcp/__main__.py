@@ -22,6 +22,11 @@ Optional environment configuration:
   (plans, workflow runs, events), exposing ``plan_research`` / ``start_research``
   / ``get_research_status`` / ``pause_research`` / ``resume_research`` /
   ``cancel_research`` / ``get_research_summary``.
+- ``QWEN_RESEARCH_ENABLE_INFERENCE=1`` — enable the inference runtime (Qwen
+  backend via the provider-neutral boundary). Credentials come from
+  ``DASHSCOPE_API_KEY``; optional ``QWEN_RESEARCH_INFERENCE_ENDPOINT`` /
+  ``QWEN_RESEARCH_INFERENCE_MODEL`` and ``QWEN_RESEARCH_INFERENCE_DB``
+  (invocation metadata). Credentials are never exposed to MCP.
 
 Local-only: no network socket is opened.
 """
@@ -50,6 +55,8 @@ def build_runtime() -> ResearchRuntime:
     computation_db = os.environ.get("QWEN_RESEARCH_COMPUTATION_DB")
     workspace_root = os.environ.get("QWEN_RESEARCH_WORKSPACE_ROOT", "workspaces/computation")
     orchestration_db = os.environ.get("QWEN_RESEARCH_ORCHESTRATION_DB")
+    inference_enabled = os.environ.get("QWEN_RESEARCH_ENABLE_INFERENCE") == "1"
+    inference_db = os.environ.get("QWEN_RESEARCH_INFERENCE_DB")
 
     config = None
     index = None
@@ -136,6 +143,37 @@ def build_runtime() -> ResearchRuntime:
         )
         memory = MemoryService(store, validator=validator)
 
+    inference = None
+    if inference_enabled:
+        from qwen_research.inference.config import DEFAULT_QWEN_PROVIDER, ProviderConfig
+        from qwen_research.inference.providers.qwen import QwenProvider
+        from qwen_research.inference.runtime import InferenceRuntime
+        from qwen_research.inference.store import SqliteInvocationStore
+
+        endpoint = os.environ.get(
+            "QWEN_RESEARCH_INFERENCE_ENDPOINT", DEFAULT_QWEN_PROVIDER.api_endpoint
+        )
+        model = os.environ.get(
+            "QWEN_RESEARCH_INFERENCE_MODEL", DEFAULT_QWEN_PROVIDER.default_model
+        )
+        provider_config = ProviderConfig(
+            provider_id="qwen",
+            api_endpoint=endpoint,
+            credential_env=DEFAULT_QWEN_PROVIDER.credential_env,
+            default_model=model,
+        )
+        qwen_provider = QwenProvider(provider_config)
+        invocation_store = None
+        if inference_db:
+            invocation_store = SqliteInvocationStore(inference_db)
+            invocation_store.initialize()
+        inference = InferenceRuntime(
+            {"qwen": qwen_provider},
+            default_provider="qwen",
+            default_model=model,
+            store=invocation_store,
+        )
+
     orchestration = None
     if orchestration_db:
         from qwen_research.orchestration.capabilities import capability_registry_from_runtime
@@ -146,7 +184,7 @@ def build_runtime() -> ResearchRuntime:
         ostore.initialize()
         runtime = InMemoryResearchRuntime(
             retriever=retriever, memory=memory, verification=verification,
-            computation=computation,
+            computation=computation, inference=inference,
         )
         capabilities = capability_registry_from_runtime(
             retriever=retriever is not None,
@@ -161,7 +199,8 @@ def build_runtime() -> ResearchRuntime:
         return runtime
 
     return InMemoryResearchRuntime(
-        retriever=retriever, memory=memory, verification=verification, computation=computation
+        retriever=retriever, memory=memory, verification=verification,
+        computation=computation, inference=inference,
     )
 
 

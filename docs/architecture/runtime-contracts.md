@@ -108,6 +108,16 @@ executors that call the retrieval/verification/computation/memory services.
 Without an orchestration service, these operations raise
 `UnsupportedOperationError`. No inference provider is invoked.
 
+### Inference (Phase 8)
+
+`invoke_inference`, `stream_inference`, and `synthesize` delegate to a
+configured `InferenceRuntime`. `synthesize` converts a `SynthesisRequest` into
+an `InferenceRequest` (via `research/synthesis.py`) and performs a **single**
+model invocation — the `GATEWAY_INFERENCE` flow. The runtime never calls a
+provider directly. Without an inference runtime, these operations raise
+`UnsupportedOperationError`. `STUDIO_NATIVE` does not route through this
+runtime; `HYBRID` escalation is not implemented.
+
 ### Reserved lifecycle operations
 
 `pause_task`, `resume_task`, `wait_for_input`, `provide_input`, and

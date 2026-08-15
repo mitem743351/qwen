@@ -169,3 +169,9 @@ Runtime is not on the request path.
 - [0015 — Capability negotiation (APPLY/DEGRADE/EMULATE/REJECT)](decisions/0015-capability-negotiation.md)
 
 See [`diagrams/inference-abstraction.md`](diagrams/inference-abstraction.md).
+
+## Phase 8 — implemented
+
+The provider-neutral `InferenceRuntime` and the first production adapter
+(`QwenProvider`) are implemented. See [`inference-runtime.md`](inference-runtime.md),
+[`providers.md`](providers.md), and [`qwen-provider.md`](qwen-provider.md).

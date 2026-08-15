@@ -1,13 +1,14 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 7 — Research Orchestration, Task Planning, Workflow Execution, and Evidence-Driven Synthesis.
+> **Status:** Phase 8 — Provider-Neutral Inference Runtime and Qwen Backend Integration.
 > The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
 > persistent structured memory; Phase 5 adds the deterministic evidence-integrity
 > and verification foundation; Phase 6 adds the deterministic computation layer;
-> Phase 7 adds the deterministic orchestration layer (planning + workflow
-> execution), still with no Qwen-API inference.
+> Phase 7 adds the deterministic orchestration layer; Phase 8 connects the
+> Research Runtime to real model providers (beginning with Qwen) through a
+> strict provider-neutral inference boundary.
 > **Audience:** Implementers, code agents, reviewers
 > **Scope:** This document is the stable, binding architecture contract for the
 > "local AI research infrastructure" that extends **Qwen Studio** through MCP.
@@ -510,6 +511,14 @@ never silently assumed.
 See [`docs/architecture/inference.md`](docs/architecture/inference.md) and
 [`docs/architecture/capability-negotiation.md`](docs/architecture/capability-negotiation.md).
 
+> **Phase 8 (implemented).** The provider-neutral `InferenceRuntime` and the
+> `QwenProvider` adapter are live: capability discovery, negotiation, request
+> mapping, response normalization, streaming, structured output, tool-call
+> representation, retries, timeouts, and usage accounting — with credentials
+> isolated from the domain model and hidden reasoning never persisted. The
+> single-invocation `GATEWAY_INFERENCE` flow works end-to-end. See
+> [`docs/architecture/inference-runtime.md`](docs/architecture/inference-runtime.md).
+
 ---
 
 ## 19. Artifacts
@@ -625,6 +634,9 @@ Rust library.
 | [workflows](docs/architecture/workflows.md) | Workflow engine and stage executors |
 | [research-state-machine](docs/architecture/research-state-machine.md) | Task/plan/run/state ownership and lifecycle |
 | [inference](docs/architecture/inference.md) | Provider abstraction, policy translation, capability negotiation |
+| [inference-runtime](docs/architecture/inference-runtime.md) | Provider-neutral Inference Runtime (Phase 8) |
+| [providers](docs/architecture/providers.md) | Provider abstraction & configuration |
+| [qwen-provider](docs/architecture/qwen-provider.md) | Qwen backend adapter |
 | [security](docs/architecture/security.md) | Threat model, boundaries, sandboxing |
 | [architecture-review](docs/architecture/architecture-review.md) | Risks, failure modes, Rust-value analysis |
 | [implementation-phases](docs/architecture/implementation-phases.md) | Phase 0–12 roadmap |

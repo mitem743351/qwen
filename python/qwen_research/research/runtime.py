@@ -9,6 +9,7 @@ that depend on unimplemented subsystems (retrieval, verification) raise
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Iterable
 from typing import Any
 
 from qwen_research.claims.models import Claim, ClaimType, QuantitativeClaim, Scope
@@ -30,11 +31,18 @@ from qwen_research.domain.errors import (
     PersistenceError,
     UnsupportedOperationError,
 )
+from qwen_research.domain.inference import (
+    InferencePolicy,
+    InferenceRequest,
+    InferenceResult,
+    InferenceStreamEvent,
+)
 from qwen_research.domain.modes import OperatingMode
 from qwen_research.domain.reasoning import DEEP, ReasoningProfile
 from qwen_research.domain.research import ResearchPlan, ResearchState
 from qwen_research.domain.session import Session
 from qwen_research.domain.task import Task, TaskStatus, next_active_status
+from qwen_research.inference.runtime import InferenceRuntime
 from qwen_research.memory.context import ContextBudget, ResearchContext, build_context
 from qwen_research.memory.models import ResearchMemory, ResearchQuestion
 from qwen_research.memory.retriever import MemoryHit
@@ -43,6 +51,7 @@ from qwen_research.orchestration.models import (
     ComputationSpec,
     ResearchStatus,
     ResearchTask,
+    SynthesisRequest,
     TaskType,
     WorkflowEvent,
     WorkflowRun,
@@ -57,6 +66,7 @@ from qwen_research.research.state import (
     InMemorySessionStore,
     InMemoryTaskStore,
 )
+from qwen_research.research.synthesis import synthesis_to_inference
 from qwen_research.retrieval.interface import Retriever
 from qwen_research.retrieval.models import DocumentView, SearchOptions, SearchResult
 from qwen_research.verification.models import (
@@ -85,6 +95,7 @@ class InMemoryResearchRuntime:
         verification: EvidenceIntegrityService | None = None,
         computation: ComputationService | None = None,
         orchestration: OrchestrationService | None = None,
+        inference: InferenceRuntime | None = None,
     ) -> None:
         self._session_store = session_store or InMemorySessionStore()
         self._task_store = task_store or InMemoryTaskStore()
@@ -96,6 +107,7 @@ class InMemoryResearchRuntime:
         self._verification = verification
         self._computation = computation
         self._orchestration = orchestration
+        self._inference = inference
 
     # -- sessions ---------------------------------------------------------
 
@@ -395,6 +407,37 @@ class InMemoryResearchRuntime:
 
     def get_research_events(self, run_id: str) -> list[WorkflowEvent]:
         return self._require_orchestration().get_events(run_id)
+
+    # -- inference (Phase 8) -----------------------------------------------
+
+    def _require_inference(self) -> InferenceRuntime:
+        if self._inference is None:
+            raise UnsupportedOperationError("no inference runtime configured")
+        return self._inference
+
+    def invoke_inference(
+        self, request: InferenceRequest, *, profile: str = ""
+    ) -> InferenceResult:
+        """Invoke the model through the Inference Runtime (never a provider directly)."""
+        return self._require_inference().generate(request, profile=profile)
+
+    def stream_inference(self, request: InferenceRequest) -> Iterable[InferenceStreamEvent]:
+        """Stream normalized inference events through the Inference Runtime."""
+        return self._require_inference().stream(request)
+
+    def synthesize(
+        self,
+        synthesis: SynthesisRequest,
+        *,
+        policy: InferencePolicy | None = None,
+    ) -> InferenceResult:
+        """Convert a synthesis boundary into an inference request and invoke it.
+
+        This is the single-invocation GATEWAY_INFERENCE flow; it does not build
+        iterative reasoning loops.
+        """
+        request = synthesis_to_inference(synthesis, policy=policy)
+        return self.invoke_inference(request)
 
     # -- deterministic computation (Phase 6) -------------------------------
 

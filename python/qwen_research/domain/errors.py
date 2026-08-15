@@ -300,3 +300,42 @@ class RunNotFoundError(OrchestrationError):
 
 class WorkflowExecutionError(OrchestrationError):
     """A workflow run could not be executed (blocking/unsupported capability)."""
+
+
+class ProviderConfigurationError(InferenceError):
+    """Provider configuration is invalid (e.g. missing credential/endpoint/model)."""
+
+
+class ProviderCredentialError(ProviderConfigurationError):
+    """A provider credential is missing or invalid.
+
+    Never carries the credential value in its message.
+    """
+
+
+class ProviderAuthError(InferenceError):
+    """Provider authentication failed (e.g. 401/403)."""
+
+
+class ProviderRateLimitError(InferenceError):
+    """Provider rate limit or quota was exceeded (e.g. 429)."""
+
+
+class ProviderTimeoutError(InferenceError):
+    """A provider request exceeded its timeout."""
+
+
+class ProviderServerError(InferenceError):
+    """Provider returned a retryable server error (5xx)."""
+
+
+class ProviderUnavailableError(InferenceError):
+    """Provider could not be reached (connection failure)."""
+
+
+class ModelNotFoundError(InferenceError):
+    """The requested model is unknown to the provider."""
+
+
+class StructuredOutputError(InferenceError):
+    """A required structured output could not be parsed/validated."""
