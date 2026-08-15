@@ -243,6 +243,7 @@ class ComputationEngine:
     def _run(self, request: ComputationRequest) -> OperationOutcome:
         spec = profile_spec(request.execution_profile)
         resolved = [self._resolver.resolve(ref) for ref in request.input_refs]
+        self._enforce_input_budget(resolved, spec.max_input_bytes)
         max_rows = spec.max_rows
         time_limit = spec.time_limit_seconds
         max_memory = spec.max_memory_bytes
@@ -293,6 +294,21 @@ class ComputationEngine:
         else:
             raise ComputationValidationError(f"unsupported operation {op.value!r}")
         return self._with_freshness(outcome, resolved)
+
+    def _enforce_input_budget(
+        self, resolved: list[ResolvedDataset], max_input_bytes: int
+    ) -> None:
+        """Enforce the aggregate per-computation input budget.
+
+        The sum of all resolved dataset sizes must not exceed
+        ``max_input_bytes`` — this is a *per-computation* budget, not a
+        per-dataset one.
+        """
+        total = sum(ds.size_bytes for ds in resolved)
+        if total > max_input_bytes:
+            raise ResourceLimitError(
+                f"input datasets total {total} bytes exceeds max_input_bytes {max_input_bytes}"
+            )
 
     def _with_freshness(
         self, outcome: OperationOutcome, resolved: list[ResolvedDataset]

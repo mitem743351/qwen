@@ -74,10 +74,14 @@ never exposed through MCP. See `ExecutionProfileSpec` in `models.py`.
 Every computation is bounded: `max_runtime`, `max_output_bytes`,
 `max_input_bytes`, `max_rows`, `max_memory`.
 
-- **DuckDB** enforcement is **real**: the query runs on a worker thread and is
-  interrupted at the deadline (`con.interrupt()` → `ExecutionTimeoutError`),
-  and DuckDB's `memory_limit` is set so a query that exceeds it raises
-  `ResourceLimitError`. `max_rows` bounds the returned rows (truncated flag).
+- **`max_input_bytes`** is enforced as an **aggregate per-computation budget**:
+  the sum of all resolved dataset sizes must not exceed the profile's
+  `max_input_bytes` (a `ResourceLimitError` → `RESOURCE_LIMIT` otherwise).
+- **DuckDB** enforcement is **real**: the **whole operation — including dataset
+  loading —** runs on a worker thread and is interrupted at the deadline
+  (`con.interrupt()` → `ExecutionTimeoutError`), and DuckDB's `memory_limit` is
+  set so an operation that exceeds it raises `ResourceLimitError`. `max_rows`
+  bounds the returned rows (truncated flag).
 - **Python** time/output limits are enforced by the subprocess; the memory
   limit is **best-effort** via `resource` (`RLIMIT_AS`) on POSIX and is
   documented as such — no hard memory limit is claimed where it cannot be set.

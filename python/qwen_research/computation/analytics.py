@@ -112,34 +112,34 @@ def _translate_duckdb_errors() -> Iterator[None]:
     try:
         yield
     except duckdb.OutOfMemoryException as exc:
-        raise ResourceLimitError("query exceeded the configured memory limit") from exc
+        raise ResourceLimitError("operation exceeded the configured memory limit") from exc
     except duckdb.InterruptException as exc:
-        raise ExecutionTimeoutError("query was interrupted") from exc
+        raise ExecutionTimeoutError("operation was interrupted") from exc
 
 
 def _run_timed(
     con: Any, fn: Callable[[], _T], time_limit_seconds: float | None
 ) -> _T:
-    """Run *fn* (which executes a query on *con*) with a wall-clock timeout.
+    """Run *fn* (load + query) on *con* with a wall-clock deadline.
 
-    DuckDB has no native statement timeout, so we run the query on a worker
-    thread and call ``con.interrupt()`` when the deadline passes. The interrupt
-    raises ``duckdb.InterruptException`` in the worker, which we map to
-    :class:`ExecutionTimeoutError`; ``duckdb.OutOfMemoryException`` maps to
-    :class:`ResourceLimitError`. This is a *real* enforcement, not a
+    DuckDB has no native statement timeout, so the whole operation — **including
+    dataset loading** — runs on a worker thread; ``con.interrupt()`` fires at the
+    deadline. The interrupt raises ``duckdb.InterruptException`` in the worker,
+    mapped to :class:`ExecutionTimeoutError`; ``duckdb.OutOfMemoryException``
+    maps to :class:`ResourceLimitError`. This is real enforcement, not a
     best-effort bound.
     """
     if time_limit_seconds is None:
         with _translate_duckdb_errors():
             return fn()
-    import duckdb
 
     result_holder: list[_T] = []
     error_holder: list[BaseException] = []
 
     def target() -> None:
         try:
-            result_holder.append(fn())
+            with _translate_duckdb_errors():
+                result_holder.append(fn())
         except BaseException as exc:  # noqa: BLE001 — propagate through holder
             error_holder.append(exc)
 
@@ -149,14 +149,9 @@ def _run_timed(
     if thread.is_alive():
         con.interrupt()
         thread.join(10)
-        raise ExecutionTimeoutError(f"query exceeded {time_limit_seconds}s")
+        raise ExecutionTimeoutError(f"operation exceeded {time_limit_seconds}s")
     if error_holder:
-        exc = error_holder[0]
-        if isinstance(exc, duckdb.InterruptException):
-            raise ExecutionTimeoutError(f"query exceeded {time_limit_seconds}s") from exc
-        if isinstance(exc, duckdb.OutOfMemoryException):
-            raise ResourceLimitError("query exceeded the configured memory limit") from exc
-        raise exc
+        raise error_holder[0]
     return result_holder[0]
 
 
@@ -185,10 +180,12 @@ class DuckDBBackend:
         max_memory_bytes: int | None = None,
     ) -> DatasetProfile:
         con = self._open(max_memory_bytes=max_memory_bytes)
-        table = self._load(con, [resolved])["t0"]
-        return _run_timed(
-            con, lambda: self._profile(con, table, resolved), time_limit_seconds
-        )
+
+        def work() -> DatasetProfile:
+            table = self._load(con, [resolved])["t0"]
+            return self._profile(con, table, resolved)
+
+        return _run_timed(con, work, time_limit_seconds)
 
     def run_query(
         self,
@@ -202,16 +199,17 @@ class DuckDBBackend:
         max_memory_bytes: int | None = None,
     ) -> TableResult:
         con = self._open(max_memory_bytes=max_memory_bytes)
-        self._load(con, datasets)
         sql = validate_sql(query)
         # Translate ``:name`` placeholders to DuckDB's positional ``?``.
         order = _parameter_order(sql)
         positional = re.sub(r":[A-Za-z_][A-Za-z0-9_]*", "?", sql)
         params = [parameters.get(k) for k in order]
-        return self._execute(
-            con, positional, params, max_rows=max_rows, max_output_bytes=max_output_bytes,
-            time_limit_seconds=time_limit_seconds,
-        )
+
+        def work() -> TableResult:
+            self._load(con, datasets)
+            return self._execute(con, positional, params, max_rows, max_output_bytes)
+
+        return _run_timed(con, work, time_limit_seconds)
 
     def count(
         self,
@@ -222,11 +220,12 @@ class DuckDBBackend:
         max_memory_bytes: int | None = None,
     ) -> TableResult:
         con = self._open(max_memory_bytes=max_memory_bytes)
-        table = self._load(con, datasets)["t0"]
-        return self._execute(
-            con, f"SELECT count(*) AS count FROM {table}", [], max_rows,
-            time_limit_seconds=time_limit_seconds,
-        )
+
+        def work() -> TableResult:
+            table = self._load(con, datasets)["t0"]
+            return self._execute(con, f"SELECT count(*) AS count FROM {table}", [], max_rows)
+
+        return _run_timed(con, work, time_limit_seconds)
 
     def aggregate(
         self,
@@ -242,11 +241,12 @@ class DuckDBBackend:
         agg = _normalize_aggregate(function)
         expr = "count(*)" if agg == "count" else f"{agg}({_quote(column)})"
         con = self._open(max_memory_bytes=max_memory_bytes)
-        table = self._load(con, datasets)["t0"]
-        return self._execute(
-            con, f"SELECT {expr} AS value FROM {table}", [], max_rows,
-            time_limit_seconds=time_limit_seconds,
-        )
+
+        def work() -> TableResult:
+            table = self._load(con, datasets)["t0"]
+            return self._execute(con, f"SELECT {expr} AS value FROM {table}", [], max_rows)
+
+        return _run_timed(con, work, time_limit_seconds)
 
     def group(
         self,
@@ -264,14 +264,16 @@ class DuckDBBackend:
         agg = _normalize_aggregate(function)
         expr = "count(*)" if agg == "count" else f"{agg}({_quote(column)})"
         con = self._open(max_memory_bytes=max_memory_bytes)
-        table = self._load(con, datasets)["t0"]
         sql = (
-            f"SELECT {_quote(group_by)}, {expr} AS value FROM {table} "
+            f"SELECT {_quote(group_by)}, {expr} AS value FROM t0 "
             f"GROUP BY {_quote(group_by)} ORDER BY {_quote(group_by)}"
         )
-        return self._execute(
-            con, sql, [], max_rows, time_limit_seconds=time_limit_seconds
-        )
+
+        def work() -> TableResult:
+            self._load(con, datasets)
+            return self._execute(con, sql, [], max_rows)
+
+        return _run_timed(con, work, time_limit_seconds)
 
     def filter(
         self,
@@ -283,11 +285,13 @@ class DuckDBBackend:
         max_memory_bytes: int | None = None,
     ) -> TableResult:
         con = self._open(max_memory_bytes=max_memory_bytes)
-        table = self._load(con, datasets)["t0"]
-        sql = validate_sql(f"SELECT * FROM {table} WHERE {predicate}")
-        return self._execute(
-            con, sql, [], max_rows, time_limit_seconds=time_limit_seconds
-        )
+        sql = validate_sql(f"SELECT * FROM t0 WHERE {predicate}")
+
+        def work() -> TableResult:
+            self._load(con, datasets)
+            return self._execute(con, sql, [], max_rows)
+
+        return _run_timed(con, work, time_limit_seconds)
 
     def join(
         self,
@@ -304,15 +308,16 @@ class DuckDBBackend:
         validate_identifier(left_key)
         validate_identifier(right_key)
         con = self._open(max_memory_bytes=max_memory_bytes)
-        names = self._load(con, datasets)
-        left, right = names["t0"], names["t1"]
         sql = (
-            f"SELECT * FROM {left} JOIN {right} "
-            f"ON {left}.{_quote(left_key)} = {right}.{_quote(right_key)}"
+            f"SELECT * FROM t0 JOIN t1 "
+            f"ON t0.{_quote(left_key)} = t1.{_quote(right_key)}"
         )
-        return self._execute(
-            con, sql, [], max_rows, time_limit_seconds=time_limit_seconds
-        )
+
+        def work() -> TableResult:
+            self._load(con, datasets)
+            return self._execute(con, sql, [], max_rows)
+
+        return _run_timed(con, work, time_limit_seconds)
 
     def numeric_column(
         self,
@@ -325,11 +330,12 @@ class DuckDBBackend:
     ) -> list[float]:
         validate_identifier(column)
         con = self._open(max_memory_bytes=max_memory_bytes)
-        table = self._load(con, datasets)["t0"]
-        result = self._execute(
-            con, f"SELECT {_quote(column)} FROM {table}", [], max_rows=max_rows,
-            time_limit_seconds=time_limit_seconds,
-        )
+
+        def work() -> TableResult:
+            table = self._load(con, datasets)["t0"]
+            return self._execute(con, f"SELECT {_quote(column)} FROM {table}", [], max_rows)
+
+        result = _run_timed(con, work, time_limit_seconds)
         values: list[float] = []
         for row in result.rows:
             v = row[0]
@@ -353,30 +359,33 @@ class DuckDBBackend:
         return con
 
     def _load(self, con: Any, datasets: list[ResolvedDataset]) -> dict[str, str]:
-        """Load datasets into safely-named tables; return ``{alias: table}``."""
-        with _translate_duckdb_errors():
-            names: dict[str, str] = {}
-            for i, ds in enumerate(datasets):
-                table = f"t{i}"
-                if ds.format == "csv":
-                    con.execute(
-                        f"CREATE TABLE {table} AS SELECT * FROM read_csv_auto(?)", [ds.path]
-                    )
-                elif ds.format == "json":
-                    con.execute(
-                        f"CREATE TABLE {table} AS SELECT * FROM read_json_auto(?)", [ds.path]
-                    )
-                elif ds.format == "parquet":
-                    con.execute(
-                        f"CREATE TABLE {table} AS SELECT * FROM read_parquet(?)", [ds.path]
-                    )
-                elif ds.format == "sqlite":
-                    self._load_sqlite(con, ds.path, table)
-                else:
-                    raise DatasetError(f"unsupported dataset format {ds.format!r}")
-                names[f"t{i}"] = table
-            con.execute("SET enable_external_access=false")
-            return names
+        """Load datasets into safely-named tables; return ``{alias: table}``.
+
+        Runs within the caller's timed region, so a slow or oversized load is
+        bounded by the same deadline/memory limits as the query itself.
+        """
+        names: dict[str, str] = {}
+        for i, ds in enumerate(datasets):
+            table = f"t{i}"
+            if ds.format == "csv":
+                con.execute(
+                    f"CREATE TABLE {table} AS SELECT * FROM read_csv_auto(?)", [ds.path]
+                )
+            elif ds.format == "json":
+                con.execute(
+                    f"CREATE TABLE {table} AS SELECT * FROM read_json_auto(?)", [ds.path]
+                )
+            elif ds.format == "parquet":
+                con.execute(
+                    f"CREATE TABLE {table} AS SELECT * FROM read_parquet(?)", [ds.path]
+                )
+            elif ds.format == "sqlite":
+                self._load_sqlite(con, ds.path, table)
+            else:
+                raise DatasetError(f"unsupported dataset format {ds.format!r}")
+            names[f"t{i}"] = table
+        con.execute("SET enable_external_access=false")
+        return names
 
     def _load_sqlite(self, con: Any, path: str, table: str) -> None:
         """Load a table from a SQLite database via the stdlib driver."""
@@ -447,35 +456,33 @@ class DuckDBBackend:
         params: list,
         max_rows: int,
         max_output_bytes: int = 256 * 1024,
-        time_limit_seconds: float | None = None,
     ) -> TableResult:
-        result_holder: dict[str, TableResult] = {}
+        """Run a single (already validated) query and bound the fetched result.
 
-        def work() -> None:
-            cur = con.execute(sql, params)
-            cols = [d[0] for d in (cur.description or [])]
-            rows: list[tuple] = []
-            row_count = 0
-            truncated = False
-            output_bytes = 0
-            for row in cur.fetchmany(max_rows + 1):
-                if len(rows) >= max_rows:
-                    truncated = True
-                    break
-                rows.append(tuple(row))
-                row_count += 1
-                output_bytes += sum(len(str(v)) for v in row)
-                if output_bytes > max_output_bytes:
-                    raise ResourceLimitError(f"query output exceeded {max_output_bytes} bytes")
-            result_holder["result"] = TableResult(
-                columns=tuple(str(c) for c in cols),
-                rows=rows,
-                row_count=row_count,
-                truncated=truncated,
-            )
-
-        _run_timed(con, work, time_limit_seconds)
-        return result_holder["result"]
+        Must be called from within :func:`_run_timed` (or another timed region)
+        so it shares the operation deadline and error translation.
+        """
+        cur = con.execute(sql, params)
+        cols = [d[0] for d in (cur.description or [])]
+        rows: list[tuple] = []
+        row_count = 0
+        truncated = False
+        output_bytes = 0
+        for row in cur.fetchmany(max_rows + 1):
+            if len(rows) >= max_rows:
+                truncated = True
+                break
+            rows.append(tuple(row))
+            row_count += 1
+            output_bytes += sum(len(str(v)) for v in row)
+            if output_bytes > max_output_bytes:
+                raise ResourceLimitError(f"query output exceeded {max_output_bytes} bytes")
+        return TableResult(
+            columns=tuple(str(c) for c in cols),
+            rows=rows,
+            row_count=row_count,
+            truncated=truncated,
+        )
 
 
 def _normalize_aggregate(function: str) -> str:

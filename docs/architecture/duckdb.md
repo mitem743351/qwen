@@ -61,17 +61,18 @@ PRAGMA (in user SQL)
 
 ## Execution enforcement
 
-- **Timeout** — DuckDB has no native statement timeout; the query runs on a
-  worker thread and `con.interrupt()` fires at the deadline, raising
-  `ExecutionTimeoutError`. This is a real bound, not a best-effort one.
-- **Memory** — `SET memory_limit` is applied on the connection; a query (or
-  dataset load) that exceeds it raises `ResourceLimitError`
+- **Timeout** — DuckDB has no native statement timeout; the **whole operation
+  (dataset loading + query/profile)** runs on a worker thread and
+  `con.interrupt()` fires at the deadline, raising `ExecutionTimeoutError`.
+  This is a real bound, not a best-effort one.
+- **Memory** — `SET memory_limit` is applied on the connection; an operation
+  (including dataset load) that exceeds it raises `ResourceLimitError`
   (`OutOfMemoryException` is translated, never leaked raw).
 - **Result size** — `max_rows` bounds returned rows (with a `truncated` flag)
   and `max_output_bytes` aborts oversized results.
 
 These are exercised by adversarial workload tests (cartesian products, large
-distinct hash sets, oversized outputs).
+distinct hash sets, oversized outputs, slow dataset loads).
 
 ---
 
