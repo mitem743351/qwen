@@ -76,3 +76,49 @@ def test_gateway_tool_loop_end_to_end(tmp_path: Path) -> None:
     # Usage aggregated across both turns.
     assert outcome.accounting.input_tokens > 0
     assert outcome.accounting.output_tokens > 0
+
+
+def test_multi_tool_batch_end_to_end(tmp_path: Path) -> None:
+    """inference #1 → 3 tool calls → 3 results → inference #2 → final."""
+    _, _, _, retriever, _ = index_fixture(tmp_path)
+
+    def handler(url: str, headers: dict, body: dict, timeout: float) -> TransportResponse:
+        messages = body["messages"]
+        has_tool_result = any(m.get("role") == "tool" for m in messages)
+        if has_tool_result:
+            return completion_response("done", finish_reason="stop")
+        return completion_response(
+            "",
+            finish_reason="tool_calls",
+            tool_calls=[
+                {
+                    "id": f"call_{i}",
+                    "type": "function",
+                    "function": {
+                        "name": "search_corpus",
+                        "arguments": '{"query": "query ' + str(i) + '"}',
+                    },
+                }
+                for i in (1, 2, 3)
+            ],
+        )
+
+    provider, _ = make_provider(handler)
+    inference = InferenceRuntime(
+        {"qwen": provider}, default_provider="qwen", default_model="qwen3.7-max"
+    )
+    runtime = InMemoryResearchRuntime(retriever=retriever, inference=inference)
+
+    request = InferenceRequest(
+        task_reference=TaskId("task_1"),
+        inference_policy=InferencePolicy(model_requirement="qwen3.7-max"),
+        context=("research question",),
+    )
+    outcome = runtime.run_tool_loop(request)
+
+    assert outcome.status is LoopStatus.FINAL
+    assert outcome.accounting.inference_calls == 2
+    assert outcome.accounting.tool_calls == 3
+    assert len(outcome.tool_results) == 3
+    assert all(r.status is ToolExecutionStatus.SUCCEEDED for r in outcome.tool_results)
+    assert [r.call_id for r in outcome.tool_results] == ["call_1", "call_2", "call_3"]

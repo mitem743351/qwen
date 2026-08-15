@@ -378,6 +378,27 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
   parallel model trajectories; multi-agent inference; Qwen built-in web search;
   `reasoning_effort` execution; remote/distributed workers.
 
+## Phase 9.2 — Multi-tool batch integrity & continuation hardening ✅ (complete)
+
+- **Objective:** make multi-tool responses, budget exhaustion, partial tool
+  execution, and continuation history semantically correct and deterministic.
+- **Dependencies:** Phase 9.1.
+- **Components:** batch preflight before execution
+  (`_preflight_error`); `ALL_OR_EXPLICITLY_PARTIAL` default policy; per-call
+  outcomes for the whole batch (`RESOURCE_LIMIT` / `CANCELLED` statuses);
+  `TOOL_EXECUTION_PARTIAL` / `TOOL_BATCH_REJECTED` loop statuses;
+  `continue_after_partial` config; `call_id` idempotency guard;
+  `executed_call_ids`; per-call failure/denial accounting.
+- **Acceptance criteria:** every assistant tool call receives exactly one
+  result; multi-tool batches never leave dangling calls; budget exhaustion
+  yields explicit per-call outcomes; `TOOL_LOOP_LIMIT` only means real loop
+  exhaustion; partial-batch behavior is deterministic; call ordering and ids
+  preserved; same session continues; repeated-call guard works across turns;
+  no double-execution of a `call_id`.
+- **Not yet:** parallel tool execution; automatic escalation heuristics;
+  XHIGH/EXTREME workflows; multi-agent inference; Qwen built-in web search;
+  `reasoning_effort` execution; remote/distributed workers.
+
 ## Phase 10 — Advanced XHigh / EXTREME workflows
 
 - **Objective:** high-effort profiles behave as designed.

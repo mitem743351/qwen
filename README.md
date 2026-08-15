@@ -7,7 +7,7 @@ persistent research memory, verification/citation/provenance, and deterministic
 computation — while Qwen Studio keeps its native conversational and web-search
 capabilities.
 
-> **Current status: Phase 9.1 — Tool-loop hardening (continuation semantics, malformed-argument rejection).**
+> **Current status: Phase 9.2 — Multi-tool batch integrity & continuation hardening.**
 > The architecture (Phases 0, 0.5, 0.75) is the approved baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
@@ -209,8 +209,10 @@ official Token-Plan preview and distinct availability errors), Phase 8.4
 multi-turn continuation, and `qwen3.8-max-preview` context corrected to
 983,616), Phase 9 (controlled model ↔ tool-call loop with authorization,
 schema validation, continuation, loop budgets, repeated-call guards, and the
-hybrid Studio/Gateway boundary contract), and Phase 9.1 (tool-loop continuation
-semantics and malformed-tool-argument rejection) are **complete**.
+hybrid Studio/Gateway boundary contract), Phase 9.1 (tool-loop continuation
+semantics and malformed-tool-argument rejection), and Phase 9.2 (multi-tool
+batch integrity, budget-exhaustion semantics, and continuation hardening) are
+**complete**.
 The Research Runtime remains
 provider- and transport-independent; the MCP server is a thin adapter over it,
 now serving hybrid evidence, project-scoped memory, deterministic claim

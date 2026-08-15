@@ -97,12 +97,38 @@ identical call (normalized `tool_name + arguments` hash) is bounded by
 
 ---
 
+## Multi-tool batches (Phase 9.2)
+
+A single inference response may carry several tool calls. The batch is
+**preflighted** before execution: every call is parsed, argument-validated,
+resolved, permission-checked, and budget-checked first. The default policy is
+`ALL_OR_EXPLICITLY_PARTIAL`: execution proceeds in order and stops at the first
+unsafe call, but **every call receives exactly one outcome**:
+
+```text
+call_1 → SUCCEEDED
+call_2 → DENIED / INVALID_ARGUMENTS   (unsafe point)
+call_3 → CANCELLED                     (never executed, still represented)
+```
+
+Budget exhaustion is the same shape: calls past `max_tool_calls` get an explicit
+`RESOURCE_LIMIT` result rather than being silently dropped. No assistant
+`tool_calls` message ever enters a continuation with a dangling call. When a
+batch is partial and `continue_after_partial` is `False`, the loop returns
+`TOOL_EXECUTION_PARTIAL` with the safe accumulated results.
+
+`TOOL_LOOP_LIMIT` means an actual loop/budget limit only — it is never used to
+represent an ordinary tool failure. A duplicated `call_id` within a session is
+never executed twice (idempotency).
+
+---
+
 ## Tool results
 
 - `ToolExecutionResult` statuses: `SUCCEEDED`, `FAILED`, `DENIED`,
-  `INVALID_ARGUMENTS`, `TIMEOUT`, `UNAVAILABLE`.
+  `INVALID_ARGUMENTS`, `TIMEOUT`, `UNAVAILABLE`, `RESOURCE_LIMIT`, `CANCELLED`.
 - `ToolError` codes: `INVALID_ARGUMENTS`, `NOT_FOUND`, `PERMISSION_DENIED`,
-  `UNAVAILABLE`, `TIMEOUT`, `RESOURCE_LIMIT`, `INTERNAL_ERROR`.
+  `UNAVAILABLE`, `TIMEOUT`, `RESOURCE_LIMIT`, `CANCELLED`, `INTERNAL_ERROR`.
 - Errors never expose filesystem paths, stack traces, credentials, or SQL.
 - Tool output is serialized to a **bounded** content string (default 4 KB) and
   treated as DATA, never AUTHORITY.
@@ -110,9 +136,9 @@ identical call (normalized `tool_name + arguments` hash) is bounded by
 ## Loop outcome
 
 `LoopStatus`: `FINAL`, `TOOL_LOOP_LIMIT`, `TIME_LIMIT`, `CONTEXT_LIMIT`,
-`PERMISSION_DENIED`, `PROVIDER_ERROR`, `TOOL_ERROR`. A `finish_reason=length`
-turn is **not** a complete final answer — the provider's finish reason is
-preserved.
+`PERMISSION_DENIED`, `PROVIDER_ERROR`, `TOOL_ERROR`,
+`TOOL_EXECUTION_PARTIAL`, `TOOL_BATCH_REJECTED`. A `finish_reason=length` turn
+is **not** a complete final answer — the provider's finish reason is preserved.
 
 See [`inference-continuation.md`](inference-continuation.md) and
 [`../setup/gateway-inference.md`](../setup/gateway-inference.md).

@@ -24,6 +24,16 @@ Tool results are wrapped as controlled `role=tool` messages; raw tool output is
 never concatenated into system/developer instructions (it is DATA, not
 AUTHORITY).
 
+### Multi-tool batch invariant (Phase 9.2)
+
+Every assistant `tool_calls` message that enters a continuation must have
+exactly one `role=tool` result message for **every** call in it, associated by
+`tool_call_id`. A batch that is partially executed (denied/invalid/over-budget)
+still produces an explicit outcome for each call — `CANCELLED` /
+`RESOURCE_LIMIT` for the unexecuted remainder — so no tool call is ever left
+dangling. A duplicated `call_id` is never executed twice (idempotency via
+`inference_session_id` + `call_id`).
+
 ---
 
 ## Preserved reasoning state

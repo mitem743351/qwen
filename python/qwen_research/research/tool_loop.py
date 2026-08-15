@@ -52,6 +52,8 @@ class ToolExecutionStatus(StrEnum):
     INVALID_ARGUMENTS = "invalid_arguments"
     TIMEOUT = "timeout"
     UNAVAILABLE = "unavailable"
+    RESOURCE_LIMIT = "resource_limit"
+    CANCELLED = "cancelled"
 
 
 class ToolErrorCode(StrEnum):
@@ -61,6 +63,7 @@ class ToolErrorCode(StrEnum):
     UNAVAILABLE = "unavailable"
     TIMEOUT = "timeout"
     RESOURCE_LIMIT = "resource_limit"
+    CANCELLED = "cancelled"
     INTERNAL_ERROR = "internal_error"
 
 
@@ -72,6 +75,8 @@ class LoopStatus(StrEnum):
     PERMISSION_DENIED = "permission_denied"
     PROVIDER_ERROR = "provider_error"
     TOOL_ERROR = "tool_error"
+    TOOL_EXECUTION_PARTIAL = "tool_execution_partial"
+    TOOL_BATCH_REJECTED = "tool_batch_rejected"
 
 
 class ToolLoopEvent(StrEnum):
@@ -156,6 +161,9 @@ class ToolLoopConfig:
     max_total_wall_time_ms: float = 120_000.0
     max_output_tokens: int = 16_384
     max_context_size: int = 64_000
+    #: Continue the loop after a partially-executed batch (every call already
+    #: received an outcome). When False, return ``TOOL_EXECUTION_PARTIAL``.
+    continue_after_partial: bool = True
 
 
 @serializable
@@ -350,6 +358,7 @@ def run_tool_loop(
     started = time.monotonic()
     results: list[ToolExecutionResult] = []
     same_call_counts: dict[str, int] = {}
+    executed_call_ids: set[str] = set()
 
     def _emit(event: str) -> None:
         if events is not None:
@@ -392,32 +401,24 @@ def run_tool_loop(
         conversation.continuation_count += 1
         _emit(ToolLoopEvent.CONTINUATION_STARTED)
 
-        for call in result.tool_calls_structured:
-            if accounting.tool_calls >= config.max_tool_calls:
-                _emit(ToolLoopEvent.LOOP_LIMIT)
-                return ToolLoopResult(
-                    status=LoopStatus.TOOL_LOOP_LIMIT,
-                    session=session,
-                    accounting=dataclasses.replace(
-                        accounting, duration_ms=(time.monotonic() - started) * 1000
-                    ),
-                    tool_results=tuple(results),
-                    error="max tool calls exceeded",
-                )
+        batch_results, batch_complete = _execute_batch(
+            result.tool_calls_structured,
+            tools=tools,
+            profile=profile,
+            project_id=project_id,
+            session_id=session_id,
+            task_id=task_id,
+            run_id=run_id,
+            same_call_counts=same_call_counts,
+            config=config,
+            accounting=accounting,
+            executed_call_ids=executed_call_ids,
+            emit=_emit,
+        )
+        results.extend(batch_results)
 
-            executed = _authorize_and_execute(
-                call,
-                tools=tools,
-                profile=profile,
-                project_id=project_id,
-                session_id=session_id,
-                task_id=task_id,
-                run_id=run_id,
-                same_call_counts=same_call_counts,
-                config=config,
-                emit=_emit,
-            )
-            accounting.tool_calls += 1
+        # Record per-call failure/denial accounting (tool_calls already counted).
+        for executed in batch_results:
             if executed.status in (
                 ToolExecutionStatus.FAILED,
                 ToolExecutionStatus.UNAVAILABLE,
@@ -426,10 +427,10 @@ def run_tool_loop(
                 accounting.tool_failures += 1
             if executed.status is ToolExecutionStatus.DENIED:
                 accounting.tool_denials += 1
-            results.append(executed)
 
-            # Append the normalized tool-result message.
-            content, structured = _serialize_content(
+        # Append one tool-result message per call, in order (no dangling calls).
+        for executed in batch_results:
+            content, _ = _serialize_content(
                 {
                     "status": executed.status.value,
                     "content": executed.content,
@@ -444,11 +445,22 @@ def run_tool_loop(
                 Message(
                     role=MessageRole.TOOL,
                     content=content,
-                    tool_call_id=call.call_id,
+                    tool_call_id=executed.call_id,
                 )
             )
 
         _emit(ToolLoopEvent.CONTINUATION_COMPLETED)
+
+        if not batch_complete and not config.continue_after_partial:
+            return ToolLoopResult(
+                status=LoopStatus.TOOL_EXECUTION_PARTIAL,
+                session=session,
+                accounting=dataclasses.replace(
+                    accounting, duration_ms=(time.monotonic() - started) * 1000
+                ),
+                tool_results=tuple(results),
+                error="tool batch partially executed; continuation disabled",
+            )
 
     _emit(ToolLoopEvent.LOOP_LIMIT)
     return ToolLoopResult(
@@ -462,88 +474,54 @@ def run_tool_loop(
     )
 
 
-def _authorize_and_execute(
+def _preflight_error(
     call: ToolCall,
-    *,
     tools: ToolRegistry,
     profile: ToolExecutionProfile,
-    project_id: str,
-    session_id: str,
-    task_id: str | None,
-    run_id: str | None,
-    same_call_counts: dict[str, int],
-    config: ToolLoopConfig,
-    emit: Callable[[str], None],
-) -> ToolExecutionResult:
-    """Authorize (6 checks) then execute one tool call, normalizing the outcome."""
-    emit(ToolLoopEvent.TOOL_REQUESTED)
+) -> ToolError | None:
+    """Run the authorization/validation checks without executing anything.
 
+    Returns a :class:`ToolError` if the call cannot safely execute, else
+    ``None`` (authorized and ready to execute).
+    """
     # 1. tool exists
     try:
         tool = tools.get(call.tool_name)
     except UnknownToolError:
-        emit(ToolLoopEvent.TOOL_DENIED)
-        return ToolExecutionResult(
-            call_id=call.call_id,
-            tool_name=call.tool_name,
-            status=ToolExecutionStatus.DENIED,
-            error=ToolError(ToolErrorCode.NOT_FOUND, "tool not found"),
-        )
+        return ToolError(ToolErrorCode.NOT_FOUND, "tool not found")
 
     # 2. tool is enabled (model-callable)
     if not getattr(tool, "model_callable", True):
-        emit(ToolLoopEvent.TOOL_DENIED)
-        return ToolExecutionResult(
-            call_id=call.call_id,
-            tool_name=call.tool_name,
-            status=ToolExecutionStatus.DENIED,
-            error=ToolError(ToolErrorCode.PERMISSION_DENIED, "tool not model-callable"),
-        )
+        return ToolError(ToolErrorCode.PERMISSION_DENIED, "tool not model-callable")
 
     # 3. permission is allowed + 4. tool is allow-listed
     if (
         tool.permission not in profile.allowed_permissions
         or call.tool_name not in profile.allowed_tools
     ):
-        emit(ToolLoopEvent.TOOL_DENIED)
-        return ToolExecutionResult(
-            call_id=call.call_id,
-            tool_name=call.tool_name,
-            status=ToolExecutionStatus.DENIED,
-            error=ToolError(ToolErrorCode.PERMISSION_DENIED, "tool not permitted"),
-        )
+        return ToolError(ToolErrorCode.PERMISSION_DENIED, "tool not permitted")
 
-    # 5. arguments validate against the tool schema (and were parseable)
+    # 5. arguments were parseable and validate against the tool schema
     if call.arguments_error is not None:
-        emit(ToolLoopEvent.TOOL_DENIED)
-        return ToolExecutionResult(
-            call_id=call.call_id,
-            tool_name=call.tool_name,
-            status=ToolExecutionStatus.INVALID_ARGUMENTS,
-            error=ToolError(ToolErrorCode.INVALID_ARGUMENTS, call.arguments_error),
-        )
+        return ToolError(ToolErrorCode.INVALID_ARGUMENTS, call.arguments_error)
     validation_error = _validate_arguments(tool.schema, call.arguments)
     if validation_error is not None:
-        emit(ToolLoopEvent.TOOL_DENIED)
-        return ToolExecutionResult(
-            call_id=call.call_id,
-            tool_name=call.tool_name,
-            status=ToolExecutionStatus.INVALID_ARGUMENTS,
-            error=validation_error,
-        )
+        return validation_error
 
-    # 6. repeated-tool guard (normalized signature)
-    signature = _call_signature(call.tool_name, call.arguments)
-    same_call_counts[signature] = same_call_counts.get(signature, 0) + 1
-    if same_call_counts[signature] > profile.max_same_call:
-        emit(ToolLoopEvent.LOOP_LIMIT)
-        return ToolExecutionResult(
-            call_id=call.call_id,
-            tool_name=call.tool_name,
-            status=ToolExecutionStatus.DENIED,
-            error=ToolError(ToolErrorCode.RESOURCE_LIMIT, "repeated tool call limit exceeded"),
-        )
+    return None
 
+
+def _execute_call(
+    call: ToolCall,
+    tool: Any,
+    *,
+    project_id: str,
+    session_id: str,
+    task_id: str | None,
+    run_id: str | None,
+    emit: Callable[[str], None],
+) -> ToolExecutionResult:
+    """Execute an authorized call, injecting trusted scope and normalizing."""
     emit(ToolLoopEvent.TOOL_AUTHORIZED)
     emit(ToolLoopEvent.TOOL_STARTED)
 
@@ -599,6 +577,127 @@ def _authorize_and_execute(
         duration_ms=duration_ms,
         provenance={"tool": call.tool_name, "project_id": project_id},
     )
+
+
+def _batch_result(
+    call: ToolCall, status: ToolExecutionStatus, error: ToolError
+) -> ToolExecutionResult:
+    return ToolExecutionResult(
+        call_id=call.call_id,
+        tool_name=call.tool_name,
+        status=status,
+        error=error,
+    )
+
+
+def _execute_batch(
+    calls: tuple[ToolCall, ...],
+    *,
+    tools: ToolRegistry,
+    profile: ToolExecutionProfile,
+    project_id: str,
+    session_id: str,
+    task_id: str | None,
+    run_id: str | None,
+    same_call_counts: dict[str, int],
+    config: ToolLoopConfig,
+    accounting: LoopAccounting,
+    executed_call_ids: set[str],
+    emit: Callable[[str], None],
+) -> tuple[list[ToolExecutionResult], bool]:
+    """Execute a batch of tool calls with preflight + partial-batch policy.
+
+    Every call receives exactly one outcome; a call that cannot safely execute
+    (denied/invalid/over-budget/duplicate) stops further execution of the batch,
+    and every subsequent call gets an explicit ``CANCELLED`` / ``RESOURCE_LIMIT``
+    result — never a dangling tool call. Returns ``(results, complete)``.
+    """
+    results: list[ToolExecutionResult] = []
+
+    for index, call in enumerate(calls):
+        emit(ToolLoopEvent.TOOL_REQUESTED)
+        accounting.tool_calls += 1
+
+        # 6. resource policy: tool-call budget
+        if accounting.tool_calls > config.max_tool_calls:
+            error = ToolError(ToolErrorCode.RESOURCE_LIMIT, "tool call budget exhausted")
+            results.append(_batch_result(call, ToolExecutionStatus.RESOURCE_LIMIT, error))
+            results.extend(
+                _batch_result(
+                    later,
+                    ToolExecutionStatus.CANCELLED,
+                    ToolError(ToolErrorCode.CANCELLED, "cancelled: batch budget exhausted"),
+                )
+                for later in calls[index + 1 :]
+            )
+            emit(ToolLoopEvent.LOOP_LIMIT)
+            return results, False
+
+        # Authorization + validation (preflight, no execution).
+        preflight_error = _preflight_error(call, tools, profile)
+        if preflight_error is not None:
+            status = (
+                ToolExecutionStatus.INVALID_ARGUMENTS
+                if preflight_error.code is ToolErrorCode.INVALID_ARGUMENTS
+                else ToolExecutionStatus.DENIED
+            )
+            emit(ToolLoopEvent.TOOL_DENIED)
+            results.append(_batch_result(call, status, preflight_error))
+            results.extend(
+                _batch_result(
+                    later,
+                    ToolExecutionStatus.CANCELLED,
+                    ToolError(ToolErrorCode.CANCELLED, "cancelled: earlier call in batch failed"),
+                )
+                for later in calls[index + 1 :]
+            )
+            return results, False
+
+        # Repeated-call guard (normalized signature, across turns).
+        signature = _call_signature(call.tool_name, call.arguments)
+        if same_call_counts.get(signature, 0) >= profile.max_same_call:
+            error = ToolError(ToolErrorCode.RESOURCE_LIMIT, "repeated tool call limit exceeded")
+            results.append(_batch_result(call, ToolExecutionStatus.RESOURCE_LIMIT, error))
+            results.extend(
+                _batch_result(
+                    later,
+                    ToolExecutionStatus.CANCELLED,
+                    ToolError(ToolErrorCode.CANCELLED, "cancelled: earlier call in batch failed"),
+                )
+                for later in calls[index + 1 :]
+            )
+            emit(ToolLoopEvent.LOOP_LIMIT)
+            return results, False
+
+        # Idempotency: never execute the same call_id twice in a session.
+        if call.call_id in executed_call_ids:
+            error = ToolError(ToolErrorCode.CANCELLED, "duplicate call_id already executed")
+            results.append(_batch_result(call, ToolExecutionStatus.CANCELLED, error))
+            results.extend(
+                _batch_result(
+                    later,
+                    ToolExecutionStatus.CANCELLED,
+                    ToolError(ToolErrorCode.CANCELLED, "cancelled: earlier call in batch failed"),
+                )
+                for later in calls[index + 1 :]
+            )
+            return results, False
+
+        tool = tools.get(call.tool_name)
+        executed = _execute_call(
+            call,
+            tool,
+            project_id=project_id,
+            session_id=session_id,
+            task_id=task_id,
+            run_id=run_id,
+            emit=emit,
+        )
+        same_call_counts[signature] = same_call_counts.get(signature, 0) + 1
+        executed_call_ids.add(call.call_id)
+        results.append(executed)
+
+    return results, True
 
 
 def _call_signature(tool_name: str, arguments: dict[str, Any]) -> str:

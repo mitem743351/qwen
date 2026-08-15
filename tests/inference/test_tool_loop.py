@@ -330,3 +330,129 @@ def test_regression_model_receives_bounded_tool_result() -> None:
     tool_message = next(m for m in second.messages if m.role is MessageRole.TOOL)
     assert len(tool_message.content) < 5000
     assert "x" * 200_000 not in tool_message.content
+
+
+# -- Phase 9.2 multi-tool batch tests ------------------------------------
+
+def _three_calls() -> tuple[ToolCall, ...]:
+    return (
+        ToolCall(call_id="call_1", tool_name="search_corpus", arguments={"query": "a"}),
+        ToolCall(call_id="call_2", tool_name="search_corpus", arguments={"query": "b"}),
+        ToolCall(call_id="call_3", tool_name="search_corpus", arguments={"query": "c"}),
+    )
+
+
+def test_batch_every_call_gets_exactly_one_result() -> None:
+    tool = _search_tool()
+    invoke, requests = _scripted_invoke(
+        [_result(tool_calls=_three_calls()), _result(content="final")]
+    )
+    outcome = run_tool_loop(_request(), invoke=invoke, tools=_registry(tool), profile=ANALYSIS)
+    assert outcome.status is LoopStatus.FINAL
+    # Three calls → three results, all SUCCEEDED, unique call ids in order.
+    assert len(outcome.tool_results) == 3
+    assert [r.call_id for r in outcome.tool_results] == ["call_1", "call_2", "call_3"]
+    assert all(r.status is ToolExecutionStatus.SUCCEEDED for r in outcome.tool_results)
+    assert len({r.call_id for r in outcome.tool_results}) == 3
+    # Exactly one tool-result message per call id in the continuation request.
+    tool_messages = [m for m in requests[1].messages if m.role is MessageRole.TOOL]
+    assert len(tool_messages) == 3
+    assert sorted(m.tool_call_id or "" for m in tool_messages) == ["call_1", "call_2", "call_3"]
+
+
+def test_budget_exhaustion_produces_explicit_per_call_results() -> None:
+    tool = _search_tool()
+    invoke, _ = _scripted_invoke(
+        [_result(tool_calls=_three_calls()), _result(content="final")]
+    )
+    outcome = run_tool_loop(
+        _request(),
+        invoke=invoke,
+        tools=_registry(tool),
+        profile=ANALYSIS,
+        config=ToolLoopConfig(max_tool_calls=2),
+    )
+    # Two execute; the third gets an explicit RESOURCE_LIMIT result (no dangling).
+    statuses = {r.call_id: r.status for r in outcome.tool_results}
+    assert statuses["call_1"] is ToolExecutionStatus.SUCCEEDED
+    assert statuses["call_2"] is ToolExecutionStatus.SUCCEEDED
+    assert statuses["call_3"] is ToolExecutionStatus.RESOURCE_LIMIT
+    assert outcome.status is LoopStatus.FINAL  # loop continued to a final answer
+
+
+def test_invalid_middle_call_cancels_rest_of_batch() -> None:
+    tool = _search_tool()
+    calls = (
+        ToolCall(call_id="call_1", tool_name="search_corpus", arguments={"query": "a"}),
+        ToolCall(
+            call_id="call_2",
+            tool_name="search_corpus",
+            arguments={},
+            arguments_error="malformed tool arguments JSON",
+        ),
+        ToolCall(call_id="call_3", tool_name="search_corpus", arguments={"query": "c"}),
+    )
+    invoke, _ = _scripted_invoke([_result(tool_calls=calls), _result(content="final")])
+    outcome = run_tool_loop(_request(), invoke=invoke, tools=_registry(tool), profile=ANALYSIS)
+    statuses = {r.call_id: r.status for r in outcome.tool_results}
+    assert statuses["call_1"] is ToolExecutionStatus.SUCCEEDED
+    assert statuses["call_2"] is ToolExecutionStatus.INVALID_ARGUMENTS
+    assert statuses["call_3"] is ToolExecutionStatus.CANCELLED
+    # Only call_1 executed.
+    assert len(tool.calls) == 1
+
+
+def test_permission_middle_call_stops_batch() -> None:
+    read_tool = _search_tool()
+    write_tool = StubTool("save_research_memory", ToolPermission.WRITE)
+    calls = (
+        ToolCall(call_id="call_1", tool_name="search_corpus", arguments={"query": "a"}),
+        ToolCall(call_id="call_2", tool_name="save_research_memory", arguments={}),
+        ToolCall(call_id="call_3", tool_name="search_corpus", arguments={"query": "c"}),
+    )
+    invoke, _ = _scripted_invoke([_result(tool_calls=calls), _result(content="final")])
+    outcome = run_tool_loop(
+        _request(),
+        invoke=invoke,
+        tools=_registry(read_tool, write_tool),
+        profile=ANALYSIS,
+    )
+    statuses = {r.call_id: r.status for r in outcome.tool_results}
+    assert statuses["call_1"] is ToolExecutionStatus.SUCCEEDED
+    assert statuses["call_2"] is ToolExecutionStatus.DENIED
+    assert statuses["call_3"] is ToolExecutionStatus.CANCELLED
+    assert write_tool.calls == []
+
+
+def test_partial_batch_returns_partial_status_when_continuation_disabled() -> None:
+    tool = _search_tool()
+    calls = (
+        ToolCall(call_id="call_1", tool_name="search_corpus", arguments={"query": "a"}),
+        ToolCall(call_id="call_2", tool_name="ghost", arguments={}),
+        ToolCall(call_id="call_3", tool_name="search_corpus", arguments={"query": "c"}),
+    )
+    invoke, _ = _scripted_invoke([_result(tool_calls=calls), _result(content="final")])
+    outcome = run_tool_loop(
+        _request(),
+        invoke=invoke,
+        tools=_registry(tool),
+        profile=ANALYSIS,
+        config=ToolLoopConfig(continue_after_partial=False),
+    )
+    assert outcome.status is LoopStatus.TOOL_EXECUTION_PARTIAL
+    assert len(outcome.tool_results) == 3
+    assert [r.call_id for r in outcome.tool_results] == ["call_1", "call_2", "call_3"]
+
+
+def test_duplicate_call_id_not_executed_twice() -> None:
+    tool = _search_tool()
+    # Two turns, both request the same call id.
+    call_a = ToolCall(call_id="call_1", tool_name="search_corpus", arguments={"query": "a"})
+    call_b = ToolCall(call_id="call_1", tool_name="search_corpus", arguments={"query": "b"})
+    turn1 = _result(tool_calls=(call_a,))
+    turn2 = _result(tool_calls=(call_b,))
+    invoke, _ = _scripted_invoke([turn1, turn2, _result(content="final")])
+    outcome = run_tool_loop(_request(), invoke=invoke, tools=_registry(tool), profile=ANALYSIS)
+    # call_1 executed once; the duplicate call_id is CANCELLED.
+    assert len(tool.calls) == 1
+    assert any(r.status is ToolExecutionStatus.CANCELLED for r in outcome.tool_results)
