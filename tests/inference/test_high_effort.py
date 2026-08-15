@@ -202,9 +202,9 @@ def test_wall_time_enforced_before_operations() -> None:
         budget=get_test_time_policy("FAST").budget(),
     )
     engine = HighEffortEngine(_Runtime(), "FAST", state)
-    # Simulate the wall-time budget already being consumed.
-    engine.started_at = 0.0  # long ago relative to monotonic now
-    assert engine.wall_time_exhausted()
+    # Simulate the wall-time deadline already being in the past.
+    state.deadline_at = 0.0  # long ago
+    assert engine.deadline_exceeded()
     assert engine.retrieve("q") == []
     assert calls == []  # the runtime was never called
 

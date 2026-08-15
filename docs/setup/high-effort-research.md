@@ -28,11 +28,14 @@ result = runtime.run_high_effort(
 `run_high_effort` drives the **real** Research Runtime: it performs retrieval
 via `search_corpus`, verification via `create_claim`/`verify_claim`/
 `get_contradictions`, computation via `run_analysis`, and critique + synthesis
-via `invoke_inference` — consuming the global budget automatically around each
-call and enforcing wall-time before every operation. The `store` (a
-`RunStateStore`, e.g. `SqliteRunStateStore`) persists the full logical run state
-(budget + trajectories + stage progress), so a restart resumes rather than
-recreates.
+via `invoke_inference`. Every operation is **admitted** (budget + deadline)
+before it runs and receives a bounded limit derived from the remaining budget
+(`max_output_tokens`, retrieval `limit`, tool-loop `max_tool_calls`); actual
+consumption is committed after. The `store` (a `RunStateStore`, e.g.
+`SqliteRunStateStore`) persists the full logical run state (budget + absolute
+`deadline_at` + trajectories + stage progress + draft) and checkpoints after
+every durable transition, so a restart resumes with the remaining deadline and
+never re-runs completed work.
 
 ---
 

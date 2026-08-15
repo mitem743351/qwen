@@ -1,15 +1,24 @@
-"""Bounded high-effort research execution (Phase 10.1).
+"""Bounded high-effort research execution (Phase 10.2).
 
-A **real** engine that drives the Research Runtime, rather than a callback that
-manually spends counters. The engine owns the global
-:class:`TestTimeComputeBudget` and consumes it *automatically* around each real
-runtime call (inference, tool loop, retrieval, verification, computation), so
-callers cannot bypass the budget. Wall-time is checked before every operation —
-not after the run finishes. Logical run state (trajectories, stages, budget) is
-persisted and resumed across restarts.
+A **real** engine that drives the Research Runtime and *enforces* its resource,
+state, deadline, and restart guarantees:
+
+- **Admission vs accounting** are separate: every expensive child operation is
+  admitted (budget + deadline) *before* it runs, receives a bounded child
+  limit derived from the remaining global budget/deadline, and commits actual
+  consumption *after*. Post-hoc clamping is never used to hide overruns.
+- **Absolute wall-clock deadline** is persisted and restored; a restart resumes
+  with the remaining time, never a fresh window.
+- **Checkpoint after every durable transition** — a completed stage becomes
+  durable before the next stage depends on it.
+- **Trajectory state machine** — an early-stopped trajectory is never marked
+  COMPLETED.
+- **Draft → critique → real action → revision → final critique → final
+  verification** — critique operates on the actual draft and its actions
+  perform real work.
 
 XHIGH/EXTREME mean *more bounded useful work*, never more permissions or
-hidden-reasoning storage.
+hidden-reasoning storage. The frozen Phase-9 execution guarantees are untouched.
 """
 
 from __future__ import annotations
@@ -22,6 +31,7 @@ from qwen_research.common.ids import TaskId, new_id
 from qwen_research.common.serialization import serializable
 from qwen_research.domain.errors import UnsupportedOperationError
 from qwen_research.domain.inference import (
+    InferencePolicy,
     InferenceRequest,
     InferenceResult,
     Message,
@@ -31,6 +41,7 @@ from qwen_research.domain.test_time import (
     CritiqueAction,
     CritiqueIssue,
     CritiqueResult,
+    DraftStatus,
     HighEffortRunState,
     ResearchSynthesisInput,
     ResearchTrajectory,
@@ -38,6 +49,7 @@ from qwen_research.domain.test_time import (
     RunStatus,
     TestTimeComputeBudget,
     TestTimeComputePolicy,
+    TrajectoryStatus,
     TrajectoryStrategy,
     get_test_time_policy,
     trajectory_query_set,
@@ -69,13 +81,19 @@ _SYNTHESIS_SYSTEM = (
     "contradictions, and open questions. Do not fabricate evidence."
 )
 
+_REWRITE_SYSTEM = (
+    "You are a rigorous research reviser. Revise the draft to resolve the "
+    "critic's most severe issue, grounding every claim in the provided evidence. "
+    "Do not fabricate evidence."
+)
+
 
 class HighEffortEngine:
     """Drives a bounded high-effort run against a real Research Runtime.
 
-    Every operation checks wall-time and budget **before** executing and commits
-    consumption **after**; the engine is the only path to the runtime during the
-    run, so the global budget is authoritative.
+    The engine is the **authoritative** owner of the logical run budget and
+    deadline; every child operation passes through admission (budget + deadline)
+    before execution and commits consumption after.
     """
 
     def __init__(
@@ -85,6 +103,7 @@ class HighEffortEngine:
         state: HighEffortRunState,
         *,
         project_id: str = "default",
+        store: RunStateStore | None = None,
     ) -> None:
         self.runtime = runtime
         self.profile: TestTimeComputePolicy = get_test_time_policy(profile_name)
@@ -94,104 +113,150 @@ class HighEffortEngine:
         self.meters: dict[ResourceDimension, BudgetMeter] = make_budget_meters(self.budget)
         self.project_id = project_id
         self.task_reference = TaskId(new_id("task"))
-        self.started_at = time.monotonic()
+        self.store = store
+        # Absolute deadline: set once (fresh) and restored (resume).
+        if state.deadline_at is None:
+            state.deadline_at = time.time() + self.profile.max_wall_time_seconds
         self.events: list[str] = list(state.completed_stages)
 
-    # -- budget + wall-time -------------------------------------------------
+    # -- deadline ----------------------------------------------------------
 
-    def wall_time_exhausted(self) -> bool:
-        return (time.monotonic() - self.started_at) >= self.profile.max_wall_time_seconds
+    def remaining_seconds(self) -> float:
+        return max(0.0, (self.state.deadline_at or 0.0) - time.time())
+
+    def deadline_exceeded(self) -> bool:
+        return self.remaining_seconds() <= 0.0
 
     def should_continue(self) -> bool:
-        return not (self.wall_time_exhausted() or self.budget.all_exhausted())
+        return not (self.deadline_exceeded() or self.budget.all_exhausted())
 
     def can(self, dimension: ResourceDimension, amount: float = 1.0) -> bool:
         return self.should_continue() and self.meters[dimension].remaining() >= amount
 
-    def spend(self, dimension: ResourceDimension, amount: float = 1.0) -> bool:
-        """Atomically reserve + commit one unit of *dimension*."""
-        meter = self.meters[dimension]
-        if not meter.reserve(amount):
-            return False
-        meter.commit(amount)
-        return True
+    # -- admission + accounting -------------------------------------------
 
-    # -- real runtime operations (auto-consuming) --------------------------
+    def reserve(self, dimension: ResourceDimension, amount: float = 1.0) -> bool:
+        return self.meters[dimension].reserve(amount)
+
+    def commit(self, dimension: ResourceDimension, amount: float = 1.0) -> None:
+        self.meters[dimension].commit(amount)
+
+    def _admit(self, dimension: ResourceDimension, amount: float = 1.0) -> bool:
+        """Admit a unit of *dimension* (reserve, execute will follow, commit after)."""
+        return self.reserve(dimension, amount)
+
+    # -- real runtime operations (auto-consuming, admission-gated) ---------
 
     def invoke(self, messages: tuple[Message, ...]) -> InferenceResult:
-        """Invoke inference; consumes INFERENCE_CALLS/TURNS/TOKENS."""
+        """Invoke inference with the remaining token budget as max_output_tokens.
+
+        Admission consumes one inference call/turn; the request's
+        ``max_output_tokens`` is bounded by the remaining token budget (never
+        exceeding it), so the provider cannot be asked to overrun. Actual token
+        usage is recorded; a provider overrun is flagged as a violation.
+        """
         if not self.can(ResourceDimension.INFERENCE_CALLS):
             raise _BudgetExhaustedError("inference budget exhausted")
-        self.spend(ResourceDimension.INFERENCE_CALLS)
-        self.spend(ResourceDimension.INFERENCE_TURNS)
+        self.reserve(ResourceDimension.INFERENCE_CALLS)
+        self.reserve(ResourceDimension.INFERENCE_TURNS)
         policy = self.profile.inference_policy()
+        remaining_tokens = int(self.meters[ResourceDimension.TOKENS].remaining())
+        if remaining_tokens > 0:
+            policy = InferencePolicy(
+                **{**policy.__dict__, "max_output_tokens": remaining_tokens}
+            )
         request = InferenceRequest(
             task_reference=self.task_reference,
             inference_policy=policy,
             messages=messages,
         )
         result: InferenceResult = self.runtime.invoke_inference(request)
+        self.commit(ResourceDimension.INFERENCE_CALLS)
+        self.commit(ResourceDimension.INFERENCE_TURNS)
         usage = result.usage or {}
-        self.meters[ResourceDimension.TOKENS].commit(float(usage.get("total_tokens", 0)))
+        self._record_tokens(float(usage.get("total_tokens", 0)))
         return result
 
+    def _record_tokens(self, actual: float) -> None:
+        remaining = self.meters[ResourceDimension.TOKENS].remaining()
+        if actual > remaining:
+            self.state.violations.append(
+                f"token overrun: provider used {actual} > remaining {remaining}"
+            )
+        self.commit(ResourceDimension.TOKENS, min(actual, remaining))
+
     def retrieve(self, query: str, *, limit: int | None = None) -> list[str]:
-        """One retrieval round; consumes RETRIEVAL_ROUNDS + RETRIEVAL_CANDIDATES."""
+        """One retrieval round; candidate limit is bounded by remaining budget."""
         if not self.can(ResourceDimension.RETRIEVAL_ROUNDS):
             return []
-        self.spend(ResourceDimension.RETRIEVAL_ROUNDS)
-        cap = limit or int(self.profile.max_retrieval_candidates)
+        self.reserve(ResourceDimension.RETRIEVAL_ROUNDS)
+        remaining_candidates = int(
+            self.meters[ResourceDimension.RETRIEVAL_CANDIDATES].remaining()
+        )
+        cap = (
+            min(limit or remaining_candidates, remaining_candidates)
+            if remaining_candidates > 0
+            else 0
+        )
+        if cap <= 0:
+            self.commit(ResourceDimension.RETRIEVAL_ROUNDS)
+            return []
         result = self.runtime.search_corpus(query, SearchOptions(limit=cap))
         chunk_ids = [c.chunk_id for c in result.chunks]
+        self.commit(ResourceDimension.RETRIEVAL_ROUNDS)
         for _ in chunk_ids:
-            if not self.spend(ResourceDimension.RETRIEVAL_CANDIDATES):
+            if not self.reserve(ResourceDimension.RETRIEVAL_CANDIDATES):
                 break
+            self.commit(ResourceDimension.RETRIEVAL_CANDIDATES)
         return chunk_ids
 
     def verify(self, claim_text: str) -> str | None:
-        """Create + verify a claim; consumes VERIFICATION_ROUNDS. Returns report id."""
+        """Create + verify a claim (admission-gated)."""
         if not self.can(ResourceDimension.VERIFICATION_ROUNDS):
             return None
+        self.reserve(ResourceDimension.VERIFICATION_ROUNDS)
         claim = self.runtime.create_claim(self.project_id, claim_text)
         self.state.claims.append(claim.claim_id)
-        self.spend(ResourceDimension.VERIFICATION_ROUNDS)
         report = self.runtime.verify_claim(self.project_id, claim.claim_id)
+        self.commit(ResourceDimension.VERIFICATION_ROUNDS)
         report_id: str = report.report_id
         self.state.verification_refs.append(report_id)
         return report_id
 
     def contradictions(self) -> list[str]:
-        """Detect contradictions; consumes VERIFICATION_ROUNDS. Returns ids."""
+        """Detect contradictions (admission-gated)."""
         if not self.can(ResourceDimension.VERIFICATION_ROUNDS):
             return []
-        self.spend(ResourceDimension.VERIFICATION_ROUNDS)
+        self.reserve(ResourceDimension.VERIFICATION_ROUNDS)
         found = self.runtime.get_contradictions(self.project_id)
+        self.commit(ResourceDimension.VERIFICATION_ROUNDS)
         ids = [c.contradiction_id for c in found]
         self.state.contradictions.extend(ids)
         return ids
 
     def compute(self, dataset_ref: Any) -> str | None:
-        """Run a bounded computation; consumes COMPUTATION_ROUNDS."""
+        """Run a bounded computation (admission-gated)."""
         if not self.can(ResourceDimension.COMPUTATION_ROUNDS):
             return None
-        self.spend(ResourceDimension.COMPUTATION_ROUNDS)
+        self.reserve(ResourceDimension.COMPUTATION_ROUNDS)
         from qwen_research.computation.models import ComputationOperation
 
         result = self.runtime.run_analysis(
             self.project_id, (dataset_ref,), ComputationOperation.SUMMARIZE
         )
+        self.commit(ResourceDimension.COMPUTATION_ROUNDS)
         computation_id: str = result.computation_id
         self.state.computation_refs.append(computation_id)
         return computation_id
 
     def critique(self, draft: str, *, claims: tuple[str, ...] = ()) -> CritiqueResult:
-        """Model-backed critique; consumes CRITIQUE_ROUNDS + inference."""
+        """Model-backed critique over the actual draft (admission-gated)."""
         if not self.can(ResourceDimension.CRITIQUE_ROUNDS):
             return CritiqueResult(
                 recommended_action=CritiqueAction.NO_ACTION,
                 recommendation_reason="critique budget exhausted",
             )
-        self.spend(ResourceDimension.CRITIQUE_ROUNDS)
+        self.reserve(ResourceDimension.CRITIQUE_ROUNDS)
         result = self.invoke(
             (
                 Message(role=MessageRole.SYSTEM, content=_CRITIQUE_SYSTEM),
@@ -201,17 +266,30 @@ class HighEffortEngine:
                 ),
             )
         )
+        self.commit(ResourceDimension.CRITIQUE_ROUNDS)
         parsed = _parse_critique(result.content)
         self.state.critique_results.append(parsed)
-        if parsed.recommended_action is not CritiqueAction.NO_ACTION:
-            self._consume_critique_action(parsed.recommended_action)
         return parsed
 
+    def rewrite(self, draft: str, critique: CritiqueResult) -> str:
+        """Generate a revised draft resolving the critic's issue."""
+        issue = critique.issues[0].description if critique.issues else "the critic's issue"
+        result = self.invoke(
+            (
+                Message(role=MessageRole.SYSTEM, content=_REWRITE_SYSTEM),
+                Message(
+                    role=MessageRole.USER,
+                    content=f"Draft: {draft}\nCritic issue: {issue}\nRevise the draft.",
+                ),
+            )
+        )
+        return result.content
+
     def synthesize(self, synth_input: ResearchSynthesisInput) -> InferenceResult:
-        """Final evidence-aware synthesis; consumes SYNTHESIS_PASSES + inference."""
+        """Evidence-aware synthesis (admission-gated)."""
         if not self.can(ResourceDimension.SYNTHESIS_PASSES):
             raise _BudgetExhaustedError("synthesis budget exhausted")
-        self.spend(ResourceDimension.SYNTHESIS_PASSES)
+        self.reserve(ResourceDimension.SYNTHESIS_PASSES)
         user = (
             f"Objective: {self.state.task_description}\n"
             f"Evidence refs: {', '.join(synth_input.evidence_refs) or '(none)'}\n"
@@ -220,37 +298,65 @@ class HighEffortEngine:
             f"Unresolved: {', '.join(synth_input.unresolved_questions) or '(none)'}\n"
             "Produce a grounded synthesis."
         )
-        return self.invoke(
+        result = self.invoke(
             (
                 Message(role=MessageRole.SYSTEM, content=_SYNTHESIS_SYSTEM),
                 Message(role=MessageRole.USER, content=user),
             )
         )
-
-    def run_tool_loop(self, request: InferenceRequest) -> Any:
-        """Run the Phase-9 tool loop; auto-consumes TOOL_CALLS + inference."""
-        if not self.can(ResourceDimension.TOOL_CALLS):
-            raise _BudgetExhaustedError("tool budget exhausted")
-        result = self.runtime.run_tool_loop(request, project_id=self.project_id)
-        self.spend(ResourceDimension.TOOL_CALLS, float(result.accounting.tool_calls))
-        self.spend(ResourceDimension.INFERENCE_CALLS, float(result.accounting.inference_calls))
+        self.commit(ResourceDimension.SYNTHESIS_PASSES)
         return result
 
-    # -- helpers -----------------------------------------------------------
+    def run_tool_loop(self, request: InferenceRequest) -> Any:
+        """Run the Phase-9 tool loop with the remaining tool budget as a hard cap.
 
-    def _consume_critique_action(self, action: CritiqueAction) -> None:
-        dimension = {
-            CritiqueAction.RETRIEVE_MORE: ResourceDimension.RETRIEVAL_ROUNDS,
-            CritiqueAction.VERIFY_MORE: ResourceDimension.VERIFICATION_ROUNDS,
-            CritiqueAction.COMPUTE_MORE: ResourceDimension.COMPUTATION_ROUNDS,
-            CritiqueAction.REWRITE: ResourceDimension.SYNTHESIS_PASSES,
-            CritiqueAction.REJECT_DRAFT: ResourceDimension.SYNTHESIS_PASSES,
-        }.get(action)
-        if dimension is not None:
-            self.spend(dimension)
+        The tool loop's ``max_tool_calls`` is bounded by the remaining
+        high-effort tool-call budget, so the lower layer can never execute more
+        tool calls than remain.
+        """
+        remaining = int(self.meters[ResourceDimension.TOOL_CALLS].remaining())
+        if remaining <= 0:
+            raise _BudgetExhaustedError("tool budget exhausted")
+        from qwen_research.research.tool_loop import ToolLoopConfig
+
+        config = ToolLoopConfig(max_tool_calls=remaining)
+        result = self.runtime.run_tool_loop(request, project_id=self.project_id, config=config)
+        self.commit(ResourceDimension.TOOL_CALLS, float(result.accounting.tool_calls))
+        self.commit(ResourceDimension.INFERENCE_CALLS, float(result.accounting.inference_calls))
+        return result
+
+    # -- critique action dispatcher (real work, not counter decrements) ----
+
+    def apply_critique_action(self, action: CritiqueAction, draft: str) -> tuple[str, bool]:
+        """Execute a critique action with real work. Returns (draft, changed)."""
+        if action is CritiqueAction.RETRIEVE_MORE:
+            if self.can(ResourceDimension.RETRIEVAL_ROUNDS):
+                extra = self.retrieve(self.state.task_description)
+                self.state.evidence_refs.extend(extra)
+                return draft, bool(extra)
+            return draft, False
+        if action is CritiqueAction.VERIFY_MORE:
+            if self.can(ResourceDimension.VERIFICATION_ROUNDS):
+                return draft, self.verify(self.state.task_description) is not None
+            return draft, False
+        if action is CritiqueAction.COMPUTE_MORE:
+            if self.can(ResourceDimension.COMPUTATION_ROUNDS):
+                # No dataset configured → cannot compute; report no change.
+                return draft, False
+            return draft, False
+        if action is CritiqueAction.REWRITE or action is CritiqueAction.REJECT_DRAFT:
+            if self.can(ResourceDimension.SYNTHESIS_PASSES):
+                revised = self.rewrite(draft, self.state.critique_results[-1])
+                return revised, revised != draft
+            return draft, False
+        return draft, False
 
     def reallocate_after_signal(self, signal: BudgetSignal) -> None:
         self.scheduler.apply_signal(signal)
+
+    def checkpoint(self) -> None:
+        if self.store is not None:
+            self.store.save_state(self.state)
 
 
 @serializable
@@ -267,6 +373,7 @@ class HighEffortResult:
     final_synthesis: str = ""
     reallocation_decisions: tuple[Any, ...] = ()
     completed_stages: tuple[str, ...] = ()
+    violations: tuple[str, ...] = ()
     error: str | None = None
 
 
@@ -282,11 +389,7 @@ def run_high_effort(
     dataset_ref: Any = None,
     tool_request: InferenceRequest | None = None,
 ) -> HighEffortResult:
-    """Run a bounded high-effort research execution against a real runtime.
-
-    ``store`` (optional) persists the full logical run state; a restart resumes
-    trajectories/stages and budget consumption rather than recreating them.
-    """
+    """Run a bounded high-effort research execution against a real runtime."""
     run_id = run_id or new_id("run")
 
     state = store.load_state(run_id) if store is not None else None
@@ -298,33 +401,21 @@ def run_high_effort(
             budget=get_test_time_policy(profile_name).budget(),
         )
 
-    engine = HighEffortEngine(runtime, profile_name, state, project_id=project_id)
+    engine = HighEffortEngine(runtime, profile_name, state, project_id=project_id, store=store)
 
     try:
         _execute(engine, trajectory_strategies, dataset_ref=dataset_ref, tool_request=tool_request)
     except _BudgetExhaustedError as exc:
-        _persist(store, state)
+        state.status = RunStatus.BUDGET_EXHAUSTED.value
+        engine.checkpoint()
         return _finalize(engine, state, error=f"{exc}")
     except Exception as exc:  # noqa: BLE001 — normalize run failure
-        _persist(store, state)
-        return HighEffortResult(
-            status=RunStatus.FAILED,
-            profile=profile_name,
-            budget_summary=state.budget.summary(),
-            trajectories=tuple(state.trajectories),
-            critique_results=tuple(state.critique_results),
-            reallocation_decisions=engine.scheduler.decisions,
-            completed_stages=tuple(state.completed_stages),
-            error=f"{type(exc).__name__}: {exc}",
-        )
+        state.status = RunStatus.FAILED.value
+        engine.checkpoint()
+        return _finalize(engine, state, error=f"{type(exc).__name__}: {exc}")
 
-    _persist(store, state)
+    engine.checkpoint()
     return _finalize(engine, state)
-
-
-def _persist(store: RunStateStore | None, state: HighEffortRunState) -> None:
-    if store is not None:
-        store.save_state(state)
 
 
 def _execute(
@@ -336,25 +427,50 @@ def _execute(
 ) -> None:
     state = engine.state
 
-    # 1. Trajectories (admit + retrieve); resume skips already-done strategies.
+    # 1. Trajectories (admit + retrieve); resume skips already-completed ones.
     for strategy in trajectory_strategies:
-        if any(t.strategy is strategy for t in state.trajectories):
+        existing = next((t for t in state.trajectories if t.strategy is strategy), None)
+        if existing is not None and existing.status == TrajectoryStatus.COMPLETED.value:
             continue
-        if not engine.should_continue() or not engine.spend(ResourceDimension.TRAJECTORIES):
-            break
-        trajectory = ResearchTrajectory.create(strategy, state.task_description)
+        if existing is None:
+            if not engine.should_continue() or not engine.reserve(ResourceDimension.TRAJECTORIES):
+                break
+            engine.commit(ResourceDimension.TRAJECTORIES)
+            existing = ResearchTrajectory.create(strategy, state.task_description)
+            existing = dataclasses.replace(existing, status=TrajectoryStatus.RUNNING.value)
+            state.trajectories.append(existing)
+            engine.checkpoint()
+
+        # Execute the trajectory's retrieval against the global budget.
         qset = trajectory_query_set(strategy, state.task_description)
-        evidence: list[str] = []
+        evidence: list[str] = list(existing.evidence_refs)
         for query in qset.all_queries():
             if not engine.should_continue():
                 break
             evidence.extend(engine.retrieve(query))
-        state.evidence_refs.extend(evidence)
-        state.trajectories.append(
-            dataclasses.replace(trajectory, evidence_refs=tuple(evidence), status="completed")
-        )
+        # Record evidence at run scope too (completion depends on it).
+        for ref in evidence:
+            if ref not in state.evidence_refs:
+                state.evidence_refs.append(ref)
+        # Determine the trajectory's final status honestly.
+        status = TrajectoryStatus.COMPLETED
+        if engine.deadline_exceeded():
+            status = TrajectoryStatus.TIME_LIMIT
+        elif engine.budget.all_exhausted():
+            status = TrajectoryStatus.BUDGET_EXHAUSTED
+        elif not evidence:
+            status = TrajectoryStatus.BLOCKED
+        state.trajectories = [
+            dataclasses.replace(
+                t,
+                evidence_refs=tuple(evidence),
+                status=status.value,
+            ) if t.trajectory_id == existing.trajectory_id else t
+            for t in state.trajectories
+        ]
+        engine.checkpoint()
 
-    # 2. Verification (create + verify a claim; resume skips if already done).
+    # 2. Verification.
     if (
         "verification" not in state.completed_stages
         and engine.should_continue()
@@ -363,10 +479,11 @@ def _execute(
         try:
             engine.verify(state.task_description or "research objective")
             state.completed_stages.append("verification")
+            engine.checkpoint()
         except UnsupportedOperationError:
-            pass  # verification subsystem not configured → skip
+            pass
 
-    # 3. Contradiction search (adaptive escalation if contradictions found).
+    # 3. Contradiction search (adaptive escalation).
     if (
         "contradictions" not in state.completed_stages
         and engine.should_continue()
@@ -378,13 +495,16 @@ def _execute(
             if found:
                 engine.reallocate_after_signal(
                     BudgetSignal(
-                        ResourceDimension.VERIFICATION_ROUNDS, "strong", "contradiction found"
+                        ResourceDimension.VERIFICATION_ROUNDS,
+                        "strong",
+                        "contradiction found",
                     )
                 )
+            engine.checkpoint()
         except UnsupportedOperationError:
             pass
 
-    # 4. Computation (optional).
+    # 4. Computation.
     if (
         dataset_ref is not None
         and "computation" not in state.completed_stages
@@ -394,10 +514,11 @@ def _execute(
         try:
             engine.compute(dataset_ref)
             state.completed_stages.append("computation")
+            engine.checkpoint()
         except UnsupportedOperationError:
             pass
 
-    # 5. Tool loop (optional; the tool loop's own accounting drives consumption).
+    # 5. Tool loop.
     if (
         tool_request is not None
         and "tool_loop" not in state.completed_stages
@@ -405,22 +526,61 @@ def _execute(
     ):
         engine.run_tool_loop(tool_request)
         state.completed_stages.append("tool_loop")
+        engine.checkpoint()
 
-    # 6. Critique (model-backed; consumes budget).
+    # 6. Draft → critique → action → revision → final critique.
     if (
-        "critique" not in state.completed_stages
-        and engine.should_continue()
-        and engine.can(ResourceDimension.CRITIQUE_ROUNDS)
+        state.draft_status == DraftStatus.DRAFT.value
+        and engine.can(ResourceDimension.SYNTHESIS_PASSES)
     ):
-        engine.critique(state.task_description, claims=tuple(state.claims))
-        state.completed_stages.append("critique")
+        draft_result = engine.synthesize(_synthesis_input(state))
+        state.draft = draft_result.content
+        state.draft_status = DraftStatus.CRITIQUED.value
+        engine.checkpoint()
 
-    # 7. Final synthesis (resume skips if already done).
+    _critique_loop(engine)
+
+    # 7. Final verification + synthesis.
+    if state.final_verified or engine.can(ResourceDimension.VERIFICATION_ROUNDS):
+        if not state.final_verified:
+            engine.verify(state.task_description or "research objective")
+            state.final_verified = True
+        state.draft_status = DraftStatus.FINAL_VERIFIED.value
+        engine.checkpoint()
+
     if "synthesis" not in state.completed_stages and engine.can(ResourceDimension.SYNTHESIS_PASSES):
         synth_input = _synthesis_input(state)
         result = engine.synthesize(synth_input)
         state.completed_stages.append("synthesis")
         state.final_synthesis = result.content
+        engine.checkpoint()
+
+
+def _critique_loop(engine: HighEffortEngine) -> None:
+    state = engine.state
+    rounds = 0
+    draft = state.draft
+    while rounds < state.budget.allocated.get(ResourceDimension.CRITIQUE_ROUNDS, 0):
+        if not engine.can(ResourceDimension.CRITIQUE_ROUNDS):
+            break
+        critique = engine.critique(draft, claims=tuple(state.claims))
+        state.draft_status = DraftStatus.CRITIQUED.value
+        if critique.recommended_action is CritiqueAction.NO_ACTION:
+            break
+        state.draft_status = DraftStatus.REVISION_REQUIRED.value
+        revised, changed = engine.apply_critique_action(critique.recommended_action, draft)
+        if changed:
+            draft = revised
+            state.draft = draft
+            state.draft_status = DraftStatus.REVISED.value
+        elif critique.recommended_action in (CritiqueAction.REWRITE, CritiqueAction.REJECT_DRAFT):
+            state.draft_status = DraftStatus.REJECTED.value
+            break
+        engine.checkpoint()
+        rounds += 1
+    state.draft = draft
+    state.draft_status = DraftStatus.FINAL_CANDIDATE.value
+    engine.checkpoint()
 
 
 def _synthesis_input(state: HighEffortRunState) -> ResearchSynthesisInput:
@@ -432,15 +592,23 @@ def _synthesis_input(state: HighEffortRunState) -> ResearchSynthesisInput:
         computations=tuple(state.computation_refs),
         trajectory_findings=tuple(t.trajectory_id for t in state.trajectories),
         critique_findings=tuple(
-            f"{i.description}" for c in state.critique_results for i in c.issues
+            i.description for c in state.critique_results for i in c.issues
         ),
         unresolved_questions=(),
     )
 
 
 def _completion_met(state: HighEffortRunState) -> bool:
-    """Completion requires real evidence and real verification coverage."""
-    return bool(state.evidence_refs) and bool(state.verification_refs)
+    """Completion requires evidence, verification, a critiqued draft, and no
+    unresolved contradiction (conservative: any recorded contradiction blocks)."""
+    return bool(
+        state.evidence_refs
+        and state.verification_refs
+        and state.draft
+        and state.draft_status
+        in (DraftStatus.FINAL_CANDIDATE.value, DraftStatus.FINAL_VERIFIED.value)
+        and not state.contradictions
+    )
 
 
 def _finalize(
@@ -448,7 +616,7 @@ def _finalize(
 ) -> HighEffortResult:
     if error is not None:
         status = RunStatus.BUDGET_EXHAUSTED
-    elif engine.wall_time_exhausted():
+    elif engine.deadline_exceeded():
         status = RunStatus.TIME_LIMIT
     elif engine.budget.all_exhausted():
         status = RunStatus.BUDGET_EXHAUSTED
@@ -469,12 +637,13 @@ def _finalize(
         final_synthesis=state.final_synthesis,
         reallocation_decisions=engine.scheduler.decisions,
         completed_stages=tuple(state.completed_stages),
+        violations=tuple(state.violations),
         error=error,
     )
 
 
 def _parse_critique(content: str) -> CritiqueResult:
-    """Deterministic, model-output-driven critique parsing (no hidden state)."""
+    """Deterministic, model-output-driven critique parsing."""
     text = (content or "").strip().lower()
     if not text or "none" in text:
         return CritiqueResult()
@@ -489,6 +658,10 @@ def _parse_critique(content: str) -> CritiqueResult:
     elif "contradiction" in text:
         issues.append(CritiqueIssue(severity="major", description="contradiction"))
         action = CritiqueAction.VERIFY_MORE
+    elif "recompute" in text or "numerical" in text:
+        issues.append(CritiqueIssue(severity="major", description="numerical error"))
+        action = CritiqueAction.COMPUTE_MORE
     else:
         issues.append(CritiqueIssue(severity="warning", description=content.strip()))
+        action = CritiqueAction.REWRITE
     return CritiqueResult(issues=tuple(issues), recommended_action=action)

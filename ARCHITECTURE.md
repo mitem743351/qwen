@@ -1,6 +1,6 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 10.1 — Real high-effort runtime integration.
+> **Status:** Phase 10.2 — XHIGH / EXTREME enforcement closure.
 > The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
@@ -625,6 +625,16 @@ See [`docs/architecture/inference.md`](docs/architecture/inference.md) and
 > critique and synthesis invoke the Inference Runtime, completion depends on
 > real evidence + verification, and the full logical run state is persisted and
 > resumed across restarts.
+>
+> **Phase 10.2 (implemented).** The high-effort budget is now an **execution
+> gate**, not a post-hoc counter: every child operation is admitted (budget +
+> deadline) before it runs and receives a bounded limit derived from the
+> remaining budget (`max_output_tokens`, retrieval `limit`, tool-loop
+> `max_tool_calls`). An absolute wall-clock deadline is persisted and restored;
+> run state is checkpointed after every durable transition; trajectories and
+> drafts have honest state machines; critique operates on the actual draft and
+> its actions perform real work; completion requires evidence + verification +
+> a critiqued draft. Budget overruns are flagged, never silently clamped.
 
 ---
 

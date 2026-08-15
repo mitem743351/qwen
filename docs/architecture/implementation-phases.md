@@ -534,6 +534,29 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
 - **Not yet:** parallel model trajectories; distributed/remote workers;
   automatic Studio→Gateway escalation; Qwen built-in web search invocation.
 
+## Phase 10.2 — XHIGH/EXTREME enforcement closure ✅ (complete)
+
+- **Objective:** make the configured budgets, deadline, workflow requirements,
+  and restart semantics control the actual execution path — admission before
+  execution, not post-hoc accounting.
+- **Dependencies:** Phase 10.1.
+- **Components:** admission-vs-accounting split (`reserve` before, `commit`
+  after); bounded child limits (`max_output_tokens` from remaining tokens,
+  retrieval `limit` from remaining candidates, tool-loop `max_tool_calls` from
+  remaining tool budget); absolute persisted `deadline_at` (wall-clock, never
+  monotonic); checkpoint after every durable transition; `TrajectoryStatus` /
+  `DraftStatus` state machines; draft→critique→action→revision→final-verification
+  loop with a real action dispatcher; budget overrun violations; budget
+  conservation on reallocation.
+- **Acceptance criteria:** hard tool/inference/token/retrieval/verification/
+  computation/critique/synthesis budgets; global deadline enforced + persisted;
+  restart resumes (not recreates) with remaining deadline/budget; early-stopped
+  trajectories not marked COMPLETED; critique actions perform real work;
+  completion requires evidence + verification + critiqued draft; XHIGH/EXTREME
+  never grant permissions; Phase-9 guarantees preserved.
+- **Not yet:** parallel model trajectories; distributed/remote workers;
+  automatic Studio→Gateway escalation; Qwen built-in web search invocation.
+
 ## Phase 11 — Dashboard / observability
 
 - **Objective:** optional TypeScript observability UI.

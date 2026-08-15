@@ -79,6 +79,33 @@ class RunStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class TrajectoryStatus(StrEnum):
+    """Explicit trajectory lifecycle states (a trajectory that stops early must
+    NOT be marked COMPLETED)."""
+
+    PLANNED = "planned"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    PARTIAL = "partial"
+    BLOCKED = "blocked"
+    BUDGET_EXHAUSTED = "budget_exhausted"
+    TIME_LIMIT = "time_limit"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class DraftStatus(StrEnum):
+    """Lifecycle of the final synthesis draft."""
+
+    DRAFT = "draft"
+    CRITIQUED = "critiqued"
+    REVISION_REQUIRED = "revision_required"
+    REVISED = "revised"
+    FINAL_CANDIDATE = "final_candidate"
+    FINAL_VERIFIED = "final_verified"
+    REJECTED = "rejected"
+
+
 @serializable
 @dataclasses.dataclass(frozen=True)
 class TestTimeComputePolicy:
@@ -510,6 +537,15 @@ class HighEffortRunState:
     critique_results: list[CritiqueResult] = dataclasses.field(default_factory=list)
     final_synthesis: str = ""
     status: str = "running"
+    #: Absolute wall-clock deadline (epoch seconds). Persisted so a restart
+    #: resumes with the *remaining* time, never a fresh window.
+    deadline_at: float | None = None
+    #: Final-draft lifecycle.
+    draft: str = ""
+    draft_status: str = DraftStatus.DRAFT.value
+    final_verified: bool = False
+    #: Explicit budget-overrun violations (never silently clamped).
+    violations: list[str] = dataclasses.field(default_factory=list)
 
     def to_record(self) -> dict[str, Any]:
         """A primitives-only record (JSON-safe; enum keys stringified)."""
@@ -530,6 +566,11 @@ class HighEffortRunState:
             "critique_results": [dumps(c) for c in self.critique_results],
             "final_synthesis": self.final_synthesis,
             "status": self.status,
+            "deadline_at": self.deadline_at,
+            "draft": self.draft,
+            "draft_status": self.draft_status,
+            "final_verified": self.final_verified,
+            "violations": list(self.violations),
         }
 
     @classmethod
@@ -551,4 +592,9 @@ class HighEffortRunState:
             critique_results=[loads(c) for c in record.get("critique_results", [])],
             final_synthesis=record.get("final_synthesis", ""),
             status=record.get("status", "running"),
+            deadline_at=record.get("deadline_at"),
+            draft=record.get("draft", ""),
+            draft_status=record.get("draft_status", DraftStatus.DRAFT.value),
+            final_verified=record.get("final_verified", False),
+            violations=list(record.get("violations", [])),
         )

@@ -7,11 +7,14 @@ XHIGH/EXTREME mean **more bounded useful work** — never longer prompts, higher
 temperature, more permissions, or hidden-reasoning storage.
 
 Phase 10.1 replaces the callback-only engine with a **real** Research Runtime
-integration: the `HighEffortEngine` drives the runtime's `search_corpus` /
-`create_claim` / `verify_claim` / `get_contradictions` / `run_analysis` /
-`invoke_inference` / `run_tool_loop` directly, consuming the global budget
-**automatically** around each call and checking wall-time **before** every
-operation. The profile's native reasoning intent flows
+integration. Phase 10.2 turns it into **enforcement**: the `HighEffortEngine`
+drives the runtime's `search_corpus` / `create_claim` / `verify_claim` /
+`get_contradictions` / `run_analysis` / `invoke_inference` / `run_tool_loop`
+directly, with **admission-before-execution** (budget + deadline), bounded
+child limits derived from the remaining global budget, an absolute persisted
+wall-clock deadline, checkpoint-after-every-stage, an honest trajectory state
+machine, and a real draft→critique→action→revision→final-verification loop.
+The profile's native reasoning intent flows
 `profile → InferencePolicy → Qwen reasoning translator → request`.
 
 ---
@@ -43,15 +46,19 @@ retrieval_candidates, verification_rounds, computation_rounds, trajectories,
 critique_rounds, synthesis_passes, wall_time, tokens
 ```
 
-- **Reserve → execute → commit**: the engine reserves, executes the real runtime
-  call, then commits — callers cannot bypass the budget because the engine is
-  the only path to the runtime during a run.
+- **Admission ≠ accounting**: the engine admits (reserves) a unit *before* the
+  child runs, passes a bounded child limit (`max_output_tokens`, retrieval
+  `limit`, tool-loop `max_tool_calls`) derived from the *remaining* budget, and
+  commits *actual* consumption after. Overruns are flagged as violations, never
+  silently clamped.
 - `consumed` is monotonic — a restart cannot reset it.
 - Global ceilings are authoritative; nested trajectories inherit remaining
   budget and can never exceed the top-level ceiling.
-- The full **logical run state** (budget + trajectories + stage progress +
-  evidence/verification/contradiction refs) is persisted and resumed, not just
-  the budget counters.
+- An **absolute wall-clock deadline** (`deadline_at`) is persisted; a restart
+  resumes with the remaining time, never a fresh window.
+- The full **logical run state** is checkpointed after every durable transition
+  (stage, trajectory, critique decision, draft version, reallocation) and
+  resumed — a completed stage is never re-run merely because of a restart.
 
 ## Scheduler
 
