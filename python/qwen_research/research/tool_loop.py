@@ -513,7 +513,15 @@ def _authorize_and_execute(
             error=ToolError(ToolErrorCode.PERMISSION_DENIED, "tool not permitted"),
         )
 
-    # 5. arguments validate against the tool schema
+    # 5. arguments validate against the tool schema (and were parseable)
+    if call.arguments_error is not None:
+        emit(ToolLoopEvent.TOOL_DENIED)
+        return ToolExecutionResult(
+            call_id=call.call_id,
+            tool_name=call.tool_name,
+            status=ToolExecutionStatus.INVALID_ARGUMENTS,
+            error=ToolError(ToolErrorCode.INVALID_ARGUMENTS, call.arguments_error),
+        )
     validation_error = _validate_arguments(tool.schema, call.arguments)
     if validation_error is not None:
         emit(ToolLoopEvent.TOOL_DENIED)

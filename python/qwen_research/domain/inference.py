@@ -111,11 +111,18 @@ class ThinkingMode(StrEnum):
 @serializable
 @dataclasses.dataclass(frozen=True)
 class ToolCall:
-    """A model-generated tool request (represented, never executed here)."""
+    """A model-generated tool request (represented, never executed here).
+
+    ``arguments_error`` is set when the provider returned malformed /
+    non-parsable tool arguments; it must be treated as a rejection signal
+    (never silently normalized to ``{}``) so the controlled loop can return
+    ``INVALID_ARGUMENTS`` instead of executing a broken call.
+    """
 
     call_id: str
     tool_name: str
     arguments: dict[str, Any] = dataclasses.field(default_factory=dict)
+    arguments_error: str | None = None
 
 
 @serializable

@@ -1,6 +1,6 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 9 — Controlled tool-calling loop, continuation, and hybrid boundary.
+> **Status:** Phase 9.1 — Tool-loop hardening (continuation semantics, malformed-argument rejection).
 > The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
@@ -567,6 +567,11 @@ See [`docs/architecture/inference.md`](docs/architecture/inference.md) and
 > repeated-call guards, and tool-result limits are all runtime-enforced. The
 > hybrid Studio/Gateway boundary contract (`research/hybrid.py`) is defined but
 > automatic escalation is not implemented.
+>
+> **Phase 9.1 (implemented).** The loop continues after tool execution and
+> emits `LOOP_LIMIT` only on an actual limit; malformed Qwen tool arguments are
+> flagged (`ToolCall.arguments_error`) and rejected as `INVALID_ARGUMENTS`
+> rather than silently normalized to `{}`.
 
 ---
 

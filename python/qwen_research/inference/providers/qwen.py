@@ -650,17 +650,25 @@ class QwenProvider:
             fn = entry.get("function") or {}
             name = fn.get("name") or ""
             args_raw = fn.get("arguments") or "{}"
+            args: dict[str, Any] = {}
+            arguments_error: str | None = None
             try:
-                args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
-            except json.JSONDecodeError:
-                args = {}
-            if not isinstance(args, dict):
-                args = {}
+                parsed = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+            except (json.JSONDecodeError, TypeError):
+                # Never silently convert a parse failure to {}: flag it so the
+                # controlled loop rejects the call as INVALID_ARGUMENTS.
+                arguments_error = "malformed tool arguments JSON"
+            else:
+                if isinstance(parsed, dict):
+                    args = parsed
+                else:
+                    arguments_error = "tool arguments must be a JSON object"
             calls.append(
                 ToolCall(
                     call_id=entry.get("id") or "",
                     tool_name=name,
                     arguments=args,
+                    arguments_error=arguments_error,
                 )
             )
         return calls

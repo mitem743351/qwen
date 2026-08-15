@@ -359,3 +359,44 @@ def test_availability_check_raises_distinct_error() -> None:
     )
     with pytest.raises(ModelPlanUnavailableError):
         provider.generate(_request())
+
+
+def test_malformed_tool_arguments_flagged_not_silently_empty() -> None:
+    provider, _ = make_provider(
+        lambda *_: completion_response(
+            "",
+            finish_reason="tool_calls",
+            tool_calls=[
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "search_corpus", "arguments": "{not valid json"},
+                }
+            ],
+        )
+    )
+    result = provider.generate(_request(tool_calling=True))
+    assert len(result.tool_calls_structured) == 1
+    call = result.tool_calls_structured[0]
+    # The parse failure is surfaced, never silently converted to {}.
+    assert call.arguments_error is not None
+    assert "malformed" in call.arguments_error
+
+
+def test_non_object_tool_arguments_flagged() -> None:
+    provider, _ = make_provider(
+        lambda *_: completion_response(
+            "",
+            finish_reason="tool_calls",
+            tool_calls=[
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "search_corpus", "arguments": "[1, 2, 3]"},
+                }
+            ],
+        )
+    )
+    result = provider.generate(_request(tool_calling=True))
+    call = result.tool_calls_structured[0]
+    assert call.arguments_error is not None

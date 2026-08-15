@@ -276,3 +276,57 @@ def test_model_cannot_choose_project_scope() -> None:
     )
     # The runtime injected the trusted project id, overriding the model's value.
     assert tool.calls[0]["project_id"] == "trusted-project"
+
+
+# -- Phase 9.1 regression tests -------------------------------------------
+
+def test_regression_tool_then_final_continues_loop() -> None:
+    """inference #1 → tool call → tool execution → inference #2 → final answer."""
+    tool = _search_tool()
+    call = ToolCall(call_id="call_1", tool_name="search_corpus", arguments={"query": "q"})
+    invoke, requests = _scripted_invoke(
+        [_result(tool_calls=(call,)), _result(content="final answer")]
+    )
+    outcome = run_tool_loop(_request(), invoke=invoke, tools=_registry(tool), profile=ANALYSIS)
+    # The loop continued after tool execution and produced a FINAL result.
+    assert outcome.status is LoopStatus.FINAL
+    assert outcome.final_result is not None
+    assert outcome.final_result.content == "final answer"
+    assert len(requests) == 2  # exactly two inference calls
+    assert tool.calls == [{"query": "q", "project_id": "default", "session_id": ""}]
+    assert outcome.accounting.tool_calls == 1
+
+
+def test_regression_malformed_tool_json_never_executes() -> None:
+    """A tool call whose arguments failed to parse must never execute."""
+    tool = _search_tool()
+    call = ToolCall(
+        call_id="call_1",
+        tool_name="search_corpus",
+        arguments={},
+        arguments_error="malformed tool arguments JSON",
+    )
+    invoke, _ = _scripted_invoke([_result(tool_calls=(call,)), _result(content="ok")])
+    outcome = run_tool_loop(_request(), invoke=invoke, tools=_registry(tool), profile=ANALYSIS)
+    assert outcome.tool_results[0].status is ToolExecutionStatus.INVALID_ARGUMENTS
+    assert outcome.tool_results[0].error is not None
+    assert outcome.tool_results[0].error.code is ToolErrorCode.INVALID_ARGUMENTS
+    assert tool.calls == []  # never executed
+
+
+def test_regression_model_receives_bounded_tool_result() -> None:
+    """The model receives bounded tool-result content, not the full output."""
+    tool = StubTool(
+        "search_corpus",
+        ToolPermission.READ,
+        output={"huge": "x" * 200_000},
+    )
+    call = ToolCall(call_id="call_1", tool_name="search_corpus", arguments={"query": "q"})
+    invoke, requests = _scripted_invoke(
+        [_result(tool_calls=(call,)), _result(content="ok")]
+    )
+    run_tool_loop(_request(), invoke=invoke, tools=_registry(tool), profile=ANALYSIS)
+    second = requests[1]
+    tool_message = next(m for m in second.messages if m.role is MessageRole.TOOL)
+    assert len(tool_message.content) < 5000
+    assert "x" * 200_000 not in tool_message.content

@@ -58,6 +58,10 @@ Every model-generated tool call must pass, in order:
 Only after all six does execution happen. Tool arguments are validated with the
 same JSON-Schema validator used for structured output — no second validator.
 
+Malformed Qwen tool arguments are **never silently normalized to `{}`**: the
+provider records `ToolCall.arguments_error`, and the loop returns
+`INVALID_ARGUMENTS` without executing (Phase 9.1).
+
 ---
 
 ## Trusted scope injection

@@ -361,6 +361,23 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
   parallel model trajectories; multi-agent inference; Qwen built-in web search;
   `reasoning_effort` execution; remote/distributed workers.
 
+## Phase 9.1 — Tool-loop hardening ✅ (complete)
+
+- **Objective:** fix loop-continuation semantics and malformed-argument
+  handling; lock in regression coverage.
+- **Dependencies:** Phase 9.
+- **Components:** the loop continues the `while` loop after appending tool
+  results and emits `LOOP_LIMIT` only on an actual limit; `ToolCall` gains
+  `arguments_error`; the Qwen provider flags malformed/non-object tool
+  arguments instead of converting parse failures to `{}`; the loop returns
+  `INVALID_ARGUMENTS` for flagged calls without executing.
+- **Acceptance criteria:** regression tests prove inference #1 → tool →
+  inference #2 → final; malformed tool JSON never executes; the model receives
+  bounded tool-result content.
+- **Not yet:** automatic escalation heuristics; XHIGH/EXTREME workflows;
+  parallel model trajectories; multi-agent inference; Qwen built-in web search;
+  `reasoning_effort` execution; remote/distributed workers.
+
 ## Phase 10 — Advanced XHigh / EXTREME workflows
 
 - **Objective:** high-effort profiles behave as designed.
