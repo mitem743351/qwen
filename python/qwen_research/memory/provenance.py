@@ -32,19 +32,21 @@ class ReferenceKind(StrEnum):
     SOURCE = "source"
     EVIDENCE = "evidence"
     CLAIM = "claim"
+    COMPUTATION = "computation"
 
 
 @dataclasses.dataclass(frozen=True)
 class ProvenanceValidator:
     """Validates research-memory references.
 
-    ``sources`` and ``evidence`` are corpus-global; ``claims`` maps a project id
-    to that project's known claim ids.
+    ``sources`` and ``evidence`` are corpus-global; ``claims`` and
+    ``computations`` map a project id to that project's known ids.
     """
 
     sources: frozenset[str] = frozenset()
     evidence: frozenset[str] = frozenset()
     claims: Mapping[str, frozenset[str]] = dataclasses.field(default_factory=dict)
+    computations: Mapping[str, frozenset[str]] = dataclasses.field(default_factory=dict)
 
     def resolve(self, project_id: str, kind: ReferenceKind, identifier: str) -> bool:
         if kind is ReferenceKind.SOURCE:
@@ -53,6 +55,8 @@ class ProvenanceValidator:
             return identifier in self.evidence
         if kind is ReferenceKind.CLAIM:
             return identifier in self.claims.get(project_id, frozenset())
+        if kind is ReferenceKind.COMPUTATION:
+            return identifier in self.computations.get(project_id, frozenset())
         return False
 
     def validate(
@@ -62,6 +66,7 @@ class ProvenanceValidator:
         source_refs: tuple[str, ...] = (),
         evidence_refs: tuple[str, ...] = (),
         claim_refs: tuple[str, ...] = (),
+        computation_refs: tuple[str, ...] = (),
     ) -> None:
         """Raise :class:`ProvenanceError` for the first unresolved reference."""
         for ref in source_refs:
@@ -73,20 +78,29 @@ class ProvenanceValidator:
         for ref in claim_refs:
             if not self.resolve(project_id, ReferenceKind.CLAIM, ref):
                 raise ProvenanceError(ReferenceKind.CLAIM.value, ref)
+        for ref in computation_refs:
+            if not self.resolve(project_id, ReferenceKind.COMPUTATION, ref):
+                raise ProvenanceError(ReferenceKind.COMPUTATION.value, ref)
 
 
 def validator_from_corpus(
     index: CorpusIndex,
     *,
     claims: Mapping[str, frozenset[str]] | None = None,
+    computations: Mapping[str, frozenset[str]] | None = None,
 ) -> ProvenanceValidator:
     """Build a validator from a corpus index.
 
     ``sources`` are the corpus document source ids; ``evidence`` are the corpus
     chunk ids (the evidence granularity in this system). ``claims`` (per
-    project) comes from a claim/research-memory store; there is no claim store
-    in Phase 4, so it defaults to empty.
+    project) comes from a claim/research-memory store; ``computations`` (per
+    project) comes from the computation store (Phase 6).
     """
     sources = frozenset(doc.source_id for doc in index.list_documents())
     evidence = frozenset(chunk.chunk_id for chunk in index.list_chunks())
-    return ProvenanceValidator(sources=sources, evidence=evidence, claims=claims or {})
+    return ProvenanceValidator(
+        sources=sources,
+        evidence=evidence,
+        claims=claims or {},
+        computations=computations or {},
+    )

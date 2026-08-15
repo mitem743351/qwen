@@ -21,6 +21,7 @@ from mcp.shared.exceptions import MCPError
 from qwen_research.claims.models import ClaimType
 from qwen_research.claims.relationships import ClaimEvidenceRelationship
 from qwen_research.common.ids import ClaimId, EvidenceId, SessionId, TaskId
+from qwen_research.computation.models import ComputationOperation
 from qwen_research.domain.errors import ConfigurationError, PermissionError
 from qwen_research.mcp.adapters import SchemaAdapter
 from qwen_research.mcp.config import MCPServerConfig
@@ -32,7 +33,11 @@ from qwen_research.mcp.schemas import (
     ClaimEvidenceRelationshipParam,
     ClaimIdParam,
     ClaimTypeParam,
+    ComputationIdParam,
+    ComputationOperationParam,
     ContentParam,
+    DatasetRefParam,
+    DatasetRefsParam,
     DescriptionParam,
     DocumentIdParam,
     DocumentTypesParam,
@@ -44,14 +49,18 @@ from qwen_research.mcp.schemas import (
     ModeParam,
     OptionalQueryParam,
     OptionalSessionIdParam,
+    ParametersParam,
     PathPrefixParam,
     ProjectIdParam,
+    PythonSourceParam,
     QueryParam,
+    QuerySqlParam,
     RationaleParam,
     ReasoningProfileParam,
     ReportIdParam,
     RetrievalModeParam,
     RootsParam,
+    SeedParam,
     SemanticKParam,
     SessionIdParam,
     StatusParam,
@@ -429,6 +438,67 @@ class MCPServerApp:
 
             return guarded_call(policy, "get_contradictions", run)
 
+        def describe_dataset(dataset: DatasetRefParam) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                profile = runtime.describe_dataset(adapter.dataset_reference(dataset))
+                return adapter.dataset_profile_result(profile)
+
+            return guarded_call(policy, "describe_dataset", run)
+
+        def run_query(
+            query: QuerySqlParam,
+            datasets: DatasetRefsParam = None,
+            parameters: ParametersParam = None,
+            project_id: ProjectIdParam = "default",
+        ) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                refs = tuple(adapter.dataset_reference(d) for d in (datasets or []))
+                result = runtime.run_query(project_id, refs, query, parameters or {})
+                return adapter.computation_result_result(result)
+
+            return guarded_call(policy, "run_query", run)
+
+        def run_analysis(
+            operation: ComputationOperationParam,
+            datasets: DatasetRefsParam = None,
+            parameters: ParametersParam = None,
+            project_id: ProjectIdParam = "default",
+            seed: SeedParam = None,
+        ) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                refs = tuple(adapter.dataset_reference(d) for d in (datasets or []))
+                result = runtime.run_analysis(
+                    project_id,
+                    refs,
+                    ComputationOperation(operation),
+                    parameters or {},
+                    seed=seed,
+                )
+                return adapter.computation_result_result(result)
+
+            return guarded_call(policy, "run_analysis", run)
+
+        def get_computation_result(
+            computation_id: ComputationIdParam,
+            project_id: ProjectIdParam = "default",
+        ) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                result = runtime.get_computation_result(project_id, computation_id)
+                return adapter.computation_result_result(result)
+
+            return guarded_call(policy, "get_computation_result", run)
+
+        def run_python(
+            source: PythonSourceParam,
+            project_id: ProjectIdParam = "default",
+            seed: SeedParam = None,
+        ) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                result = runtime.run_python(project_id, source, seed=seed)
+                return adapter.computation_result_result(result)
+
+            return guarded_call(policy, "run_python", run)
+
         handlers: dict[str, Callable[..., Any]] = {
             "get_session": get_session,
             "create_session": create_session,
@@ -448,6 +518,11 @@ class MCPServerApp:
             "verify_claim": verify_claim,
             "get_verification_report": get_verification_report,
             "get_contradictions": get_contradictions,
+            "describe_dataset": describe_dataset,
+            "run_query": run_query,
+            "run_analysis": run_analysis,
+            "get_computation_result": get_computation_result,
+            "run_python": run_python,
         }
 
         enabled = self._config.enabled_tools or DEFAULT_TOOLS

@@ -23,7 +23,9 @@ EXPECTED_TOOLS = [
     "continue_task",
     "create_claim",
     "create_session",
+    "describe_dataset",
     "execute_task",
+    "get_computation_result",
     "get_contradictions",
     "get_open_questions",
     "get_project_memory",
@@ -34,6 +36,9 @@ EXPECTED_TOOLS = [
     "get_task_state",
     "get_verification_report",
     "link_claim_evidence",
+    "run_analysis",
+    "run_python",
+    "run_query",
     "save_research_memory",
     "search_corpus",
     "verify_claim",
@@ -51,7 +56,7 @@ def test_diagnostics() -> None:
     assert d["server"] == "qwen-research"
     assert d["transport"] == "stdio"
     assert d["status"] == "initialized"
-    assert len(d["registered_tools"]) == 18
+    assert len(d["registered_tools"]) == 23
     assert d["runtime_status"] == "ok"
 
 

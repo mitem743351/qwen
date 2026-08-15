@@ -33,6 +33,7 @@ class ErrorCategory(StrEnum):
     PROVENANCE = "provenance"
     VERIFICATION = "verification"
     CLAIM = "claim"
+    COMPUTATION = "computation"
 
 
 class DomainError(Exception):
@@ -234,3 +235,45 @@ class VerificationReportNotFoundError(VerificationError):
 
 class VerificationConfigurationError(VerificationError):
     """The verification subsystem is misconfigured."""
+
+
+class ComputationError(DomainError):
+    """Base class for deterministic-computation errors."""
+
+    category = ErrorCategory.COMPUTATION
+
+
+class ComputationValidationError(ComputationError):
+    """A computation request is invalid (bad operation, parameters, or profile)."""
+
+
+class ComputationNotFoundError(ComputationError):
+    """A referenced computation does not exist (in the current project scope)."""
+
+
+class DatasetError(ComputationError):
+    """A dataset reference cannot be resolved or read."""
+
+
+class QueryValidationError(ComputationError):
+    """A SQL query or structured query is unsafe or invalid."""
+
+
+class ExecutionTimeoutError(ComputationError):
+    """A computation exceeded its time limit."""
+
+
+class ResourceLimitError(ComputationError):
+    """A computation exceeded a resource limit (output/rows/memory/input)."""
+
+
+class SandboxError(ComputationError):
+    """A Python sandbox violation or escape attempt was detected."""
+
+
+class ArtifactError(ComputationError):
+    """A computation artifact could not be written or read."""
+
+
+class ComputationConfigurationError(ComputationError):
+    """The computation subsystem is misconfigured."""

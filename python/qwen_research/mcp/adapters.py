@@ -18,6 +18,7 @@ from typing import Any
 
 from qwen_research.claims.models import Claim
 from qwen_research.claims.relationships import ClaimEvidenceLink
+from qwen_research.computation.models import ComputationResult, DatasetProfile, DatasetReference
 from qwen_research.contradictions.models import Contradiction
 from qwen_research.domain.errors import ValidationError
 from qwen_research.domain.modes import OperatingMode
@@ -272,6 +273,61 @@ class SchemaAdapter:
             ]
         }
 
+    # -- Phase 6 computation projections ----------------------------------
+
+    def dataset_reference(self, value: dict[str, Any]) -> DatasetReference:
+        """Convert an MCP dataset-reference dict into a domain object."""
+        if not isinstance(value, dict):
+            raise ValidationError("dataset reference must be an object")
+        return DatasetReference(
+            root_id=_opt_str(value, "root_id"),
+            relative_path=_opt_str(value, "relative_path"),
+            document_id=_opt_str(value, "document_id"),
+            dataset_id=_opt_str(value, "dataset_id"),
+            artifact_id=_opt_str(value, "artifact_id"),
+            format=_opt_str(value, "format"),
+        )
+
+    def dataset_profile_result(self, profile: DatasetProfile) -> dict[str, Any]:
+        return {
+            "dataset_id": profile.dataset_id,
+            "row_count": profile.row_count,
+            "column_count": profile.column_count,
+            "columns": [
+                {
+                    "name": c.name,
+                    "data_type": c.data_type,
+                    "null_count": c.null_count,
+                    "distinct_count": c.distinct_count,
+                    "min": c.min_value,
+                    "max": c.max_value,
+                }
+                for c in profile.columns
+            ],
+            "size_bytes": profile.size_bytes,
+            "content_hash": profile.content_hash,
+            "missing_value_count": profile.missing_value_count,
+            "duplicate_row_count": profile.duplicate_row_count,
+        }
+
+    def computation_result_result(self, result: ComputationResult) -> dict[str, Any]:
+        return {
+            "computation_id": result.computation_id,
+            "project_id": result.project_id,
+            "status": result.status.value,
+            "operation": result.operation.value,
+            "result_type": result.result_type.value,
+            "value": result.value,
+            "rows": result.rows,
+            "metrics": dict(result.metrics),
+            "artifact_refs": list(result.artifact_refs),
+            "provenance": dict(result.provenance),
+            "runtime_metadata": dict(result.runtime_metadata),
+            "started_at": result.started_at.isoformat() if result.started_at else None,
+            "completed_at": result.completed_at.isoformat() if result.completed_at else None,
+            "error": result.error,
+        }
+
 
 class MCPToolAdapter:
     """Adapts a neutral internal :class:`Tool` into an MCP-exposable descriptor.
@@ -299,3 +355,12 @@ class MCPToolAdapter:
     @property
     def permission(self) -> str:
         return self._tool.permission.value
+
+
+def _opt_str(value: dict[str, Any], key: str) -> str | None:
+    v = value.get(key)
+    if v is None:
+        return None
+    if not isinstance(v, str):
+        raise ValidationError(f"dataset reference key {key!r} must be a string")
+    return v

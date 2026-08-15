@@ -14,7 +14,7 @@ metadata the SDK exposes on the wire via ``add_tool(description=...)``.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field
 
@@ -92,6 +92,39 @@ ClaimEvidenceRelationshipParam = Annotated[
 ]
 RationaleParam = Annotated[str | None, Field(description="Optional rationale text.")]
 
+# Phase 6 deterministic-computation params.
+ComputationOperationName = Literal[
+    "calculate", "aggregate", "filter", "join", "describe", "summarize",
+    "group", "count", "statistics", "correlation", "regression", "transform",
+    "simulate", "custom_python", "custom_sql",
+]
+ComputationOperationParam = Annotated[
+    ComputationOperationName, Field(description="The computation operation.")
+]
+DatasetRefParam = Annotated[
+    dict[str, Any],
+    Field(
+        description=(
+            "A dataset reference with optional keys root_id, relative_path, "
+            "document_id, dataset_id, artifact_id, format."
+        )
+    ),
+]
+DatasetRefsParam = Annotated[
+    list[dict[str, Any]] | None, Field(description="A list of dataset references.")
+]
+ComputationIdParam = Annotated[str, Field(description="The computation identifier.")]
+QuerySqlParam = Annotated[str, Field(description="A single validated SQL query.")]
+ParametersParam = Annotated[
+    dict[str, Any] | None, Field(description="Optional operation parameters.")
+]
+PythonSourceParam = Annotated[
+    str, Field(description="Python source code to execute in the sandbox.")
+]
+SeedParam = Annotated[
+    int | None, Field(description="Optional seed for deterministic operations.")
+]
+
 TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_session": "Return a session by its session id.",
     "create_session": (
@@ -122,6 +155,11 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "verify_claim": "Run the deterministic verification pipeline for a project-scoped claim.",
     "get_verification_report": "Return a persisted verification report (project-scoped) by id.",
     "get_contradictions": "Return contradictions (candidates/confirmed) for a project.",
+    "describe_dataset": "Profile a dataset (schema, statistics, preview).",
+    "run_query": "Run a validated SQL query against approved datasets and return a result.",
+    "run_analysis": "Run a structured analysis operation (statistics, group, aggregate, …).",
+    "get_computation_result": "Return a persisted computation result by id.",
+    "run_python": "Execute restricted Python in a sandboxed subprocess (EXECUTE).",
 }
 
 #: The Phase 2 minimal tool set, in registration order.
@@ -144,4 +182,9 @@ DEFAULT_TOOLS: tuple[str, ...] = (
     "verify_claim",
     "get_verification_report",
     "get_contradictions",
+    "describe_dataset",
+    "run_query",
+    "run_analysis",
+    "get_computation_result",
+    "run_python",
 )

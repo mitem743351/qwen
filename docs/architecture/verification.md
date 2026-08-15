@@ -185,5 +185,15 @@ TIER_5 unverified / low-provenance (default)
 A tier reflects source **characteristics**, not correctness. Source quality is
 independent of retrieval relevance and is cached per source id in the store.
 
+## Computation provenance & freshness (Phase 6)
+
+A `ComputationResult` can become an `EvidenceRecord` (provenance: dataset,
+query/code, parameters, execution, artifact). Verification can detect missing
+computation provenance, a failed computation, a stale input dataset, a
+mismatched query/code hash, or a missing artifact. A successful computation
+only establishes "given these inputs and this operation, the result was X" — it
+never auto-marks a claim as supported. Automatic numerical correctness proving
+is **not** in Phase 6. See [`computation-provenance.md`](computation-provenance.md).
+
 See [`evidence-integrity.md`](evidence-integrity.md),
 [`claims.md`](claims.md), and [`contradictions.md`](contradictions.md).

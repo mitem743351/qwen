@@ -82,6 +82,21 @@ verification service, these operations raise `UnsupportedOperationError`.
 `ContextBudget.max_verification_summaries`) so the assembled context reflects
 how prior claims were verified without embedding full issue lists.
 
+### Computation (Phase 6)
+
+`describe_dataset`, `run_query`, `run_analysis`, `run_python`,
+`get_computation_result`, and `get_project_computation_summaries` delegate to a
+configured `ComputationService` (over a `ComputationStore` + `DatasetResolver` +
+execution backends). The runtime performs validation, input resolution through
+the corpus security layer, dispatch, provenance, and artifact registration —
+it does **not** execute computations itself. `run_python` is `EXECUTE`-gated.
+Without a computation service, these operations raise
+`UnsupportedOperationError`.
+
+`build_research_context` adds **bounded computation summaries**
+(`get_computation_summaries`, capped by
+`ContextBudget.max_computation_summaries`).
+
 ### Reserved lifecycle operations
 
 `pause_task`, `resume_task`, `wait_for_input`, `provide_input`, and

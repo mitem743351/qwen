@@ -22,6 +22,7 @@ VerificationId = NewType("VerificationId", str)
 VerificationReportId = NewType("VerificationReportId", str)
 ContradictionId = NewType("ContradictionId", str)
 EvidenceAssessmentId = NewType("EvidenceAssessmentId", str)
+ComputationId = NewType("ComputationId", str)
 
 
 def new_id(prefix: str) -> str:

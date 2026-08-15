@@ -77,6 +77,16 @@ at repository/query boundaries — never by prompts.
 
 ---
 
+## Computation integration (Phase 6)
+
+`ResearchMemory` carries `computation_refs` and `dataset_refs` alongside the
+existing `source_refs`/`evidence_refs`/`claim_refs`. Research-derived memory
+(`origin=RESEARCH`) validates `computation_refs` **project-scoped** against the
+computation store before the write commits — a memory claim cannot reference an
+unpersisted computation. Computation-derived memory must record
+`computation_id`, `artifact_refs`, `dataset_refs`, and `claim_refs` (where
+applicable).
+
 ## Verification integration (Phase 5)
 
 Phase 5 adds a separate **claims/verification store** (see
@@ -92,9 +102,10 @@ TRUE`.
 ## Context assembly
 
 `build_context()` combines a request with bounded evidence + memory + open
-questions into a `ResearchContext` (conservative limits via `ContextBudget`).
-All memory/retrieval content is untrusted data; it never carries control-plane
-meaning.
+questions + verification summaries + computation summaries into a
+`ResearchContext` (conservative limits via `ContextBudget`). All
+memory/retrieval/computation content is untrusted data; it never carries
+control-plane meaning.
 
 ---
 

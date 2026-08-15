@@ -63,18 +63,20 @@ _SCHEMA_DDL: tuple[str, ...] = (
     """,
     """
     CREATE TABLE IF NOT EXISTS research_memory (
-        memory_id       TEXT PRIMARY KEY,
-        project_id      TEXT NOT NULL,
-        content         TEXT NOT NULL,
-        source_refs     TEXT NOT NULL,
-        evidence_refs   TEXT NOT NULL,
-        claim_refs      TEXT NOT NULL,
-        status          TEXT NOT NULL,
-        provenance_json TEXT NOT NULL,
-        origin          TEXT NOT NULL,
-        created_at      TEXT NOT NULL,
-        updated_at      TEXT NOT NULL,
-        version         INTEGER NOT NULL
+        memory_id         TEXT PRIMARY KEY,
+        project_id        TEXT NOT NULL,
+        content           TEXT NOT NULL,
+        source_refs       TEXT NOT NULL,
+        evidence_refs     TEXT NOT NULL,
+        claim_refs        TEXT NOT NULL,
+        computation_refs  TEXT NOT NULL,
+        dataset_refs      TEXT NOT NULL,
+        status            TEXT NOT NULL,
+        provenance_json   TEXT NOT NULL,
+        origin            TEXT NOT NULL,
+        created_at        TEXT NOT NULL,
+        updated_at        TEXT NOT NULL,
+        version           INTEGER NOT NULL
     )
     """,
     """
@@ -256,12 +258,14 @@ class SqliteMemoryStore:
             db.execute(
                 "INSERT OR REPLACE INTO research_memory "
                 "(memory_id, project_id, content, source_refs, evidence_refs, claim_refs, "
-                " status, provenance_json, origin, created_at, updated_at, version) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " computation_refs, dataset_refs, status, provenance_json, origin, "
+                " created_at, updated_at, version) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     memory.memory_id, memory.project_id, memory.content,
                     json.dumps(memory.source_refs), json.dumps(memory.evidence_refs),
-                    json.dumps(memory.claim_refs), memory.status,
+                    json.dumps(memory.claim_refs), json.dumps(memory.computation_refs),
+                    json.dumps(memory.dataset_refs), memory.status,
                     json.dumps(memory.provenance, sort_keys=True), memory.origin.value,
                     memory.created_at.isoformat(), memory.updated_at.isoformat(),
                     memory.version,
@@ -279,6 +283,8 @@ class SqliteMemoryStore:
                 source_refs=tuple(json.loads(r["source_refs"])),
                 evidence_refs=tuple(json.loads(r["evidence_refs"])),
                 claim_refs=tuple(json.loads(r["claim_refs"])),
+                computation_refs=tuple(json.loads(r["computation_refs"])),
+                dataset_refs=tuple(json.loads(r["dataset_refs"])),
                 status=r["status"], provenance=json.loads(r["provenance_json"]),
                 origin=MemoryOrigin(r["origin"]),
                 created_at=_parse(r["created_at"]), updated_at=_parse(r["updated_at"]),

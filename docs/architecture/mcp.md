@@ -9,7 +9,9 @@ It is deliberately narrow, semantic, and permission-gated.
 > (`search_corpus`, `get_source`); Phase 4 adds hybrid search and the memory
 > tools; Phase 5 adds the evidence-integrity tools (`create_claim`,
 > `link_claim_evidence`, `assess_evidence`, `verify_claim`,
-> `get_verification_report`, `get_contradictions`). See
+> `get_verification_report`, `get_contradictions`); Phase 6 adds the
+> computation tools (`describe_dataset`, `run_query`, `run_analysis`,
+> `get_computation_result`, `run_python`). See
 > [`mcp-implementation.md`](mcp-implementation.md) for what exists vs. future
 > capability.
 
@@ -65,11 +67,15 @@ assess_evidence         # assess evidence against a claim                 ✅ (P
 verify_claim            # run deterministic verification → report         ✅ (Phase 5, ANALYZE)
 get_verification_report # read a persisted verification report            ✅ (Phase 5, READ)
 get_contradictions      # list project contradictions                     ✅ (Phase 5, READ)
+describe_dataset        # profile a dataset (schema/statistics/preview)   ✅ (Phase 6, READ)
+run_query               # validated, parameterized SQL over datasets      ✅ (Phase 6, ANALYZE)
+run_analysis            # structured analysis (statistics/group/…/simulate) ✅ (Phase 6, ANALYZE)
+get_computation_result  # read a persisted computation result by id       ✅ (Phase 6, READ)
+run_python              # sandboxed Python (disabled by default)          ✅ (Phase 6, EXECUTE)
 retrieve_evidence       # fetch evidence for a claim/question with citations (future)
 read_source             # read a specific source (permission-gated)      (future)
 get_research_state      # session/project research state summary          ✅ (Phase 2)
-query_database          # run read-only analytical SQL against DuckDB     (future)
-run_analysis            # run a bounded deterministic analysis (Python/DuckDB) (future)
+query_database          # run read-only analytical SQL against DuckDB     (future — superseded by run_query)
 find_contradictions     # detect contradictions across the corpus         (future)
 save_artifact           # persist a generated artifact with provenance    (future)
 get_project_context     # retrieve project-scoped memory and context      (future)
@@ -117,10 +123,10 @@ Permissions are **classes**, independently controllable per tool and per
 session:
 
 ```text
-read        — observe (search, get_source, get_*_memory, get_open_questions, get_verification_report, get_contradictions)
-analyze     — compute/derive without side effects (create_session, execute_task, query_database, run_analysis, verify_claim, assess_evidence)
+read        — observe (search, get_source, get_*_memory, get_open_questions, get_verification_report, get_contradictions, describe_dataset, get_computation_result)
+analyze     — compute/derive without side effects (create_session, execute_task, run_query, run_analysis, verify_claim, assess_evidence)
 write       — create new data (save_research_memory, save_artifact, create_claim, link_claim_evidence)
-execute     — run code/processes (run_analysis execution, git commands)
+execute     — run code/processes (run_python)
 destructive — delete/overwrite/mutate existing data
 ```
 

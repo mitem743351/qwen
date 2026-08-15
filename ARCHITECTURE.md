@@ -1,12 +1,13 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 5 — Evidence Integrity, Source Quality, Claim Verification, and Contradiction Analysis.
+> **Status:** Phase 6 — Deterministic Computation, Data Analysis, and Sandboxed Execution Foundation.
 > The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
 > persistent structured memory; Phase 5 adds the deterministic evidence-integrity
-> and verification foundation (claims, evidence, source quality, corroboration,
-> contradictions), still with no Qwen-API inference.
+> and verification foundation; Phase 6 adds the deterministic computation layer
+> (DuckDB analytics + a controlled Python sandbox), still with no Qwen-API
+> inference.
 > **Audience:** Implementers, code agents, reviewers
 > **Scope:** This document is the stable, binding architecture contract for the
 > "local AI research infrastructure" that extends **Qwen Studio** through MCP.
@@ -405,6 +406,16 @@ Probabilistic/model reasoning is separated from deterministic computation.
 The model **requests** computations and **interprets** outputs; it never
 manually performs large numerical operations.
 
+> **Phase 6 foundation (implemented).** The deterministic baseline is live:
+> `ComputationRequest`/`ComputationResult` domain objects, a `ComputationEngine`
+> with an execution registry, a DuckDB backend behind an `AnalyticsEngine`
+> boundary (external access disabled, SQL validated and parameterized), a
+> controlled Python subprocess sandbox, seeded simulation, bounded execution
+> profiles, structured results with full provenance (query/code hashes, dataset
+> freshness), artifact storage, and MCP tools (`describe_dataset`, `run_query`,
+> `run_analysis`, `get_computation_result`, `run_python`). See
+> [`docs/architecture/computation.md`](docs/architecture/computation.md).
+
 ---
 
 ## 14. MCP
@@ -600,6 +611,10 @@ Rust library.
 | [claims](docs/architecture/claims.md) | Claim model, status lifecycle, claim–evidence links |
 | [verification](docs/architecture/verification.md) | Verification engine, rules, statuses, coverage |
 | [contradictions](docs/architecture/contradictions.md) | Contradiction types, statuses, deterministic detection |
+| [computation](docs/architecture/computation.md) | Deterministic computation layer (Phase 6) |
+| [duckdb](docs/architecture/duckdb.md) | DuckDB analytics engine and SQL safety |
+| [python-sandbox](docs/architecture/python-sandbox.md) | Controlled Python subprocess sandbox |
+| [computation-provenance](docs/architecture/computation-provenance.md) | Provenance, freshness, results-as-evidence |
 | [inference](docs/architecture/inference.md) | Provider abstraction, policy translation, capability negotiation |
 | [security](docs/architecture/security.md) | Threat model, boundaries, sandboxing |
 | [architecture-review](docs/architecture/architecture-review.md) | Risks, failure modes, Rust-value analysis |

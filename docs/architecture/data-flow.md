@@ -99,6 +99,28 @@ Every write is transactional; an unresolved claim/evidence reference raises a
 typed error and persists nothing. `UNREVIEWED` claims are never silently
 promoted.
 
+## 2.2 Computation Path (Phase 6)
+
+```text
+describe_dataset / run_query / run_analysis / run_python
+    ↓
+Research Runtime (validation, input resolution via corpus security, dispatch)
+    ↓
+ComputationEngine
+    ├── DuckDBBackend (external access disabled, SQL validated + parameterized)
+    └── PythonExecutor (subprocess sandbox, restricted builtins, time/output limits)
+    ↓
+ComputationResult (values / statistics / artifacts / provenance)
+    ├── artifact store (workspace root, path-containment enforced)
+    └── computation store (SQLite metadata; query/code hash + dataset freshness)
+    ↓
+Verification / ResearchContext (bounded summaries) → Qwen
+```
+
+A computation result is never a claim and never verified truth; a successful
+computation only establishes "given these inputs and this operation, the result
+was X".
+
 ---
 
 ## 3. Ingest Path (corpus material) — implemented in Phase 3

@@ -66,4 +66,9 @@ DEFAULT_TOOL_PERMISSIONS: dict[str, MCPPermission] = {
     "verify_claim": MCPPermission.ANALYZE,
     "get_verification_report": MCPPermission.READ,
     "get_contradictions": MCPPermission.READ,
+    "describe_dataset": MCPPermission.READ,
+    "get_computation_result": MCPPermission.READ,
+    "run_query": MCPPermission.ANALYZE,
+    "run_analysis": MCPPermission.ANALYZE,
+    "run_python": MCPPermission.EXECUTE,
 }

@@ -15,6 +15,14 @@ from qwen_research.claims.models import Claim, ClaimType, QuantitativeClaim, Sco
 from qwen_research.claims.relationships import ClaimEvidenceLink, ClaimEvidenceRelationship
 from qwen_research.common.ids import ArtifactId, ClaimId, EvidenceId, SessionId, TaskId, WorkflowId
 from qwen_research.common.serialization import serializable
+from qwen_research.computation.models import (
+    ComputationOperation,
+    ComputationResult,
+    ComputationSummary,
+    DatasetProfile,
+    DatasetReference,
+    ExecutionProfile,
+)
 from qwen_research.contradictions.models import Contradiction
 from qwen_research.domain.artifact import Artifact
 from qwen_research.domain.modes import OperatingMode
@@ -113,6 +121,8 @@ class ResearchRuntime(Protocol):
         source_refs: tuple[str, ...] = (),
         evidence_refs: tuple[str, ...] = (),
         claim_refs: tuple[str, ...] = (),
+        computation_refs: tuple[str, ...] = (),
+        dataset_refs: tuple[str, ...] = (),
         status: str = "proposed",
         provenance: dict[str, str] | None = None,
     ) -> ResearchMemory: ...
@@ -154,6 +164,44 @@ class ResearchRuntime(Protocol):
     ) -> list[VerificationSummary]: ...
 
     def get_contradictions(self, project_id: str) -> list[Contradiction]: ...
+
+    def describe_dataset(self, reference: DatasetReference) -> DatasetProfile: ...
+
+    def run_query(
+        self,
+        project_id: str,
+        dataset_refs: tuple[DatasetReference, ...],
+        query: str,
+        parameters: dict[str, object] | None = None,
+        *,
+        profile: ExecutionProfile = ExecutionProfile.ANALYTICAL,
+    ) -> ComputationResult: ...
+
+    def run_analysis(
+        self,
+        project_id: str,
+        dataset_refs: tuple[DatasetReference, ...],
+        operation: ComputationOperation,
+        parameters: dict[str, object] | None = None,
+        *,
+        profile: ExecutionProfile = ExecutionProfile.ANALYTICAL,
+        seed: int | None = None,
+    ) -> ComputationResult: ...
+
+    def run_python(
+        self,
+        project_id: str,
+        source: str,
+        *,
+        profile: ExecutionProfile = ExecutionProfile.NUMERICAL,
+        seed: int | None = None,
+    ) -> ComputationResult: ...
+
+    def get_computation_result(self, project_id: str, computation_id: str) -> ComputationResult: ...
+
+    def get_project_computation_summaries(
+        self, project_id: str
+    ) -> list[ComputationSummary]: ...
 
     def run_workflow(self, workflow_id: WorkflowId, task_id: TaskId) -> WorkflowResult: ...
 

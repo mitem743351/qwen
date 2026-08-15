@@ -16,6 +16,8 @@ import dataclasses
 from qwen_research.domain.errors import (
     CapabilityError,
     ClaimNotFoundError,
+    ComputationError,
+    ComputationNotFoundError,
     ConfigurationError,
     ContradictionNotFoundError,
     DocumentNotFoundError,
@@ -68,6 +70,7 @@ def map_error(exc: Exception) -> MCPErrorInfo:
             EvidenceNotFoundError,
             ContradictionNotFoundError,
             VerificationReportNotFoundError,
+            ComputationNotFoundError,
         ),
     ):
         return MCPErrorInfo(INVALID_PARAMS, f"not found: {exc.message}", exc.category.value)
@@ -81,6 +84,10 @@ def map_error(exc: Exception) -> MCPErrorInfo:
     if isinstance(exc, ProvenanceError):
         # Identify the invalid reference category/id; no unrelated private info.
         return MCPErrorInfo(INVALID_PARAMS, f"invalid reference: {exc.message}", exc.category.value)
+    if isinstance(exc, ComputationError):
+        # Computation failures (validation, query, dataset, sandbox) are
+        # client-correctable → INVALID_PARAMS with a safe message.
+        return MCPErrorInfo(INVALID_PARAMS, exc.message, exc.category.value)
     if isinstance(exc, RetrievalBackendUnavailable):
         return MCPErrorInfo(
             INTERNAL_ERROR, f"retrieval unavailable: {exc.message}", exc.category.value

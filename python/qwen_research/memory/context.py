@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Any
 
+from qwen_research.computation.models import ComputationSummary
 from qwen_research.memory.models import ResearchQuestion
 from qwen_research.memory.retriever import MemoryHit
 from qwen_research.retrieval.models import RetrievedChunk
@@ -27,6 +28,7 @@ class ResearchContext:
     open_questions: tuple[ResearchQuestion, ...]
     current_state: Any | None = None
     verification: tuple[VerificationSummary, ...] = ()
+    computations: tuple[ComputationSummary, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -37,6 +39,7 @@ class ContextBudget:
     max_memory_items: int = 10
     max_open_questions: int = 5
     max_verification_summaries: int = 5
+    max_computation_summaries: int = 5
 
 
 def build_context(
@@ -46,6 +49,7 @@ def build_context(
     memories: list[MemoryHit] | None = None,
     open_questions: list[ResearchQuestion] | None = None,
     verification: list[VerificationSummary] | None = None,
+    computations: list[ComputationSummary] | None = None,
     current_state: Any | None = None,
     budget: ContextBudget | None = None,
 ) -> ResearchContext:
@@ -57,5 +61,6 @@ def build_context(
         memories=tuple((memories or [])[: budget.max_memory_items]),
         open_questions=tuple((open_questions or [])[: budget.max_open_questions]),
         verification=tuple((verification or [])[: budget.max_verification_summaries]),
+        computations=tuple((computations or [])[: budget.max_computation_summaries]),
         current_state=current_state,
     )

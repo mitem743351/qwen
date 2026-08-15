@@ -64,6 +64,8 @@ class MemoryService:
         source_refs: tuple[str, ...] = (),
         evidence_refs: tuple[str, ...] = (),
         claim_refs: tuple[str, ...] = (),
+        computation_refs: tuple[str, ...] = (),
+        dataset_refs: tuple[str, ...] = (),
         status: str = "proposed",
         origin: MemoryOrigin = MemoryOrigin.RESEARCH,
         provenance: dict[str, str] | None = None,
@@ -72,8 +74,9 @@ class MemoryService:
 
         Research-derived references are validated (project-scoped) before the
         write; an invalid reference raises :class:`ProvenanceError` and nothing
-        is persisted (atomic). User-originated metadata (``origin=USER``) is not
-        subject to research provenance validation.
+        is persisted (atomic). ``computation_refs`` must resolve to a persisted
+        computation in the same project. User-originated metadata
+        (``origin=USER``) is not subject to research provenance validation.
         """
         if origin is MemoryOrigin.RESEARCH and self._validator is not None:
             self._validator.validate(
@@ -81,6 +84,7 @@ class MemoryService:
                 source_refs=source_refs,
                 evidence_refs=evidence_refs,
                 claim_refs=claim_refs,
+                computation_refs=computation_refs,
             )
         memory = ResearchMemory.create(
             project_id,
@@ -88,6 +92,8 @@ class MemoryService:
             source_refs=source_refs,
             evidence_refs=evidence_refs,
             claim_refs=claim_refs,
+            computation_refs=computation_refs,
+            dataset_refs=dataset_refs,
             status=status,
             origin=origin,
             provenance=provenance,

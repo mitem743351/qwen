@@ -13,6 +13,11 @@ Optional environment configuration:
   ``get_*_memory`` / ``save_research_memory`` tools.
 - ``QWEN_RESEARCH_VERIFICATION_DB`` — enable the evidence-integrity layer
   (claims, evidence links, assessments, verification reports, contradictions).
+- ``QWEN_RESEARCH_COMPUTATION_DB`` — enable the deterministic computation layer
+  (DuckDB analytics + sandboxed Python), exposing ``describe_dataset`` /
+  ``run_query`` / ``run_analysis`` / ``get_computation_result`` / ``run_python``.
+- ``QWEN_RESEARCH_WORKSPACE_ROOT`` — output root for computation artifacts
+  (default ``workspaces/computation``).
 
 Local-only: no network socket is opened.
 """
@@ -38,7 +43,10 @@ def build_runtime() -> ResearchRuntime:
     vector_db = os.environ.get("QWEN_RESEARCH_VECTOR_DB")
     memory_db = os.environ.get("QWEN_RESEARCH_MEMORY_DB")
     verification_db = os.environ.get("QWEN_RESEARCH_VERIFICATION_DB")
+    computation_db = os.environ.get("QWEN_RESEARCH_COMPUTATION_DB")
+    workspace_root = os.environ.get("QWEN_RESEARCH_WORKSPACE_ROOT", "workspaces/computation")
 
+    config = None
     index = None
     if corpus_db and corpus_root:
         from qwen_research.corpus.config import CorpusConfig, CorpusRoot
@@ -91,7 +99,41 @@ def build_runtime() -> ResearchRuntime:
         vstore.initialize()
         verification = EvidenceIntegrityService(vstore, corpus_index=index)
 
-    return InMemoryResearchRuntime(retriever=retriever, memory=memory, verification=verification)
+    computation = None
+    if computation_db and config is not None:
+        from qwen_research.computation.artifacts import ArtifactStore
+        from qwen_research.computation.datasets import DatasetResolver
+        from qwen_research.computation.service import ComputationService
+        from qwen_research.computation.store import ComputationStore
+
+        cstore = ComputationStore(computation_db)
+        cstore.initialize()
+        resolver = DatasetResolver(config, index=index, artifacts_root=workspace_root)
+        artifacts = ArtifactStore(workspace_root)
+        computation = ComputationService(cstore, resolver, artifacts=artifacts)
+
+    # Rebuild the memory validator with computation ids so research memory can
+    # reference persisted computations (project-scoped).
+    if memory_db and computation is not None and index is not None:
+        from qwen_research.memory.provenance import ProvenanceValidator, validator_from_corpus
+        from qwen_research.memory.service import MemoryService
+        from qwen_research.memory.sqlite import SqliteMemoryStore
+
+        store = SqliteMemoryStore(memory_db)
+        store.initialize()
+        base = validator_from_corpus(index)
+        computations = computation.computation_ids_by_project()
+        validator = ProvenanceValidator(
+            sources=base.sources,
+            evidence=base.evidence,
+            claims=base.claims,
+            computations=computations,
+        )
+        memory = MemoryService(store, validator=validator)
+
+    return InMemoryResearchRuntime(
+        retriever=retriever, memory=memory, verification=verification, computation=computation
+    )
 
 
 def main() -> None:

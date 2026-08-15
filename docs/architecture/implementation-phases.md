@@ -177,6 +177,23 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
 > cross-document consistency at scale, and deep-workflow auto-verification
 > loops (the model-assisted layer sits behind `VerificationAssistant`).
 
+## Phase 6 — Deterministic computation & sandboxed analysis ✅ (complete)
+
+- **Objective:** bounded, provenance-bearing computation (DuckDB + sandboxed Python).
+- **Dependencies:** Phase 3 (corpus security), Phase 4 (memory), Phase 5 (verification).
+- **Components:** `computation/` (domain model, `ComputationEngine`, execution
+  registry, `DuckDBBackend` behind `AnalyticsEngine`, `PythonExecutor` subprocess
+  sandbox, seeded simulation, pure-stdlib statistics, artifact store, SQLite
+  metadata store); Research Runtime methods; MCP tools (`describe_dataset`,
+  `run_query`, `run_analysis`, `get_computation_result`, `run_python`);
+  typed computation errors; memory `computation_refs`/`dataset_refs`.
+- **Acceptance criteria:** structured results with provenance (query/code
+  hashes, dataset freshness); execution profiles + resource limits; SQL cannot
+  escape approved datasets; Python cannot access files/network/processes; large
+  results become artifacts; restart persistence; security escape tests pass.
+- **Not yet:** Rust/GPU/remote backends; automatic numerical correctness
+  proving; hardened (seccomp/container) Python isolation.
+
 ## Phase 7 — Computation/tools
 
 - **Objective:** deterministic computation + internal tool registry.
@@ -186,6 +203,11 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
 - **Acceptance criteria:** model requests/interprets computations; no secret or
   allowlist escape; tools callable from CLI/API, not only MCP.
 - **Not yet:** remote compute; GPU workflows.
+
+> **Partial delivery (Phase 6).** The deterministic computation baseline
+> (DuckDB analytics, controlled Python sandbox, provenance, MCP tools) is
+> delivered in the actual Phase 6. Remaining here: the full Internal Tool
+> Registry-driven `run_analysis` dispatch, and hardened OS-level isolation.
 
 ## Phase 8 — Inference Runtime
 

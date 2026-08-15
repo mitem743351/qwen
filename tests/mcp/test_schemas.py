@@ -39,6 +39,11 @@ def test_default_tool_set() -> None:
         "verify_claim",
         "get_verification_report",
         "get_contradictions",
+        "describe_dataset",
+        "run_query",
+        "run_analysis",
+        "get_computation_result",
+        "run_python",
     )
 
 

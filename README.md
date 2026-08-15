@@ -7,13 +7,14 @@ persistent research memory, verification/citation/provenance, and deterministic
 computation — while Qwen Studio keeps its native conversational and web-search
 capabilities.
 
-> **Current status: Phase 5 — Evidence Integrity, Source Quality, Claim Verification, and Contradiction Analysis.**
+> **Current status: Phase 6 — Deterministic Computation, Data Analysis, and Sandboxed Execution Foundation.**
 > The architecture (Phases 0, 0.5, 0.75) is the approved baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
 > persistent structured memory; Phase 5 adds the deterministic evidence-integrity
-> and verification foundation. Still **no** Qwen API, gateway inference, LLM
-> verification, or dashboard.
+> and verification foundation; Phase 6 adds the deterministic computation layer
+> (DuckDB analytics + sandboxed Python). Still **no** Qwen API, gateway
+> inference, LLM verification, or dashboard.
 
 ## What this is
 
@@ -98,6 +99,14 @@ Phase 5 (evidence integrity + verification):
 - [`docs/architecture/contradictions.md`](docs/architecture/contradictions.md) — contradiction types and detection
 - [`docs/setup/verification.md`](docs/setup/verification.md) — enabling verification tools
 
+Phase 6 (deterministic computation):
+
+- [`docs/architecture/computation.md`](docs/architecture/computation.md) — the computation layer
+- [`docs/architecture/duckdb.md`](docs/architecture/duckdb.md) — DuckDB analytics engine and SQL safety
+- [`docs/architecture/python-sandbox.md`](docs/architecture/python-sandbox.md) — controlled Python sandbox
+- [`docs/architecture/computation-provenance.md`](docs/architecture/computation-provenance.md) — provenance and freshness
+- [`docs/setup/computation.md`](docs/setup/computation.md) — enabling computation tools
+
 Full architecture docs:
 
 | Area | Document |
@@ -134,9 +143,14 @@ Full architecture docs:
 | Claims | [`claims.md`](docs/architecture/claims.md) |
 | Verification | [`verification.md`](docs/architecture/verification.md) |
 | Contradictions | [`contradictions.md`](docs/architecture/contradictions.md) |
+| Computation | [`computation.md`](docs/architecture/computation.md) |
+| DuckDB | [`duckdb.md`](docs/architecture/duckdb.md) |
+| Python sandbox | [`python-sandbox.md`](docs/architecture/python-sandbox.md) |
+| Computation provenance | [`computation-provenance.md`](docs/architecture/computation-provenance.md) |
 | Corpus setup | [`setup/corpus.md`](docs/setup/corpus.md) |
 | Semantic setup | [`setup/semantic-retrieval.md`](docs/setup/semantic-retrieval.md) |
 | Verification setup | [`setup/verification.md`](docs/setup/verification.md) |
+| Computation setup | [`setup/computation.md`](docs/setup/computation.md) |
 | Decisions (ADRs) | [`decisions/`](docs/architecture/decisions/) |
 | Mermaid diagrams | [`diagrams/`](docs/architecture/diagrams/) |
 
@@ -144,11 +158,12 @@ Full architecture docs:
 
 Phase 0.75 (architecture) is the approved baseline. Phases 1, 1.1, 1.2 (core
 contracts + hardening), Phase 2 (MCP server), Phase 3 (local corpus + lexical
-retrieval), Phase 4 (semantic + hybrid retrieval and persistent memory), and
-Phase 5 (evidence integrity and verification foundation) are **complete**. The
+retrieval), Phase 4 (semantic + hybrid retrieval and persistent memory),
+Phase 5 (evidence integrity and verification foundation), and Phase 6
+(deterministic computation and sandboxed analysis) are **complete**. The
 Research Runtime remains provider- and transport-independent; the MCP server is
-a thin adapter over it, now serving hybrid evidence, project-scoped memory, and
-deterministic claim verification. See
+a thin adapter over it, now serving hybrid evidence, project-scoped memory,
+deterministic claim verification, and bounded computation. See
 [`implementation-phases.md`](docs/architecture/implementation-phases.md).
 
 ### Develop

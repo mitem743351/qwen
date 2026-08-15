@@ -90,6 +90,8 @@ class ResearchMemory:
     source_refs: tuple[str, ...]
     evidence_refs: tuple[str, ...]
     claim_refs: tuple[str, ...]
+    computation_refs: tuple[str, ...]
+    dataset_refs: tuple[str, ...]
     status: str
     provenance: dict[str, str]
     origin: MemoryOrigin
@@ -106,6 +108,8 @@ class ResearchMemory:
         source_refs: tuple[str, ...] = (),
         evidence_refs: tuple[str, ...] = (),
         claim_refs: tuple[str, ...] = (),
+        computation_refs: tuple[str, ...] = (),
+        dataset_refs: tuple[str, ...] = (),
         status: str = "proposed",
         origin: MemoryOrigin = MemoryOrigin.RESEARCH,
         provenance: dict[str, str] | None = None,
@@ -118,6 +122,8 @@ class ResearchMemory:
             source_refs=_refs(source_refs),
             evidence_refs=_refs(evidence_refs),
             claim_refs=_refs(claim_refs),
+            computation_refs=_refs(computation_refs),
+            dataset_refs=_refs(dataset_refs),
             status=status,
             provenance=dict(provenance or {}),
             origin=origin,

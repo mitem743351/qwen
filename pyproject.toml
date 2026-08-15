@@ -18,6 +18,9 @@ dependencies = [
     "pypdf>=4,<7",
     # YAML structured-data parsing (document layer).
     "pyyaml>=6,<7",
+    # Analytical SQL engine (computation layer; never exposed as a raw
+    # connection to the Research Runtime or MCP).
+    "duckdb>=1.0,<2",
 ]
 
 [project.optional-dependencies]

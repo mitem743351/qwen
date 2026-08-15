@@ -14,6 +14,15 @@ from typing import Any
 from qwen_research.claims.models import Claim, ClaimType, QuantitativeClaim, Scope
 from qwen_research.claims.relationships import ClaimEvidenceLink, ClaimEvidenceRelationship
 from qwen_research.common.ids import ClaimId, EvidenceId, SessionId, TaskId, WorkflowId
+from qwen_research.computation.models import (
+    ComputationOperation,
+    ComputationResult,
+    ComputationSummary,
+    DatasetProfile,
+    DatasetReference,
+    ExecutionProfile,
+)
+from qwen_research.computation.service import ComputationService
 from qwen_research.contradictions.models import Contradiction
 from qwen_research.domain.artifact import Artifact
 from qwen_research.domain.errors import (
@@ -62,6 +71,7 @@ class InMemoryResearchRuntime:
         retriever: Retriever | None = None,
         memory: MemoryService | None = None,
         verification: EvidenceIntegrityService | None = None,
+        computation: ComputationService | None = None,
     ) -> None:
         self._session_store = session_store or InMemorySessionStore()
         self._task_store = task_store or InMemoryTaskStore()
@@ -71,6 +81,7 @@ class InMemoryResearchRuntime:
         self._retriever = retriever
         self._memory = memory
         self._verification = verification
+        self._computation = computation
 
     # -- sessions ---------------------------------------------------------
 
@@ -211,6 +222,8 @@ class InMemoryResearchRuntime:
         source_refs: tuple[str, ...] = (),
         evidence_refs: tuple[str, ...] = (),
         claim_refs: tuple[str, ...] = (),
+        computation_refs: tuple[str, ...] = (),
+        dataset_refs: tuple[str, ...] = (),
         status: str = "proposed",
         provenance: dict[str, str] | None = None,
     ) -> ResearchMemory:
@@ -220,6 +233,8 @@ class InMemoryResearchRuntime:
             source_refs=source_refs,
             evidence_refs=evidence_refs,
             claim_refs=claim_refs,
+            computation_refs=computation_refs,
+            dataset_refs=dataset_refs,
             status=status,
             provenance=provenance,
         )
@@ -247,12 +262,16 @@ class InMemoryResearchRuntime:
         verification: list[VerificationSummary] = []
         if self._verification is not None:
             verification = self._verification.get_project_verification_summaries(project_id)
+        computations: list[ComputationSummary] = []
+        if self._computation is not None:
+            computations = self._computation.get_computation_summaries(project_id)
         return build_context(
             query,
             evidence=evidence,
             memories=memories,
             open_questions=questions,
             verification=verification,
+            computations=computations,
             budget=budget,
         )
 
@@ -310,6 +329,65 @@ class InMemoryResearchRuntime:
 
     def get_contradictions(self, project_id: str) -> list[Contradiction]:
         return self._require_verification().get_contradictions(project_id)
+
+    # -- deterministic computation (Phase 6) -------------------------------
+
+    def _require_computation(self) -> ComputationService:
+        if self._computation is None:
+            raise UnsupportedOperationError("no computation service configured")
+        return self._computation
+
+    def describe_dataset(self, reference: DatasetReference) -> DatasetProfile:
+        return self._require_computation().describe_dataset(reference)
+
+    def run_query(
+        self,
+        project_id: str,
+        dataset_refs: tuple[DatasetReference, ...],
+        query: str,
+        parameters: dict[str, object] | None = None,
+        *,
+        profile: ExecutionProfile = ExecutionProfile.ANALYTICAL,
+    ) -> ComputationResult:
+        return self._require_computation().run_query(
+            project_id, dataset_refs, query, parameters, profile=profile
+        )
+
+    def run_analysis(
+        self,
+        project_id: str,
+        dataset_refs: tuple[DatasetReference, ...],
+        operation: ComputationOperation,
+        parameters: dict[str, object] | None = None,
+        *,
+        profile: ExecutionProfile = ExecutionProfile.ANALYTICAL,
+        seed: int | None = None,
+    ) -> ComputationResult:
+        return self._require_computation().run_analysis(
+            project_id, dataset_refs, operation, parameters, profile=profile, seed=seed
+        )
+
+    def run_python(
+        self,
+        project_id: str,
+        source: str,
+        *,
+        profile: ExecutionProfile = ExecutionProfile.NUMERICAL,
+        seed: int | None = None,
+    ) -> ComputationResult:
+        return self._require_computation().run_python(
+            project_id, source, profile=profile, seed=seed
+        )
+
+    def get_computation_result(
+        self, project_id: str, computation_id: str
+    ) -> ComputationResult:
+        return self._require_computation().get_computation_result(project_id, computation_id)
+
+    def get_project_computation_summaries(
+        self, project_id: str
+    ) -> list[ComputationSummary]:
+        return self._require_computation().get_computation_summaries(project_id)
 
     # -- reserved lifecycle operations (contract only) --------------------
     # The domain supports PAUSED / WAITING / NEEDS_INPUT / CANCELLED as valid
