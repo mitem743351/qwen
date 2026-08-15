@@ -456,3 +456,37 @@ def test_duplicate_call_id_not_executed_twice() -> None:
     # call_1 executed once; the duplicate call_id is CANCELLED.
     assert len(tool.calls) == 1
     assert any(r.status is ToolExecutionStatus.CANCELLED for r in outcome.tool_results)
+
+
+# -- Phase 9.3 crash/restart idempotency ---------------------------------
+
+def test_crash_restart_reuses_completed_result() -> None:
+    from qwen_research.research.tool_store import InMemoryToolExecutionStore
+
+    store = InMemoryToolExecutionStore()
+    call = ToolCall(call_id="call_1", tool_name="search_corpus", arguments={"query": "q"})
+    results_sequence = [_result(tool_calls=(call,)), _result(content="final")]
+
+    # First run: the tool executes and its result is persisted.
+    tool1 = _search_tool()
+    invoke1, _ = _scripted_invoke(list(results_sequence))
+    outcome1 = run_tool_loop(
+        _request(), invoke=invoke1, tools=_registry(tool1), profile=ANALYSIS,
+        store=store, inference_session_id="session-1",
+    )
+    assert outcome1.status is LoopStatus.FINAL
+    assert len(tool1.calls) == 1
+
+    # Simulated restart: a fresh tool instance, same session id + store.
+    tool2 = _search_tool()
+    invoke2, _ = _scripted_invoke(list(results_sequence))
+    outcome2 = run_tool_loop(
+        _request(), invoke=invoke2, tools=_registry(tool2), profile=ANALYSIS,
+        store=store, inference_session_id="session-1",
+    )
+    assert outcome2.status is LoopStatus.FINAL
+    # The completed result was reused, not re-executed.
+    assert tool2.calls == []
+    assert len(outcome2.tool_results) == 1
+    assert outcome2.tool_results[0].status is ToolExecutionStatus.SUCCEEDED
+    assert outcome2.tool_results[0].content == outcome1.tool_results[0].content

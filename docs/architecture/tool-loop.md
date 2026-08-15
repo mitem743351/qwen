@@ -99,11 +99,12 @@ identical call (normalized `tool_name + arguments` hash) is bounded by
 
 ## Multi-tool batches (Phase 9.2)
 
-A single inference response may carry several tool calls. The batch is
-**preflighted** before execution: every call is parsed, argument-validated,
-resolved, permission-checked, and budget-checked first. The default policy is
-`ALL_OR_EXPLICITLY_PARTIAL`: execution proceeds in order and stops at the first
-unsafe call, but **every call receives exactly one outcome**:
+A single inference response may carry several tool calls. Each call is
+validated **immediately before its own execution** (parse → resolve →
+model-callable → permission/allowlist → schema → budget) — the batch is not
+pre-validated all at once. The default policy is `ALL_OR_EXPLICITLY_PARTIAL`:
+execution proceeds in order and stops at the first unsafe call, but **every
+call receives exactly one outcome**:
 
 ```text
 call_1 → SUCCEEDED
@@ -139,6 +140,15 @@ never executed twice (idempotency).
 `PERMISSION_DENIED`, `PROVIDER_ERROR`, `TOOL_ERROR`,
 `TOOL_EXECUTION_PARTIAL`, `TOOL_BATCH_REJECTED`. A `finish_reason=length` turn
 is **not** a complete final answer — the provider's finish reason is preserved.
+
+## Persistence & idempotency (Phase 9.3)
+
+Completed tool results may be persisted through a `ToolExecutionStore` keyed by
+`(inference_session_id, call_id)`. A resumed workflow reuses a
+previously-completed result instead of executing the same call twice — the
+`call_id` + `inference_session_id` are the stable idempotency keys. Only safe
+metadata (status, bounded content, error, duration, provenance) is stored;
+hidden reasoning is never persisted.
 
 See [`inference-continuation.md`](inference-continuation.md) and
 [`../setup/gateway-inference.md`](../setup/gateway-inference.md).

@@ -26,7 +26,7 @@ import json
 import time
 from collections.abc import Callable
 from enum import StrEnum
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from qwen_research.common.ids import TaskId, new_id
 from qwen_research.common.serialization import serializable
@@ -232,6 +232,23 @@ class ToolLoopResult:
     error: str | None = None
 
 
+@runtime_checkable
+class ToolExecutionStore(Protocol):
+    """Persists completed tool-execution results for crash/restart idempotency.
+
+    Keyed by ``(inference_session_id, call_id)`` so a resumed workflow reuses a
+    previously-completed result instead of executing the same call twice.
+    """
+
+    def save(
+        self, inference_session_id: str, call_id: str, result: ToolExecutionResult
+    ) -> None: ...
+
+    def get(
+        self, inference_session_id: str, call_id: str
+    ) -> ToolExecutionResult | None: ...
+
+
 #: Built-in tool-execution profiles.
 READ_ONLY = ToolExecutionProfile(
     name="READ_ONLY",
@@ -326,23 +343,38 @@ def run_tool_loop(
     task_id: str | None = None,
     run_id: str | None = None,
     events: list[str] | None = None,
+    store: ToolExecutionStore | None = None,
+    inference_session_id: str | None = None,
 ) -> ToolLoopResult:
     """Run the controlled model ↔ tool loop until a final answer or a limit.
 
     ``invoke`` performs one inference call (normally the Research Runtime's
     ``invoke_inference``). ``tools`` is the internal tool registry; ``profile``
-    gates which tools/permissions are model-callable. Returns a
+    gates which tools/permissions are model-callable. ``store`` (optional)
+    persists completed tool results keyed by ``(inference_session_id, call_id)``
+    so a resumed workflow reuses them instead of executing twice;
+    ``inference_session_id`` pins the session across a restart. Returns a
     :class:`ToolLoopResult` with the final :class:`InferenceResult` or a
     non-final status.
     """
     config = config or ToolLoopConfig()
     accounting = LoopAccounting()
-    session = InferenceSession.create(
-        task_id=request.task_reference,
-        provider="qwen",
-        model=request.inference_policy.model_requirement or "",
-        mode="GATEWAY_INFERENCE",
-    )
+    if inference_session_id is not None:
+        session = InferenceSession(
+            inference_session_id=inference_session_id,
+            task_id=request.task_reference,
+            provider="qwen",
+            model=request.inference_policy.model_requirement or "",
+            mode="GATEWAY_INFERENCE",
+            created_at=utc_now().isoformat(),
+        )
+    else:
+        session = InferenceSession.create(
+            task_id=request.task_reference,
+            provider="qwen",
+            model=request.inference_policy.model_requirement or "",
+            mode="GATEWAY_INFERENCE",
+        )
     conversation = InferenceConversation(
         invocation_id=new_id("invocation"),
         messages=list(request.messages),
@@ -413,6 +445,8 @@ def run_tool_loop(
             config=config,
             accounting=accounting,
             executed_call_ids=executed_call_ids,
+            store=store,
+            inference_session_id=session.inference_session_id,
             emit=_emit,
         )
         results.extend(batch_results)
@@ -603,6 +637,8 @@ def _execute_batch(
     config: ToolLoopConfig,
     accounting: LoopAccounting,
     executed_call_ids: set[str],
+    store: ToolExecutionStore | None,
+    inference_session_id: str,
     emit: Callable[[str], None],
 ) -> tuple[list[ToolExecutionResult], bool]:
     """Execute a batch of tool calls with preflight + partial-batch policy.
@@ -610,7 +646,9 @@ def _execute_batch(
     Every call receives exactly one outcome; a call that cannot safely execute
     (denied/invalid/over-budget/duplicate) stops further execution of the batch,
     and every subsequent call gets an explicit ``CANCELLED`` / ``RESOURCE_LIMIT``
-    result — never a dangling tool call. Returns ``(results, complete)``.
+    result — never a dangling tool call. Completed results are persisted via
+    ``store`` (keyed by ``(inference_session_id, call_id)``) and reused on a
+    restart instead of being executed twice. Returns ``(results, complete)``.
     """
     results: list[ToolExecutionResult] = []
 
@@ -632,6 +670,15 @@ def _execute_batch(
             )
             emit(ToolLoopEvent.LOOP_LIMIT)
             return results, False
+
+        # Crash/restart idempotency: reuse a previously-completed result.
+        if store is not None:
+            stored = store.get(inference_session_id, call.call_id)
+            if stored is not None:
+                results.append(stored)
+                executed_call_ids.add(call.call_id)
+                emit(ToolLoopEvent.TOOL_COMPLETED)
+                continue
 
         # Authorization + validation (preflight, no execution).
         preflight_error = _preflight_error(call, tools, profile)
@@ -695,6 +742,8 @@ def _execute_batch(
         )
         same_call_counts[signature] = same_call_counts.get(signature, 0) + 1
         executed_call_ids.add(call.call_id)
+        if store is not None:
+            store.save(inference_session_id, call.call_id, executed)
         results.append(executed)
 
     return results, True

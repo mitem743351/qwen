@@ -383,7 +383,7 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
 - **Objective:** make multi-tool responses, budget exhaustion, partial tool
   execution, and continuation history semantically correct and deterministic.
 - **Dependencies:** Phase 9.1.
-- **Components:** batch preflight before execution
+- **Components:** per-call validation immediately before execution
   (`_preflight_error`); `ALL_OR_EXPLICITLY_PARTIAL` default policy; per-call
   outcomes for the whole batch (`RESOURCE_LIMIT` / `CANCELLED` statuses);
   `TOOL_EXECUTION_PARTIAL` / `TOOL_BATCH_REJECTED` loop statuses;
@@ -395,6 +395,23 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
   exhaustion; partial-batch behavior is deterministic; call ordering and ids
   preserved; same session continues; repeated-call guard works across turns;
   no double-execution of a `call_id`.
+- **Not yet:** parallel tool execution; automatic escalation heuristics;
+  XHIGH/EXTREME workflows; multi-agent inference; Qwen built-in web search;
+  `reasoning_effort` execution; remote/distributed workers.
+
+## Phase 9.3 — Tool-execution persistence & idempotency ✅ (complete)
+
+- **Objective:** persist tool-execution results by
+  `(inference_session_id, call_id)` and reuse completed results across a
+  crash/restart instead of executing twice; correct the preflight wording.
+- **Dependencies:** Phase 9.2.
+- **Components:** `ToolExecutionStore` protocol; `InMemoryToolExecutionStore`
+  and `SqliteToolExecutionStore` (`research/tool_store.py`); `run_tool_loop`
+  `store` / `inference_session_id` parameters; `_execute_batch` reuses a stored
+  completed result and saves each completed result.
+- **Acceptance criteria:** completed results persist keyed by session+call id;
+  a resumed loop reuses them without re-execution; crash/restart regression
+  test passes; docs describe per-call (not whole-batch) validation.
 - **Not yet:** parallel tool execution; automatic escalation heuristics;
   XHIGH/EXTREME workflows; multi-agent inference; Qwen built-in web search;
   `reasoning_effort` execution; remote/distributed workers.

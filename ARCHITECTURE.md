@@ -1,6 +1,6 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 9.2 — Multi-tool batch integrity & continuation hardening.
+> **Status:** Phase 9.3 — Tool-execution persistence & idempotency.
 > The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
@@ -573,12 +573,17 @@ See [`docs/architecture/inference.md`](docs/architecture/inference.md) and
 > flagged (`ToolCall.arguments_error`) and rejected as `INVALID_ARGUMENTS`
 > rather than silently normalized to `{}`.
 >
-> **Phase 9.2 (implemented).** Multi-tool batches are preflighted before
-> execution and every call receives exactly one outcome — a partial batch
-> produces explicit `RESOURCE_LIMIT` / `CANCELLED` results for the unexecuted
-> remainder, so no assistant `tool_calls` message enters a continuation with a
-> dangling call. `TOOL_LOOP_LIMIT` means an actual loop limit only; a
-> duplicated `call_id` is never executed twice.
+> **Phase 9.2 (implemented).** Every tool call is validated immediately before
+> its own execution, and each call receives exactly one outcome — a partial
+> batch produces explicit `RESOURCE_LIMIT` / `CANCELLED` results for the
+> unexecuted remainder, so no assistant `tool_calls` message enters a
+> continuation with a dangling call. `TOOL_LOOP_LIMIT` means an actual loop
+> limit only; a duplicated `call_id` is never executed twice.
+>
+> **Phase 9.3 (implemented).** Completed tool results are persisted through a
+> `ToolExecutionStore` keyed by `(inference_session_id, call_id)` (in-memory and
+> SQLite backends), and a resumed workflow reuses a completed result instead of
+> executing the same call twice.
 
 ---
 
