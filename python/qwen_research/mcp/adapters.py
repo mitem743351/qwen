@@ -28,6 +28,12 @@ from qwen_research.domain.session import Session
 from qwen_research.domain.task import Task
 from qwen_research.memory.models import ResearchMemory, ResearchQuestion
 from qwen_research.memory.retriever import MemoryHit
+from qwen_research.orchestration.models import (
+    ResearchPlan,
+    ResearchStatus,
+    ResearchTask,
+    WorkflowRun,
+)
 from qwen_research.retrieval.models import DocumentView, SearchResult
 from qwen_research.tools.base import Tool
 from qwen_research.verification.models import EvidenceAssessment, VerificationReport
@@ -326,6 +332,56 @@ class SchemaAdapter:
             "started_at": result.started_at.isoformat() if result.started_at else None,
             "completed_at": result.completed_at.isoformat() if result.completed_at else None,
             "error": result.error,
+        }
+
+    # -- Phase 7 orchestration projections --------------------------------
+
+    def plan_result(self, task: ResearchTask, plan: ResearchPlan) -> dict[str, Any]:
+        return {
+            "plan_id": plan.plan_id,
+            "task_id": task.task_id,
+            "task_type": task.task_type.value,
+            "complexity": task.complexity.value,
+            "reasoning_profile": task.reasoning_profile,
+            "objective": plan.objective,
+            "stages": [
+                {"stage_id": s.stage_id, "type": s.type.value, "name": s.name}
+                for s in plan.stages
+            ],
+            "requirements": {
+                "needs_retrieval": plan.requirements.needs_retrieval,
+                "needs_verification": plan.requirements.needs_verification,
+                "needs_computation": plan.requirements.needs_computation,
+                "needs_memory": plan.requirements.needs_memory,
+                "needs_contradiction_analysis": plan.requirements.needs_contradiction_analysis,
+            },
+            "completion_criteria": {
+                "min_evidence_count": plan.completion_criteria.min_evidence_count,
+                "verification_completed": plan.completion_criteria.verification_completed,
+            },
+        }
+
+    def run_result(self, run: WorkflowRun) -> dict[str, Any]:
+        return {
+            "run_id": run.run_id,
+            "task_id": run.task_id,
+            "plan_id": run.plan_id,
+            "status": run.status.value,
+            "current_stage": run.current_stage,
+            "degradation": list(run.degradation),
+            "errors": list(run.errors),
+            "accounting": dict(run.accounting),
+        }
+
+    def research_status_result(self, status: ResearchStatus) -> dict[str, Any]:
+        return {
+            "task_id": status.task_id,
+            "run_id": status.run_id,
+            "status": status.status,
+            "current_stage": status.current_stage,
+            "progress": status.progress,
+            "degradation": list(status.degradation),
+            "blocking_issues": list(status.blocking_issues),
         }
 
 

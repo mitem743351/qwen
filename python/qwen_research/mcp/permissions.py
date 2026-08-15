@@ -71,4 +71,11 @@ DEFAULT_TOOL_PERMISSIONS: dict[str, MCPPermission] = {
     "run_query": MCPPermission.ANALYZE,
     "run_analysis": MCPPermission.ANALYZE,
     "run_python": MCPPermission.EXECUTE,
+    "plan_research": MCPPermission.ANALYZE,
+    "start_research": MCPPermission.ANALYZE,
+    "get_research_status": MCPPermission.READ,
+    "pause_research": MCPPermission.ANALYZE,
+    "resume_research": MCPPermission.ANALYZE,
+    "cancel_research": MCPPermission.ANALYZE,
+    "get_research_summary": MCPPermission.READ,
 }

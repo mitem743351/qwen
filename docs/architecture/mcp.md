@@ -72,6 +72,13 @@ run_query               # validated, parameterized SQL over datasets      ✅ (P
 run_analysis            # structured analysis (statistics/group/…/simulate) ✅ (Phase 6, ANALYZE)
 get_computation_result  # read a persisted computation result by id       ✅ (Phase 6, READ)
 run_python              # sandboxed Python (disabled by default)          ✅ (Phase 6, EXECUTE)
+plan_research           # classify + plan a task deterministically        ✅ (Phase 7, ANALYZE)
+start_research          # create + execute a research workflow run        ✅ (Phase 7, ANALYZE)
+get_research_status     # run status/progress/degradation                 ✅ (Phase 7, READ)
+pause_research          # pause a run                                      ✅ (Phase 7, ANALYZE)
+resume_research         # resume a paused run                              ✅ (Phase 7, ANALYZE)
+cancel_research         # cancel a run                                     ✅ (Phase 7, ANALYZE)
+get_research_summary    # bounded research summary                         ✅ (Phase 7, READ)
 retrieve_evidence       # fetch evidence for a claim/question with citations (future)
 read_source             # read a specific source (permission-gated)      (future)
 get_research_state      # session/project research state summary          ✅ (Phase 2)
@@ -123,8 +130,8 @@ Permissions are **classes**, independently controllable per tool and per
 session:
 
 ```text
-read        — observe (search, get_source, get_*_memory, get_open_questions, get_verification_report, get_contradictions, describe_dataset, get_computation_result)
-analyze     — compute/derive without side effects (create_session, execute_task, run_query, run_analysis, verify_claim, assess_evidence)
+read        — observe (search, get_source, get_*_memory, get_open_questions, get_verification_report, get_contradictions, describe_dataset, get_computation_result, get_research_status, get_research_summary)
+analyze     — compute/derive without side effects (create_session, execute_task, run_query, run_analysis, verify_claim, assess_evidence, plan_research, start_research, pause_research, resume_research, cancel_research)
 write       — create new data (save_research_memory, save_artifact, create_claim, link_claim_evidence)
 execute     — run code/processes (run_python)
 destructive — delete/overwrite/mutate existing data

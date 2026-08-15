@@ -197,3 +197,9 @@ is **not** in Phase 6. See [`computation-provenance.md`](computation-provenance.
 
 See [`evidence-integrity.md`](evidence-integrity.md),
 [`claims.md`](claims.md), and [`contradictions.md`](contradictions.md).
+
+## Phase 7 — verification stages
+
+The workflow engine's `ASSESS_EVIDENCE` / `VERIFY` / `CONTRADICTIONS` stages
+invoke `link_claim_evidence` / `verify_claim` / `get_contradictions` through the
+runtime, never duplicating verification rules. See [`workflows.md`](workflows.md).

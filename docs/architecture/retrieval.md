@@ -112,3 +112,9 @@ index (sqlite-vec/FAISS) · pretrained transformer embeddings.
 
 See [`corpus.md`](corpus.md), [`document-pipeline.md`](document-pipeline.md),
 and [`mcp-implementation.md`](mcp-implementation.md).
+
+## Phase 7 — retrieval stage
+
+The workflow engine's `RETRIEVE` stage calls `search_corpus` through the runtime
+(lexical/hybrid by profile), never duplicating search logic. See
+[`workflows.md`](workflows.md).

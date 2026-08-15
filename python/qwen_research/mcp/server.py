@@ -58,6 +58,7 @@ from qwen_research.mcp.schemas import (
     RationaleParam,
     ReasoningProfileParam,
     ReportIdParam,
+    ResearchIdParam,
     RetrievalModeParam,
     RootsParam,
     SeedParam,
@@ -65,9 +66,12 @@ from qwen_research.mcp.schemas import (
     SessionIdParam,
     StatusParam,
     StringListParam,
+    SubquestionsParam,
     TaskIdParam,
+    TaskTypeParam,
 )
 from qwen_research.mcp.transport import MCPTransport, create_transport
+from qwen_research.orchestration.models import TaskType
 from qwen_research.research.interfaces import ResearchRuntime
 from qwen_research.retrieval.models import RetrievalMode, SearchOptions
 
@@ -499,6 +503,61 @@ class MCPServerApp:
 
             return guarded_call(policy, "run_python", run)
 
+        def plan_research(
+            description: DescriptionParam,
+            project_id: ProjectIdParam = "default",
+            task_type: TaskTypeParam = None,
+            reasoning_profile: ReasoningProfileParam = "DEEP",
+            subquestions: SubquestionsParam = None,
+        ) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                task, plan = runtime.plan_research(
+                    description,
+                    project_id=project_id,
+                    task_type=TaskType(task_type) if task_type else None,
+                    profile=reasoning_profile,
+                    subquestions=tuple(subquestions or ()),
+                )
+                return adapter.plan_result(task, plan)
+
+            return guarded_call(policy, "plan_research", run)
+
+        def start_research(plan_id: ResearchIdParam) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                return adapter.run_result(runtime.start_research(plan_id))
+
+            return guarded_call(policy, "start_research", run)
+
+        def get_research_status(run_id: ResearchIdParam) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                return adapter.research_status_result(runtime.get_research_status(run_id))
+
+            return guarded_call(policy, "get_research_status", run)
+
+        def pause_research(run_id: ResearchIdParam) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                return adapter.run_result(runtime.pause_research(run_id))
+
+            return guarded_call(policy, "pause_research", run)
+
+        def resume_research(run_id: ResearchIdParam) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                return adapter.run_result(runtime.resume_research(run_id))
+
+            return guarded_call(policy, "resume_research", run)
+
+        def cancel_research(run_id: ResearchIdParam) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                return adapter.run_result(runtime.cancel_research(run_id))
+
+            return guarded_call(policy, "cancel_research", run)
+
+        def get_research_summary(run_id: ResearchIdParam) -> dict[str, Any]:
+            def run() -> dict[str, Any]:
+                return runtime.get_research_summary(run_id)
+
+            return guarded_call(policy, "get_research_summary", run)
+
         handlers: dict[str, Callable[..., Any]] = {
             "get_session": get_session,
             "create_session": create_session,
@@ -523,6 +582,13 @@ class MCPServerApp:
             "run_analysis": run_analysis,
             "get_computation_result": get_computation_result,
             "run_python": run_python,
+            "plan_research": plan_research,
+            "start_research": start_research,
+            "get_research_status": get_research_status,
+            "pause_research": pause_research,
+            "resume_research": resume_research,
+            "cancel_research": cancel_research,
+            "get_research_summary": get_research_summary,
         }
 
         enabled = self._config.enabled_tools or DEFAULT_TOOLS

@@ -120,3 +120,9 @@ save_research_memory  → WRITE   (explicit provenance, no generic blobs)
 
 See [`runtime-contracts.md`](runtime-contracts.md) and
 [`mcp.md`](mcp.md).
+
+## Phase 7 — memory stage
+
+The workflow engine's `MEMORY` stage calls `save_research_memory` through the
+runtime (idempotent, project-scoped, provenance-aware). See
+[`workflows.md`](workflows.md).

@@ -1,13 +1,13 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 6 — Deterministic Computation, Data Analysis, and Sandboxed Execution Foundation.
+> **Status:** Phase 7 — Research Orchestration, Task Planning, Workflow Execution, and Evidence-Driven Synthesis.
 > The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
 > persistent structured memory; Phase 5 adds the deterministic evidence-integrity
-> and verification foundation; Phase 6 adds the deterministic computation layer
-> (DuckDB analytics + a controlled Python sandbox), still with no Qwen-API
-> inference.
+> and verification foundation; Phase 6 adds the deterministic computation layer;
+> Phase 7 adds the deterministic orchestration layer (planning + workflow
+> execution), still with no Qwen-API inference.
 > **Audience:** Implementers, code agents, reviewers
 > **Scope:** This document is the stable, binding architecture contract for the
 > "local AI research infrastructure" that extends **Qwen Studio** through MCP.
@@ -292,9 +292,14 @@ User Request → Intent Classification → Complexity Assessment
 The Workflow Engine supports **skipping or repeating stages** based on task
 complexity. Stages are first-class, individually observable, and resumable.
 
----
-
-## 7. Iterative Reasoning
+> **Phase 7 (implemented).** The deterministic orchestration layer is live:
+> `ResearchTask` classification, `ResearchPlan`/`WorkflowRun` persistence, a
+> `WorkflowEngine` with registered stage executors (retrieve → assess → verify
+> → compute → memory → synthesize → finalize), bounded evidence-gap /
+> contradiction / computation loops, explicit retry policies, idempotent
+> re-entry, resource accounting, and a provider-neutral `SynthesisRequest`
+> boundary for the future inference runtime. See
+> [`docs/architecture/orchestration.md`](docs/architecture/orchestration.md).
 
 ```text
 Pass 1 → hypothesis
@@ -615,6 +620,10 @@ Rust library.
 | [duckdb](docs/architecture/duckdb.md) | DuckDB analytics engine and SQL safety |
 | [python-sandbox](docs/architecture/python-sandbox.md) | Controlled Python subprocess sandbox |
 | [computation-provenance](docs/architecture/computation-provenance.md) | Provenance, freshness, results-as-evidence |
+| [orchestration](docs/architecture/orchestration.md) | Research orchestration layer (Phase 7) |
+| [planning](docs/architecture/planning.md) | Deterministic task classification and planning |
+| [workflows](docs/architecture/workflows.md) | Workflow engine and stage executors |
+| [research-state-machine](docs/architecture/research-state-machine.md) | Task/plan/run/state ownership and lifecycle |
 | [inference](docs/architecture/inference.md) | Provider abstraction, policy translation, capability negotiation |
 | [security](docs/architecture/security.md) | Threat model, boundaries, sandboxing |
 | [architecture-review](docs/architecture/architecture-review.md) | Risks, failure modes, Rust-value analysis |

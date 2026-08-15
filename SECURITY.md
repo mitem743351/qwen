@@ -129,6 +129,22 @@ assumed safe because "the model wrote it".
   recover the real builtins and read a file (see
   [`docs/architecture/python-sandbox.md`](docs/architecture/python-sandbox.md)).
 
+## Workflow orchestration (Phase 7)
+
+- **No privilege escalation.** A workflow never escalates its own privileges:
+  a run with `ANALYZE`-class capabilities cannot invoke `EXECUTE`/`DESTRUCTIVE`
+  without explicit policy authorization, and a stage cannot bypass the Research
+  Runtime permission model.
+- **No arbitrary tool chains.** The model cannot submit a free-form sequence of
+  tool names for execution — the workflow engine validates stage types and
+  dependencies against registered workflows/templates.
+- **Deterministic only.** Phase 7 executes no model code; the synthesis step is
+  a provider-neutral `SynthesisRequest` boundary, not an inference call.
+- **Bounded execution.** Guardrails (`max_stages`, `max_retrieval_rounds`,
+  `max_verification_rounds`, `max_computation_rounds`, `max_tool_calls`) bound
+  loops and resource use; failures produce explicit states, never fabricated
+  completion.
+
 ## Hidden chain-of-thought
 
 The system **never** stores, transmits, logs, or exposes hidden

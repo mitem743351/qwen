@@ -33,6 +33,15 @@ from qwen_research.domain.task import Task
 from qwen_research.memory.context import ResearchContext
 from qwen_research.memory.models import ResearchMemory, ResearchQuestion
 from qwen_research.memory.retriever import MemoryHit
+from qwen_research.orchestration.models import (
+    ComputationSpec,
+    ResearchPlan,
+    ResearchStatus,
+    ResearchTask,
+    TaskType,
+    WorkflowEvent,
+    WorkflowRun,
+)
 from qwen_research.retrieval.models import DocumentView, SearchOptions, SearchResult
 from qwen_research.verification.models import (
     EvidenceAssessment,
@@ -202,6 +211,34 @@ class ResearchRuntime(Protocol):
     def get_project_computation_summaries(
         self, project_id: str
     ) -> list[ComputationSummary]: ...
+
+    def plan_research(
+        self,
+        description: str,
+        *,
+        project_id: str = "default",
+        session_id: str = "default",
+        task_type: TaskType | None = None,
+        profile: str = "DEEP",
+        subquestions: tuple[str, ...] = (),
+        computation: ComputationSpec | None = None,
+    ) -> tuple[ResearchTask, ResearchPlan]: ...
+
+    def start_research(self, plan_id: str) -> WorkflowRun: ...
+
+    def get_research_status(self, run_id: str) -> ResearchStatus: ...
+
+    def pause_research(self, run_id: str) -> WorkflowRun: ...
+
+    def resume_research(self, run_id: str) -> WorkflowRun: ...
+
+    def cancel_research(self, run_id: str) -> WorkflowRun: ...
+
+    def get_research_summary(self, run_id: str) -> dict[str, object]: ...
+
+    def get_research_plan(self, plan_id: str) -> ResearchPlan: ...
+
+    def get_research_events(self, run_id: str) -> list[WorkflowEvent]: ...
 
     def run_workflow(self, workflow_id: WorkflowId, task_id: TaskId) -> WorkflowResult: ...
 

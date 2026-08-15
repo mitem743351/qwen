@@ -37,15 +37,18 @@ Qwen continues its own inference
 - The Research Runtime provides capabilities; it does **not** become the owner
   of the Studio model's reasoning loop.
 - The only model-plane network traffic is Qwen Studio's own.
-- **Implemented in Phases 2–5:** this path is live via the MCP server (stdio),
+- **Implemented in Phases 2–7:** this path is live via the MCP server (stdio),
   exposing `create_session` / `execute_task` / `continue_task` /
   `get_task_state` / `get_session` / `get_research_state`, plus
   `search_corpus` (lexical/semantic/hybrid) and `get_source` over an indexed
-  local corpus, the Phase 4 memory tools over persistent structured memory, and
-  the Phase 5 evidence-integrity tools (`create_claim` / `link_claim_evidence`
-  / `assess_evidence` / `verify_claim` / `get_verification_report` /
-  `get_contradictions`) over the deterministic verification engine (see
-  [`mcp-implementation.md`](mcp-implementation.md)).
+  local corpus, the Phase 4 memory tools over persistent structured memory, the
+  Phase 5 evidence-integrity tools, the Phase 6 computation tools, and the
+  Phase 7 orchestration tools (`plan_research` / `start_research` /
+  `get_research_status` / `pause_research` / `resume_research` /
+  `cancel_research` / `get_research_summary`) over the deterministic workflow
+  engine (see [`mcp-implementation.md`](mcp-implementation.md)). The workflow
+  engine orchestrates capabilities but never invokes a model; the synthesis step
+  is a provider-neutral `SynthesisRequest` boundary.
 
 ---
 

@@ -142,3 +142,9 @@ the MCP error boundary without leaking stack traces or sensitive paths.
 
 See [`duckdb.md`](duckdb.md), [`python-sandbox.md`](python-sandbox.md), and
 [`../setup/computation.md`](../setup/computation.md).
+
+## Phase 7 — computation stages
+
+The workflow engine's `DESCRIBE_DATASET` / `COMPUTE` stages invoke
+`describe_dataset` / `run_analysis` through the runtime; the engine never
+constructs DuckDB SQL. See [`workflows.md`](workflows.md).

@@ -22,6 +22,7 @@ import dataclasses
 import datetime as _datetime
 import enum
 import json
+import types
 from typing import Any, Union, cast, get_args, get_origin, get_type_hints
 
 SCHEMA_VERSION = 1
@@ -86,9 +87,10 @@ def from_jsonable(data: Any, target: Any) -> Any:
     if data is None:
         return None
 
-    # Optional[X] / Union[X, None]
+    # Optional[X] / Union[X, None] — both ``typing.Union`` and PEP 604
+    # ``X | None`` (``types.UnionType``) forms.
     origin = get_origin(target)
-    if origin is Union:
+    if origin is Union or origin is types.UnionType:
         args = get_args(target)
         non_none = [a for a in args if a is not type(None)]
         return from_jsonable(data, non_none[0]) if non_none else None

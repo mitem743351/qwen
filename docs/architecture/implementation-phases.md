@@ -194,7 +194,28 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
 - **Not yet:** Rust/GPU/remote backends; automatic numerical correctness
   proving; hardened (seccomp/container) Python isolation.
 
-## Phase 7 — Computation/tools
+## Phase 7 — Research orchestration & workflow execution ✅ (complete)
+
+- **Objective:** turn individual capabilities into a deterministic research
+  orchestration system.
+- **Dependencies:** Phases 3–6 (retrieval, memory, verification, computation).
+- **Components:** `orchestration/` — `ResearchTask`/`ResearchPlan`/
+  `WorkflowRun`/`WorkflowEvent` models, deterministic `ResearchPlanner`
+  (classification, complexity, templates, budgets), `WorkflowEngine` with
+  registered `StageExecutor`s (retrieve → assess → verify → compute → memory →
+  synthesize → finalize), bounded loops, retry policies, idempotency, resource
+  accounting, `OrchestrationStore` (SQLite), `SynthesisRequest` boundary, MCP
+  tools (`plan_research`, `start_research`, `get_research_status`, `pause`,
+  `resume`, `cancel`, `get_research_summary`).
+- **Acceptance criteria:** deterministic classification/planning; resumable
+  workflow state across restart; pause/resume/cancel at the orchestration level;
+  explicit retry + idempotency; bounded evidence/verification/computation loops;
+  retrieval/verification/computation/memory integration; bounded
+  `ResearchContext` synthesis; no inference provider invoked.
+- **Not yet:** model-assisted planning; parallel model trajectories; automatic
+  web research; the inference-runtime connection (Phase 8).
+
+## Phase 7 (roadmap) — Computation/tools
 
 - **Objective:** deterministic computation + internal tool registry.
 - **Dependencies:** Phase 1–2 (sandbox), Phase 3 (data access).

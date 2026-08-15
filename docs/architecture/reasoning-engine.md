@@ -305,3 +305,11 @@ consistent.
 
 - [0003 — Reasoning profile as policy, not prompt](decisions/0003-reasoning-profile-as-policy.md)
 - [0007 — Verification as a first-class subsystem](decisions/0007-verification-first-class.md)
+
+## Phase 7 — orchestration consumption
+
+Phase 7 actually **consumes** the profiles: the `ResearchPlanner` derives
+workflow-level resource behavior (retrieval/verification/computation budgets,
+parallelism) from `FAST`/`NORMAL`/`DEEP`/`XHIGH`/`EXTREME`, bounded by
+`ReasoningBudget`. See [`orchestration.md`](orchestration.md) and
+[`planning.md`](planning.md).

@@ -39,6 +39,18 @@ from qwen_research.memory.context import ContextBudget, ResearchContext, build_c
 from qwen_research.memory.models import ResearchMemory, ResearchQuestion
 from qwen_research.memory.retriever import MemoryHit
 from qwen_research.memory.service import MemoryService
+from qwen_research.orchestration.models import (
+    ComputationSpec,
+    ResearchStatus,
+    ResearchTask,
+    TaskType,
+    WorkflowEvent,
+    WorkflowRun,
+)
+from qwen_research.orchestration.models import (
+    ResearchPlan as OrchestrationResearchPlan,
+)
+from qwen_research.orchestration.service import OrchestrationService
 from qwen_research.research.state import (
     InMemoryArtifactStore,
     InMemoryResearchStateStore,
@@ -72,6 +84,7 @@ class InMemoryResearchRuntime:
         memory: MemoryService | None = None,
         verification: EvidenceIntegrityService | None = None,
         computation: ComputationService | None = None,
+        orchestration: OrchestrationService | None = None,
     ) -> None:
         self._session_store = session_store or InMemorySessionStore()
         self._task_store = task_store or InMemoryTaskStore()
@@ -82,6 +95,7 @@ class InMemoryResearchRuntime:
         self._memory = memory
         self._verification = verification
         self._computation = computation
+        self._orchestration = orchestration
 
     # -- sessions ---------------------------------------------------------
 
@@ -329,6 +343,58 @@ class InMemoryResearchRuntime:
 
     def get_contradictions(self, project_id: str) -> list[Contradiction]:
         return self._require_verification().get_contradictions(project_id)
+
+    # -- research orchestration (Phase 7) ----------------------------------
+
+    def _require_orchestration(self) -> OrchestrationService:
+        if self._orchestration is None:
+            raise UnsupportedOperationError("no orchestration service configured")
+        return self._orchestration
+
+    def plan_research(
+        self,
+        description: str,
+        *,
+        project_id: str = "default",
+        session_id: str = "default",
+        task_type: TaskType | None = None,
+        profile: str = "DEEP",
+        subquestions: tuple[str, ...] = (),
+        computation: ComputationSpec | None = None,
+    ) -> tuple[ResearchTask, OrchestrationResearchPlan]:
+        return self._require_orchestration().plan_research(
+            description,
+            project_id=project_id,
+            session_id=session_id,
+            task_type=task_type,
+            profile=profile,
+            subquestions=subquestions,
+            computation=computation,
+        )
+
+    def start_research(self, plan_id: str) -> WorkflowRun:
+        return self._require_orchestration().start_research(plan_id)
+
+    def get_research_status(self, run_id: str) -> ResearchStatus:
+        return self._require_orchestration().get_research_status(run_id)
+
+    def pause_research(self, run_id: str) -> WorkflowRun:
+        return self._require_orchestration().pause_research(run_id)
+
+    def resume_research(self, run_id: str) -> WorkflowRun:
+        return self._require_orchestration().resume_research(run_id)
+
+    def cancel_research(self, run_id: str) -> WorkflowRun:
+        return self._require_orchestration().cancel_research(run_id)
+
+    def get_research_summary(self, run_id: str) -> dict[str, object]:
+        return self._require_orchestration().get_research_summary(run_id)
+
+    def get_research_plan(self, plan_id: str) -> OrchestrationResearchPlan:
+        return self._require_orchestration().get_plan(plan_id)
+
+    def get_research_events(self, run_id: str) -> list[WorkflowEvent]:
+        return self._require_orchestration().get_events(run_id)
 
     # -- deterministic computation (Phase 6) -------------------------------
 

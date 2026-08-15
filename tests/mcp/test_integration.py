@@ -51,6 +51,7 @@ def test_mcp_roundtrip() -> None:
             names = sorted(t.name for t in tools.tools)
             assert names == [
                 "assess_evidence",
+                "cancel_research",
                 "continue_task",
                 "create_claim",
                 "create_session",
@@ -62,16 +63,22 @@ def test_mcp_roundtrip() -> None:
                 "get_project_memory",
                 "get_research_memory",
                 "get_research_state",
+                "get_research_status",
+                "get_research_summary",
                 "get_session",
                 "get_source",
                 "get_task_state",
                 "get_verification_report",
                 "link_claim_evidence",
+                "pause_research",
+                "plan_research",
+                "resume_research",
                 "run_analysis",
                 "run_python",
                 "run_query",
                 "save_research_memory",
                 "search_corpus",
+                "start_research",
                 "verify_claim",
             ]
 

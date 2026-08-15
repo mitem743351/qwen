@@ -18,6 +18,10 @@ Optional environment configuration:
   ``run_query`` / ``run_analysis`` / ``get_computation_result`` / ``run_python``.
 - ``QWEN_RESEARCH_WORKSPACE_ROOT`` — output root for computation artifacts
   (default ``workspaces/computation``).
+- ``QWEN_RESEARCH_ORCHESTRATION_DB`` — enable the research-orchestration layer
+  (plans, workflow runs, events), exposing ``plan_research`` / ``start_research``
+  / ``get_research_status`` / ``pause_research`` / ``resume_research`` /
+  ``cancel_research`` / ``get_research_summary``.
 
 Local-only: no network socket is opened.
 """
@@ -45,6 +49,7 @@ def build_runtime() -> ResearchRuntime:
     verification_db = os.environ.get("QWEN_RESEARCH_VERIFICATION_DB")
     computation_db = os.environ.get("QWEN_RESEARCH_COMPUTATION_DB")
     workspace_root = os.environ.get("QWEN_RESEARCH_WORKSPACE_ROOT", "workspaces/computation")
+    orchestration_db = os.environ.get("QWEN_RESEARCH_ORCHESTRATION_DB")
 
     config = None
     index = None
@@ -130,6 +135,30 @@ def build_runtime() -> ResearchRuntime:
             computations=computations,
         )
         memory = MemoryService(store, validator=validator)
+
+    orchestration = None
+    if orchestration_db:
+        from qwen_research.orchestration.capabilities import capability_registry_from_runtime
+        from qwen_research.orchestration.service import OrchestrationService
+        from qwen_research.orchestration.store import OrchestrationStore
+
+        ostore = OrchestrationStore(orchestration_db)
+        ostore.initialize()
+        runtime = InMemoryResearchRuntime(
+            retriever=retriever, memory=memory, verification=verification,
+            computation=computation,
+        )
+        capabilities = capability_registry_from_runtime(
+            retriever=retriever is not None,
+            memory=memory is not None,
+            verification=verification is not None,
+            computation=computation is not None,
+        )
+        orchestration = OrchestrationService(
+            ostore, runtime=runtime, capabilities=capabilities
+        )
+        runtime._orchestration = orchestration  # noqa: SLF001 — wiring boundary
+        return runtime
 
     return InMemoryResearchRuntime(
         retriever=retriever, memory=memory, verification=verification, computation=computation

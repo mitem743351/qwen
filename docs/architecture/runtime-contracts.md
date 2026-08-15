@@ -97,6 +97,17 @@ Without a computation service, these operations raise
 (`get_computation_summaries`, capped by
 `ContextBudget.max_computation_summaries`).
 
+### Orchestration (Phase 7)
+
+`plan_research`, `start_research`, `get_research_status`, `pause_research`,
+`resume_research`, `cancel_research`, `get_research_summary`,
+`get_research_plan`, and `get_research_events` delegate to a configured
+`OrchestrationService` (over an `OrchestrationStore`). The runtime performs
+validation and dispatch; the workflow engine executes stages through registered
+executors that call the retrieval/verification/computation/memory services.
+Without an orchestration service, these operations raise
+`UnsupportedOperationError`. No inference provider is invoked.
+
 ### Reserved lifecycle operations
 
 `pause_task`, `resume_task`, `wait_for_input`, `provide_input`, and

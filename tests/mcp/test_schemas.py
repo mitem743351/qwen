@@ -44,6 +44,13 @@ def test_default_tool_set() -> None:
         "run_analysis",
         "get_computation_result",
         "run_python",
+        "plan_research",
+        "start_research",
+        "get_research_status",
+        "pause_research",
+        "resume_research",
+        "cancel_research",
+        "get_research_summary",
     )
 
 
@@ -125,3 +132,24 @@ def test_field_descriptions_flow_to_wire() -> None:
     execute = catalog["execute_task"]["input_schema"]["properties"]
     assert execute["description"]["description"] == "The task description."
     assert "session_id" in execute
+
+
+def test_task_type_enum_on_plan_research() -> None:
+    schema = _catalog()["plan_research"]["input_schema"]
+    task_type = schema["properties"]["task_type"]
+    # Optional → anyOf[enum-of-strings, null].
+    enum_option = next(o for o in task_type["anyOf"] if "enum" in o)
+    assert enum_option["enum"] == [
+        "question_answering", "deep_research", "literature_review", "fact_check",
+        "data_analysis", "comparison", "technical_analysis", "synthesis",
+        "report_generation", "custom",
+    ]
+    assert task_type["default"] is None
+    assert schema["required"] == ["description"]
+
+
+def test_research_tools_required_fields() -> None:
+    catalog = _catalog()
+    assert catalog["start_research"]["input_schema"]["required"] == ["plan_id"]
+    assert catalog["get_research_status"]["input_schema"]["required"] == ["run_id"]
+    assert catalog["get_research_summary"]["input_schema"]["required"] == ["run_id"]

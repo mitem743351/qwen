@@ -34,6 +34,7 @@ class ErrorCategory(StrEnum):
     VERIFICATION = "verification"
     CLAIM = "claim"
     COMPUTATION = "computation"
+    ORCHESTRATION = "orchestration"
 
 
 class DomainError(Exception):
@@ -277,3 +278,25 @@ class ArtifactError(ComputationError):
 
 class ComputationConfigurationError(ComputationError):
     """The computation subsystem is misconfigured."""
+
+
+class OrchestrationError(DomainError):
+    """Base class for research-orchestration errors."""
+
+    category = ErrorCategory.ORCHESTRATION
+
+
+class ResearchTaskNotFoundError(OrchestrationError):
+    """A referenced research task does not exist (in the current project scope)."""
+
+
+class PlanNotFoundError(OrchestrationError):
+    """A referenced research plan does not exist."""
+
+
+class RunNotFoundError(OrchestrationError):
+    """A referenced workflow run does not exist."""
+
+
+class WorkflowExecutionError(OrchestrationError):
+    """A workflow run could not be executed (blocking/unsupported capability)."""

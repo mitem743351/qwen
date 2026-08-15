@@ -125,6 +125,18 @@ SeedParam = Annotated[
     int | None, Field(description="Optional seed for deterministic operations.")
 ]
 
+# Phase 7 research-orchestration params.
+TaskTypeName = Literal[
+    "question_answering", "deep_research", "literature_review", "fact_check",
+    "data_analysis", "comparison", "technical_analysis", "synthesis",
+    "report_generation", "custom",
+]
+TaskTypeParam = Annotated[TaskTypeName | None, Field(description="The research task type.")]
+ResearchIdParam = Annotated[str, Field(description="The plan or run identifier.")]
+SubquestionsParam = Annotated[
+    list[str] | None, Field(description="Optional deterministic subquestions.")
+]
+
 TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_session": "Return a session by its session id.",
     "create_session": (
@@ -160,6 +172,13 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "run_analysis": "Run a structured analysis operation (statistics, group, aggregate, …).",
     "get_computation_result": "Return a persisted computation result by id.",
     "run_python": "Execute restricted Python in a sandboxed subprocess (EXECUTE).",
+    "plan_research": "Classify and plan a research task deterministically (no model call).",
+    "start_research": "Create and execute a research workflow run for a plan.",
+    "get_research_status": "Return the status of a research workflow run.",
+    "pause_research": "Pause a research workflow run.",
+    "resume_research": "Resume a paused research workflow run.",
+    "cancel_research": "Cancel a research workflow run.",
+    "get_research_summary": "Return a bounded research summary for a run.",
 }
 
 #: The Phase 2 minimal tool set, in registration order.
@@ -187,4 +206,11 @@ DEFAULT_TOOLS: tuple[str, ...] = (
     "run_analysis",
     "get_computation_result",
     "run_python",
+    "plan_research",
+    "start_research",
+    "get_research_status",
+    "pause_research",
+    "resume_research",
+    "cancel_research",
+    "get_research_summary",
 )
