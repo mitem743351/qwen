@@ -510,6 +510,30 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
   workers; autonomous multi-provider routing; automatic Studio→Gateway
   escalation; Qwen built-in web search invocation.
 
+## Phase 10.1 — Real high-effort runtime integration ✅ (complete)
+
+- **Objective:** replace the callback-only engine with a real Research Runtime
+  integration, wire native reasoning end-to-end, make consumption automatic,
+  enforce wall-time during execution, and persist/resume logical run state.
+- **Dependencies:** Phase 10.
+- **Components:** `HighEffortEngine` (drives `search_corpus`/`create_claim`/
+  `verify_claim`/`get_contradictions`/`run_analysis`/`invoke_inference`/
+  `run_tool_loop`, auto-consuming budget + wall-time checks); `HighEffortRunState`
+  (persisted logical state); `RunStateStore`/`InMemoryRunStateStore`/
+  `SqliteRunStateStore`; `TestTimeComputePolicy.inference_policy()` (profile →
+  `InferencePolicy`); `trajectory_query_set()` (distinct strategies); Qwen
+  provider uses `translate_native_reasoning` as the single reasoning seam;
+  `reasoning_effort` negotiated through `negotiate()`; critique + synthesis
+  invoke the Inference Runtime; completion depends on real evidence +
+  verification coverage.
+- **Acceptance criteria:** real fake-provider XHIGH/EXTREME paths pass;
+  native reasoning control emitted on requests; trajectory strategies differ;
+  critique invokes inference; completion requires evidence + verification;
+  wall-time enforced before operations; restart resumes trajectories/stages;
+  global budget is authoritative; single reasoning translation seam.
+- **Not yet:** parallel model trajectories; distributed/remote workers;
+  automatic Studio→Gateway escalation; Qwen built-in web search invocation.
+
 ## Phase 11 — Dashboard / observability
 
 - **Objective:** optional TypeScript observability UI.

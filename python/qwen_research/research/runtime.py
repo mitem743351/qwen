@@ -9,7 +9,7 @@ that depend on unimplemented subsystems (retrieval, verification) raise
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from typing import Any
 
 from qwen_research.claims.models import Claim, ClaimType, QuantitativeClaim, Scope
@@ -60,7 +60,7 @@ from qwen_research.orchestration.models import (
     ResearchPlan as OrchestrationResearchPlan,
 )
 from qwen_research.orchestration.service import OrchestrationService
-from qwen_research.research.budget_store import BudgetStore
+from qwen_research.research.budget_store import RunStateStore
 from qwen_research.research.high_effort import HighEffortResult
 from qwen_research.research.state import (
     InMemoryArtifactStore,
@@ -438,26 +438,33 @@ class InMemoryResearchRuntime:
         self,
         *,
         profile: str,
-        store: BudgetStore | None = None,
+        store: RunStateStore | None = None,
         run_id: str = "",
         task_description: str = "",
-        stages: Callable[[Any], Any] | None = None,
         trajectory_strategies: tuple[Any, ...] = (),
+        project_id: str = "default",
+        dataset_ref: Any = None,
+        tool_request: InferenceRequest | None = None,
     ) -> HighEffortResult:
-        """Run a bounded high-effort research execution (Phase 10).
+        """Run a bounded high-effort research execution against this runtime.
 
-        Exposes the GATEWAY_INFERENCE high-effort path: the Research Runtime
-        owns profile/budget/workflow/tool policy; Qwen owns actual inference.
+        Phase 10.1: the Research Runtime itself drives retrieval / verification /
+        computation / critique / synthesis (each auto-consuming the global
+        budget), and Qwen performs the actual inference. The ``store`` persists
+        the full logical run state so a restart resumes rather than recreates.
         """
         from qwen_research.research.high_effort import run_high_effort as _run
 
         return _run(
+            self,
             profile_name=profile,
             store=store,
             run_id=run_id,
             task_description=task_description,
-            stages=stages,
             trajectory_strategies=trajectory_strategies,
+            project_id=project_id,
+            dataset_ref=dataset_ref,
+            tool_request=tool_request,
         )
 
     def synthesize(

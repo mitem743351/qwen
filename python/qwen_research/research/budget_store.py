@@ -14,7 +14,7 @@ import threading
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from qwen_research.domain.test_time import TestTimeComputeBudget
+from qwen_research.domain.test_time import HighEffortRunState, TestTimeComputeBudget
 
 
 @runtime_checkable
@@ -22,6 +22,15 @@ class BudgetStore(Protocol):
     def save(self, run_id: str, budget: TestTimeComputeBudget) -> None: ...
 
     def load(self, run_id: str) -> TestTimeComputeBudget | None: ...
+
+
+@runtime_checkable
+class RunStateStore(Protocol):
+    """Persists the full logical run state (not just budget counters)."""
+
+    def save_state(self, state: HighEffortRunState) -> None: ...
+
+    def load_state(self, run_id: str) -> HighEffortRunState | None: ...
 
 
 class InMemoryBudgetStore:
@@ -94,3 +103,74 @@ class SqliteBudgetStore:
 def record_to_budget(record: dict[str, Any]) -> TestTimeComputeBudget:
     """Deserialize a budget record (see ``TestTimeComputeBudget.to_record``)."""
     return TestTimeComputeBudget.from_record(record)
+
+
+class InMemoryRunStateStore:
+    """Ephemeral run-state store (tests and short-lived sessions)."""
+
+    def __init__(self) -> None:
+        self._states: dict[str, HighEffortRunState] = {}
+
+    def save_state(self, state: HighEffortRunState) -> None:
+        self._states[state.run_id] = state
+
+    def load_state(self, run_id: str) -> HighEffortRunState | None:
+        return self._states.get(run_id)
+
+
+class SqliteRunStateStore:
+    """SQLite-backed run-state store (restart-safe)."""
+
+    def __init__(self, path: str | Path) -> None:
+        self._path = str(path)
+        self._local = threading.local()
+        self._connections: list[sqlite3.Connection] = []
+        self._write_lock = threading.Lock()
+
+    def _db(self) -> sqlite3.Connection:
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = sqlite3.connect(self._path, check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
+            self._local.conn = conn
+            self._connections.append(conn)
+        return conn
+
+    def initialize(self) -> None:
+        db = self._db()
+        with self._write_lock, db:
+            db.execute(
+                """CREATE TABLE IF NOT EXISTS high_effort_runs (
+                    run_id TEXT PRIMARY KEY,
+                    data TEXT NOT NULL
+                )"""
+            )
+
+    def close(self) -> None:
+        for conn in self._connections:
+            with contextlib.suppress(sqlite3.Error):
+                conn.close()
+        self._connections.clear()
+
+    def __enter__(self) -> SqliteRunStateStore:
+        self.initialize()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+    def save_state(self, state: HighEffortRunState) -> None:
+        db = self._db()
+        with self._write_lock, db:
+            db.execute(
+                "INSERT OR REPLACE INTO high_effort_runs (run_id, data) VALUES (?, ?)",
+                (state.run_id, json.dumps(state.to_record(), sort_keys=True)),
+            )
+
+    def load_state(self, run_id: str) -> HighEffortRunState | None:
+        row = self._db().execute(
+            "SELECT data FROM high_effort_runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return HighEffortRunState.from_record(json.loads(row[0]))

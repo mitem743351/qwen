@@ -1,6 +1,6 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 10 — Bounded XHIGH / EXTREME test-time scaling.
+> **Status:** Phase 10.1 — Real high-effort runtime integration.
 > The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
@@ -615,6 +615,16 @@ See [`docs/architecture/inference.md`](docs/architecture/inference.md) and
 > (`reasoning_effort` XOR `thinking_budget`). XHIGH/EXTREME mean more bounded
 > useful work — never more permissions or hidden-reasoning storage — and the
 > frozen Phase-9 execution guarantees survive scaling.
+>
+> **Phase 10.1 (implemented).** The high-effort engine now drives the **real**
+> Research Runtime (retrieval / verification / computation / critique /
+> synthesis / tool loop), consuming the global budget automatically around each
+> call and enforcing wall-time before every operation. The profile's native
+> reasoning intent flows `profile → InferencePolicy → Qwen reasoning translator
+> → request` through a single seam, trajectory strategies genuinely diverge,
+> critique and synthesis invoke the Inference Runtime, completion depends on
+> real evidence + verification, and the full logical run state is persisted and
+> resumed across restarts.
 
 ---
 

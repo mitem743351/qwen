@@ -64,6 +64,7 @@ from qwen_research.inference.providers.qwen_models import (
     QwenModelSpec,
     resolve_spec,
 )
+from qwen_research.inference.providers.qwen_reasoning import translate_native_reasoning
 from qwen_research.inference.schema_validation import validate_against_schema
 from qwen_research.inference.transport import (
     HttpTransport,
@@ -497,20 +498,13 @@ class QwenProvider:
             payload["top_p"] = policy.top_p
         if policy.max_output_tokens is not None and caps.supports_max_output_tokens:
             payload["max_tokens"] = policy.max_output_tokens
-        # Thinking mode: enable it for either reasoning or a numeric budget, and
-        # emit the numeric budget only on models that actually support it.
-        thinking = policy.reasoning or (
-            policy.reasoning_budget is not None and caps.supports_reasoning_budget
-        )
-        if thinking and caps.supports_reasoning:
-            payload["enable_thinking"] = True
-        if policy.reasoning_budget is not None and caps.supports_reasoning_budget:
-            payload["thinking_budget"] = policy.reasoning_budget
-        # Native reasoning_effort (Phase 10): emitted only for models that
-        # catalog it, and only when the policy requests it — never alongside a
-        # thinking_budget (enforced below).
-        if policy.reasoning_effort and self._resolve_spec(model).reasoning_effort_levels:
-            payload["reasoning_effort"] = policy.reasoning_effort
+        # Native reasoning control (Phase 10): the Qwen reasoning translator is
+        # the **single** seam that turns InferencePolicy intents (reasoning /
+        # reasoning_effort / reasoning_budget) into the exact provider params,
+        # enforcing ``reasoning_effort`` XOR ``thinking_budget`` per model.
+        spec = self._resolve_spec(model)
+        reasoning_control = translate_native_reasoning(policy, spec)
+        reasoning_control.apply(payload)
         if policy.preserved_thinking and caps.supports_preserved_thinking:
             payload["preserve_thinking"] = True
         if request.tools and caps.supports_tool_calling:

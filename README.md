@@ -7,7 +7,7 @@ persistent research memory, verification/citation/provenance, and deterministic
 computation — while Qwen Studio keeps its native conversational and web-search
 capabilities.
 
-> **Current status: Phase 10 — Bounded XHIGH / EXTREME test-time scaling.**
+> **Current status: Phase 10.1 — Real high-effort runtime integration.**
 > The architecture (Phases 0, 0.5, 0.75) is the approved baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
@@ -228,7 +228,11 @@ and long-running tool ownership), Phase 9.6 (final ownership-integrity closure
 and terminal-state immutability — **Phase 9 is frozen**), and Phase 10 (bounded
 XHIGH/EXTREME test-time scaling: explicit profile budgets, restart-safe budget
 persistence, adaptive reallocation, bounded trajectories and critique, and
-native Qwen reasoning control) are **complete**.
+native Qwen reasoning control), and Phase 10.1 (real Research Runtime
+integration: automatic budget consumption, wall-time enforcement, distinct
+trajectory strategies, model-backed critique, evidence/verification-gated
+completion, single reasoning-translation seam, and resume-able run state) are
+**complete**.
 The Research Runtime remains
 provider- and transport-independent; the MCP server is a thin adapter over it,
 now serving hybrid evidence, project-scoped memory, deterministic claim

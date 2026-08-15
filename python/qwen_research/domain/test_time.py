@@ -20,10 +20,13 @@ from __future__ import annotations
 
 import dataclasses
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from qwen_research.common.serialization import serializable
 from qwen_research.domain.errors import ValidationError
+
+if TYPE_CHECKING:  # pragma: no cover - type-checking only
+    from qwen_research.domain.inference import InferencePolicy
 
 
 class ResourceDimension(StrEnum):
@@ -142,6 +145,24 @@ class TestTimeComputePolicy:
                 ResourceDimension.TOKENS: self.max_total_tokens,
             },
         )
+
+    def inference_policy(self) -> InferencePolicy:
+        """Express this profile's *native* reasoning intent as an InferencePolicy.
+
+        The resulting policy carries the provider-native reasoning control
+        (``reasoning_effort`` or ``thinking_budget``), which the Qwen reasoning
+        translator later turns into the actual request parameter. It is **not** a
+        workflow budget — the workflow budget stays in
+        :class:`TestTimeComputeBudget`.
+        """
+        from qwen_research.domain.inference import InferencePolicy
+
+        hint = self.native_reasoning
+        if hint.startswith("reasoning_effort:"):
+            return InferencePolicy(reasoning=True, reasoning_effort=hint.split(":", 1)[1])
+        if hint.startswith("thinking_budget:"):
+            return InferencePolicy(reasoning=True, reasoning_budget=int(hint.split(":", 1)[1]))
+        return InferencePolicy(reasoning=True)
 
 
 #: Explicit high-effort profile ceilings. FAST/NORMAL/DEEP keep modest bounds;
@@ -346,6 +367,51 @@ class ResearchQuerySet:
     counterargument_queries: tuple[str, ...] = ()
     terminology_variants: tuple[str, ...] = ()
 
+    def all_queries(self) -> tuple[str, ...]:
+        """Return the ordered query list (primary first, then variants)."""
+        return (
+            (self.primary_query,)
+            + self.alternative_queries
+            + self.counterargument_queries
+            + self.terminology_variants
+        )
+
+
+def trajectory_query_set(strategy: TrajectoryStrategy, objective: str) -> ResearchQuerySet:
+    """Build a strategy-distinct query set for a trajectory.
+
+    Each :class:`TrajectoryStrategy` produces a **different** query emphasis so
+    trajectories actually diverge rather than cloning the same work:
+
+    - ``DIRECT`` — the objective verbatim.
+    - ``COUNTERARGUMENT`` — "against"/"limitations" framing.
+    - ``LITERATURE`` — review/survey framing + terminology variants.
+    - ``DATA_DRIVEN`` — empirical/measurement framing.
+    - ``MECHANISTIC`` — "mechanism"/"how" framing.
+    """
+    objective = objective.strip()
+    if strategy is TrajectoryStrategy.COUNTERARGUMENT:
+        return ResearchQuerySet(
+            primary_query=f"arguments against {objective}",
+            counterargument_queries=(f"limitations of {objective}",),
+        )
+    if strategy is TrajectoryStrategy.LITERATURE:
+        return ResearchQuerySet(
+            primary_query=f"literature review of {objective}",
+            terminology_variants=(f"survey of {objective}",),
+        )
+    if strategy is TrajectoryStrategy.DATA_DRIVEN:
+        return ResearchQuerySet(
+            primary_query=f"empirical data on {objective}",
+            alternative_queries=(f"measurements of {objective}",),
+        )
+    if strategy is TrajectoryStrategy.MECHANISTIC:
+        return ResearchQuerySet(
+            primary_query=f"mechanism underlying {objective}",
+            alternative_queries=(f"how does {objective} work",),
+        )
+    return ResearchQuerySet(primary_query=objective)
+
 
 @serializable
 @dataclasses.dataclass(frozen=True)
@@ -418,3 +484,71 @@ class ResearchSynthesisInput:
     trajectory_findings: tuple[str, ...] = ()
     critique_findings: tuple[str, ...] = ()
     unresolved_questions: tuple[str, ...] = ()
+
+
+@serializable
+@dataclasses.dataclass
+class HighEffortRunState:
+    """The persisted logical state of a high-effort run (Phase 10.1).
+
+    Persisted so a restart resumes trajectories/stages and budget consumption
+    rather than recreating them. Only safe metadata is stored — no hidden
+    reasoning, no credentials, no raw tool payloads.
+    """
+
+    run_id: str
+    profile: str
+    task_description: str
+    budget: TestTimeComputeBudget
+    trajectories: list[ResearchTrajectory] = dataclasses.field(default_factory=list)
+    completed_stages: list[str] = dataclasses.field(default_factory=list)
+    evidence_refs: list[str] = dataclasses.field(default_factory=list)
+    claims: list[str] = dataclasses.field(default_factory=list)
+    verification_refs: list[str] = dataclasses.field(default_factory=list)
+    contradictions: list[str] = dataclasses.field(default_factory=list)
+    computation_refs: list[str] = dataclasses.field(default_factory=list)
+    critique_results: list[CritiqueResult] = dataclasses.field(default_factory=list)
+    final_synthesis: str = ""
+    status: str = "running"
+
+    def to_record(self) -> dict[str, Any]:
+        """A primitives-only record (JSON-safe; enum keys stringified)."""
+        from qwen_research.common.serialization import dumps
+
+        return {
+            "run_id": self.run_id,
+            "profile": self.profile,
+            "task_description": self.task_description,
+            "budget": self.budget.to_record(),
+            "trajectories": [dumps(t) for t in self.trajectories],
+            "completed_stages": list(self.completed_stages),
+            "evidence_refs": list(self.evidence_refs),
+            "claims": list(self.claims),
+            "verification_refs": list(self.verification_refs),
+            "contradictions": list(self.contradictions),
+            "computation_refs": list(self.computation_refs),
+            "critique_results": [dumps(c) for c in self.critique_results],
+            "final_synthesis": self.final_synthesis,
+            "status": self.status,
+        }
+
+    @classmethod
+    def from_record(cls, record: dict[str, Any]) -> HighEffortRunState:
+        from qwen_research.common.serialization import loads
+
+        return cls(
+            run_id=record["run_id"],
+            profile=record["profile"],
+            task_description=record["task_description"],
+            budget=TestTimeComputeBudget.from_record(record["budget"]),
+            trajectories=[loads(t) for t in record.get("trajectories", [])],
+            completed_stages=list(record.get("completed_stages", [])),
+            evidence_refs=list(record.get("evidence_refs", [])),
+            claims=list(record.get("claims", [])),
+            verification_refs=list(record.get("verification_refs", [])),
+            contradictions=list(record.get("contradictions", [])),
+            computation_refs=list(record.get("computation_refs", [])),
+            critique_results=[loads(c) for c in record.get("critique_results", [])],
+            final_synthesis=record.get("final_synthesis", ""),
+            status=record.get("status", "running"),
+        )

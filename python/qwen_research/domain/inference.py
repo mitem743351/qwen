@@ -592,6 +592,20 @@ def negotiate(
                 "reasoning budget not provider-controllable; approximated via workflow passes",
             )
 
+    # reasoning_effort (native reasoning-depth control; mutually exclusive with
+    # reasoning_budget, enforced by InferencePolicy.__post_init__). Passed
+    # through when the provider can reason; the Qwen translator validates and
+    # degrades it (e.g. xhigh → bounded thinking_budget) at the provider layer.
+    if policy.reasoning_effort:
+        if capabilities.supports_reasoning:
+            apply_native("reasoning_effort", policy.reasoning_effort)
+        else:
+            degrade_to_default(
+                "reasoning_effort",
+                "",
+                "provider exposes no reasoning-depth control; using default",
+            )
+
     # max_output_tokens
     if policy.max_output_tokens is not None:
         if capabilities.supports_max_output_tokens:

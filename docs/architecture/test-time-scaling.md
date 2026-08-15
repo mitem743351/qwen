@@ -6,6 +6,14 @@ loop* into *bounded high-effort research execution*.
 XHIGH/EXTREME mean **more bounded useful work** — never longer prompts, higher
 temperature, more permissions, or hidden-reasoning storage.
 
+Phase 10.1 replaces the callback-only engine with a **real** Research Runtime
+integration: the `HighEffortEngine` drives the runtime's `search_corpus` /
+`create_claim` / `verify_claim` / `get_contradictions` / `run_analysis` /
+`invoke_inference` / `run_tool_loop` directly, consuming the global budget
+**automatically** around each call and checking wall-time **before** every
+operation. The profile's native reasoning intent flows
+`profile → InferencePolicy → Qwen reasoning translator → request`.
+
 ---
 
 ## Two dimensions, kept separate
@@ -35,10 +43,15 @@ retrieval_candidates, verification_rounds, computation_rounds, trajectories,
 critique_rounds, synthesis_passes, wall_time, tokens
 ```
 
-- **Reserve → execute → commit**: an operation must reserve before spending.
+- **Reserve → execute → commit**: the engine reserves, executes the real runtime
+  call, then commits — callers cannot bypass the budget because the engine is
+  the only path to the runtime during a run.
 - `consumed` is monotonic — a restart cannot reset it.
 - Global ceilings are authoritative; nested trajectories inherit remaining
   budget and can never exceed the top-level ceiling.
+- The full **logical run state** (budget + trajectories + stage progress +
+  evidence/verification/contradiction refs) is persisted and resumed, not just
+  the budget counters.
 
 ## Scheduler
 

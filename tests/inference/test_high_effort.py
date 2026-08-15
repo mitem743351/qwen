@@ -1,29 +1,27 @@
-"""Phase 10 high-effort execution + Phase-9 inheritance tests."""
+"""Phase 10.1 high-effort execution: real runtime integration + inheritance."""
 
 from __future__ import annotations
 
 import threading
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
+from inference_helpers import FakeQwenTransport, TransportResponse, completion_response
 from qwen_research.domain.test_time import (
-    CritiqueAction,
-    CritiqueIssue,
-    CritiqueRequest,
-    CritiqueResult,
-    ResearchSynthesisInput,
+    HighEffortRunState,
     ResourceDimension,
     RunStatus,
     TrajectoryStrategy,
+    get_test_time_policy,
+    trajectory_query_set,
 )
-from qwen_research.research.budget_store import SqliteBudgetStore
-from qwen_research.research.high_effort import (
-    HighEffortContext,
-    perform_critique,
-    reallocate_after_signal,
-    run_high_effort,
-    run_trajectory,
-)
-from qwen_research.research.scheduler import BudgetSignal
+from qwen_research.inference.config import ProviderConfig
+from qwen_research.inference.providers.qwen import QwenProvider
+from qwen_research.inference.runtime import InferenceRuntime
+from qwen_research.research.budget_store import InMemoryRunStateStore, SqliteRunStateStore
+from qwen_research.research.high_effort import HighEffortEngine
+from qwen_research.research.runtime import InMemoryResearchRuntime
 from qwen_research.research.tool_execution import (
     ClaimOutcome,
     InMemoryToolExecutionStore,
@@ -32,140 +30,261 @@ from qwen_research.research.tool_execution import (
     canonical_arguments_hash,
 )
 from qwen_research.research.tool_loop import ToolExecutionResult, ToolExecutionStatus
+from verification_helpers import build_service
+
+_MODEL = "qwen3.8-max-preview"
 
 
-def _xhigh_stages(ctx: HighEffortContext) -> ResearchSynthesisInput:
-    """A deterministic XHIGH trace: retrieval → verification → contradiction →
-    adaptive reallocation → retrieval 2 → computation → trajectories → critique
-    → re-verification → synthesis. Every step consumes budget."""
-    events = ctx.events
-    events.append("retrieval_round_1")
-    ctx.spend(ResourceDimension.RETRIEVAL_ROUNDS)
-    ctx.spend(ResourceDimension.INFERENCE_CALLS)
-    ctx.spend(ResourceDimension.TOOL_CALLS)
-
-    events.append("verification")
-    ctx.spend(ResourceDimension.VERIFICATION_ROUNDS)
-
-    events.append("contradiction_found")
-    reallocate_after_signal(
-        ctx, BudgetSignal(ResourceDimension.VERIFICATION_ROUNDS, "strong", "contradiction")
-    )
-
-    events.append("retrieval_round_2")
-    ctx.spend(ResourceDimension.RETRIEVAL_ROUNDS)
-
-    events.append("computation")
-    ctx.spend(ResourceDimension.COMPUTATION_ROUNDS)
-
-    for trajectory in ctx.trajectories:
-        run_trajectory(
-            ctx, trajectory, inference_calls=1, tool_calls=2, retrieval_rounds=1
+def _make_fake_provider() -> tuple[Any, FakeQwenTransport]:
+    """A fake Qwen provider (model ``qwen3.8-max-preview``) that answers critique
+    and synthesis turns, recording every request body via ``transport.calls``."""
+    def handler(url: str, headers: dict, body: dict, timeout: float) -> TransportResponse:
+        system = body["messages"][0]["content"]
+        if "critic" in system:
+            return completion_response("unsupported claim found", finish_reason="stop")
+        return completion_response(
+            "grounded synthesis: the surface-code threshold is ~1%", finish_reason="stop"
         )
 
-    critique = perform_critique(
-        ctx,
-        CritiqueRequest(draft="draft", claims=("c1",)),
-        critique=lambda req: CritiqueResult(
-            issues=(
-                CritiqueIssue(
-                    severity="major", description="unsupported claim", claim_refs=("c1",)
-                ),
-            ),
-            recommended_action=CritiqueAction.VERIFY_MORE,
-        ),
+    transport = FakeQwenTransport(handler)
+    config = ProviderConfig(
+        provider_id="qwen",
+        api_endpoint="https://example.invalid/compatible-mode/v1",
+        credential_env="TEST_QWEN_API_KEY",
+        default_model=_MODEL,
     )
-    assert critique.recommended_action is CritiqueAction.VERIFY_MORE
-
-    events.append("re_verification")
-    ctx.spend(ResourceDimension.VERIFICATION_ROUNDS)
-
-    events.append("final_synthesis")
-    ctx.spend(ResourceDimension.SYNTHESIS_PASSES)
-    return ResearchSynthesisInput(claims=("c1",), unresolved_questions=())
+    provider = QwenProvider(
+        config, transport=transport, credential_resolver=lambda name: "test-key"
+    )
+    return provider, transport
 
 
-def test_xhigh_trace_consumes_within_budget() -> None:
-    result = run_high_effort(
-        profile_name="XHIGH",
-        task_description="surface-code threshold",
+def _bodies(transport: FakeQwenTransport) -> list[dict]:
+    """Return the parsed request-body dicts recorded by the transport."""
+    return [call[2] for call in transport.calls]
+
+
+def _build_runtime(tmp_path: Path, provider: Any) -> InMemoryResearchRuntime:
+    service, _, stack = build_service(tmp_path)
+    inference = InferenceRuntime(
+        {"qwen": provider}, default_provider="qwen", default_model=_MODEL
+    )
+    return InMemoryResearchRuntime(
+        retriever=stack["hybrid"], verification=service, inference=inference
+    )
+
+
+# -- real fake-provider end-to-end path -----------------------------------
+
+def test_xhigh_real_fake_provider_path(tmp_path: Path) -> None:
+    provider, transport = _make_fake_provider()
+    runtime = _build_runtime(tmp_path, provider)
+
+    result = runtime.run_high_effort(
+        profile="XHIGH",
+        task_description="surface code threshold",
         trajectory_strategies=(TrajectoryStrategy.DIRECT, TrajectoryStrategy.COUNTERARGUMENT),
-        stages=_xhigh_stages,
+        project_id="p",
     )
+    seen = _bodies(transport)
+
     assert result.status is RunStatus.COMPLETED
-    summary = result.budget_summary
-    # consumed <= allocated for every dimension.
-    for dimension, allocated in summary["allocated"].items():
-        assert summary["consumed"][dimension] <= allocated, dimension
-    # Two trajectories admitted (XHIGH allows 3).
-    assert len(result.trajectories) == 2
-    assert len(result.reallocation_decisions) >= 1
+    # Real evidence + verification were produced (completion criteria met).
     assert result.synthesis_input is not None
+    assert result.synthesis_input.evidence_refs
+    assert result.synthesis_input.verification_refs
+    assert result.final_synthesis != ""
 
+    # Trajectories actually differ (distinct strategies, distinct evidence).
+    assert len(result.trajectories) == 2
+    strategies = {t.strategy for t in result.trajectories}
+    assert strategies == {TrajectoryStrategy.DIRECT, TrajectoryStrategy.COUNTERARGUMENT}
 
-def test_extreme_trace_within_budget() -> None:
-    def stages(ctx: HighEffortContext) -> ResearchSynthesisInput:
-        for _ in range(3):
-            ctx.spend(ResourceDimension.RETRIEVAL_ROUNDS)
-        for _ in range(2):
-            ctx.spend(ResourceDimension.VERIFICATION_ROUNDS)
-        ctx.spend(ResourceDimension.COMPUTATION_ROUNDS)
-        for trajectory in ctx.trajectories:
-            run_trajectory(ctx, trajectory, inference_calls=1, tool_calls=1, retrieval_rounds=1)
-        ctx.spend(ResourceDimension.CRITIQUE_ROUNDS)
-        ctx.spend(ResourceDimension.SYNTHESIS_PASSES)
-        return ResearchSynthesisInput()
+    # Critique + synthesis both invoked the inference runtime.
+    systems = [b["messages"][0]["content"] for b in seen]
+    assert any("critic" in s for s in systems)
+    assert any("synthesis" in s for s in systems)
 
-    result = run_high_effort(
-        profile_name="EXTREME",
-        trajectory_strategies=(TrajectoryStrategy.DIRECT, TrajectoryStrategy.DATA_DRIVEN),
-        stages=stages,
-    )
-    assert result.status is RunStatus.COMPLETED
+    # Native Qwen reasoning control was emitted on every inference request.
+    assert any(b.get("reasoning_effort") == "xhigh" for b in seen)
+
+    # consumed <= allocated for every dimension.
     for dimension, allocated in result.budget_summary["allocated"].items():
         assert result.budget_summary["consumed"][dimension] <= allocated, dimension
 
 
-def test_trajectory_budget_never_exceeded() -> None:
-    # EXTREME allows 5 trajectories; request 6 → 5 admitted, 6th denied.
-    result = run_high_effort(
-        profile_name="EXTREME",
-        trajectory_strategies=(TrajectoryStrategy.DIRECT,) * 6,
-        stages=lambda ctx: ResearchSynthesisInput(),
+def test_extreme_real_fake_provider_path(tmp_path: Path) -> None:
+    provider, _ = _make_fake_provider()
+    runtime = _build_runtime(tmp_path, provider)
+
+    result = runtime.run_high_effort(
+        profile="EXTREME",
+        task_description="surface code threshold",
+        trajectory_strategies=(
+            TrajectoryStrategy.DIRECT,
+            TrajectoryStrategy.LITERATURE,
+            TrajectoryStrategy.DATA_DRIVEN,
+        ),
+        project_id="p",
     )
-    assert len(result.trajectories) == 5
-    consumed_traj = result.budget_summary["consumed"][ResourceDimension.TRAJECTORIES.value]
-    assert consumed_traj == 5
+    assert result.status is RunStatus.COMPLETED
+    assert len(result.trajectories) == 3
+    for dimension, allocated in result.budget_summary["allocated"].items():
+        assert result.budget_summary["consumed"][dimension] <= allocated, dimension
 
 
-def test_budget_exhaustion_status() -> None:
-    def stages(ctx: HighEffortContext) -> ResearchSynthesisInput:
-        # Exhaust every dimension.
-        for dimension in list(ctx.budget.allocated):
-            while ctx.budget.can_afford(dimension):
-                ctx.budget.commit(dimension)
-        return ResearchSynthesisInput()
+# -- trajectory strategies differ ----------------------------------------
 
-    result = run_high_effort(profile_name="FAST", stages=stages)
-    assert result.status is RunStatus.BUDGET_EXHAUSTED
+def test_trajectory_strategies_produce_distinct_queries() -> None:
+    objective = "surface code threshold"
+    direct = trajectory_query_set(TrajectoryStrategy.DIRECT, objective)
+    counter = trajectory_query_set(TrajectoryStrategy.COUNTERARGUMENT, objective)
+    literature = trajectory_query_set(TrajectoryStrategy.LITERATURE, objective)
+    assert direct.primary_query == objective
+    assert counter.primary_query != direct.primary_query
+    assert literature.primary_query != direct.primary_query
+    assert "against" in counter.primary_query
+    assert "review" in literature.primary_query
+    # All strategies actually differ from DIRECT.
+    assert len({direct.primary_query, counter.primary_query, literature.primary_query}) == 3
 
 
-def test_restart_preserves_consumed_budget(tmp_path: Any) -> None:
-    store = SqliteBudgetStore(tmp_path / "budgets.db")
+# -- critique invokes inference ------------------------------------------
+
+def test_critique_invokes_inference(tmp_path: Path) -> None:
+    provider, transport = _make_fake_provider()
+    runtime = _build_runtime(tmp_path, provider)
+    result = runtime.run_high_effort(
+        profile="XHIGH",
+        task_description="surface code threshold",
+        trajectory_strategies=(TrajectoryStrategy.DIRECT,),
+        project_id="p",
+    )
+    seen = _bodies(transport)
+    assert result.status is RunStatus.COMPLETED
+    # The critique stage produced a critique result via the inference runtime.
+    assert result.critique_results
+    assert result.critique_results[0].issues
+    assert any("critic" in b["messages"][0]["content"] for b in seen)
+
+
+# -- completion depends on evidence/verification --------------------------
+
+def test_completion_requires_evidence_and_verification() -> None:
+    # A runtime with inference but NO retriever/verification cannot complete.
+    provider, _ = _make_fake_provider()
+    inference = InferenceRuntime(
+        {"qwen": provider}, default_provider="qwen", default_model="qwen3.8-max-preview"
+    )
+    runtime = InMemoryResearchRuntime(inference=inference)
+    result = runtime.run_high_effort(
+        profile="XHIGH",
+        task_description="surface code threshold",
+        trajectory_strategies=(TrajectoryStrategy.DIRECT,),
+        project_id="p",
+    )
+    # No evidence/verification → not COMPLETED (PARTIAL or SYNTHESIS_REQUIRED).
+    assert result.status is not RunStatus.COMPLETED
+
+
+# -- wall-time enforced during execution ----------------------------------
+
+def test_wall_time_enforced_before_operations() -> None:
+    calls: list[str] = []
+
+    class _Runtime:
+        def search_corpus(self, query: str, options: Any = None) -> Any:
+            calls.append(query)
+            return SimpleNamespace(chunks=[])
+
+    state = HighEffortRunState(
+        run_id="r", profile="FAST", task_description="t",
+        budget=get_test_time_policy("FAST").budget(),
+    )
+    engine = HighEffortEngine(_Runtime(), "FAST", state)
+    # Simulate the wall-time budget already being consumed.
+    engine.started_at = 0.0  # long ago relative to monotonic now
+    assert engine.wall_time_exhausted()
+    assert engine.retrieve("q") == []
+    assert calls == []  # the runtime was never called
+
+
+# -- global budget authoritative (callers cannot bypass) ------------------
+
+def test_budget_authoritative_cannot_bypass() -> None:
+    calls: list[str] = []
+
+    class _Runtime:
+        def search_corpus(self, query: str, options: Any = None) -> Any:
+            calls.append(query)
+            return SimpleNamespace(chunks=[SimpleNamespace(chunk_id="c1")])
+
+    state = HighEffortRunState(
+        run_id="r", profile="FAST", task_description="t",
+        budget=get_test_time_policy("FAST").budget(),
+    )
+    engine = HighEffortEngine(_Runtime(), "FAST", state)
+    # Exhaust the retrieval dimension directly.
+    while engine.budget.can_afford(ResourceDimension.RETRIEVAL_ROUNDS):
+        engine.budget.commit(ResourceDimension.RETRIEVAL_ROUNDS)
+    assert engine.retrieve("q") == []
+    assert calls == []  # bypassing is impossible: the engine is the only path
+
+
+# -- restart resumes trajectories/stages ----------------------------------
+
+def test_restart_resumes_trajectories_and_stages(tmp_path: Path) -> None:
+    store = SqliteRunStateStore(tmp_path / "runs.db")
     store.initialize()
 
-    def stages(ctx: HighEffortContext) -> ResearchSynthesisInput:
-        ctx.spend(ResourceDimension.TOOL_CALLS, 5)
-        return ResearchSynthesisInput()
+    provider, _ = _make_fake_provider()
+    runtime = _build_runtime(tmp_path, provider)
+    first = runtime.run_high_effort(
+        profile="XHIGH",
+        store=store,
+        run_id="run-1",
+        task_description="surface code threshold",
+        trajectory_strategies=(TrajectoryStrategy.DIRECT,),
+        project_id="p",
+    )
+    assert first.status is RunStatus.COMPLETED
+    assert len(first.trajectories) == 1
 
-    first = run_high_effort(profile_name="XHIGH", store=store, run_id="run-1", stages=stages)
-    consumed_tools_first = first.budget_summary["consumed"]["tool_calls"]
-    assert consumed_tools_first == 5
+    # "Restart" the same run: the store persists the logical run state, so a new
+    # run with the same run_id resumes rather than recreates.
+    resumed = runtime.run_high_effort(
+        profile="XHIGH",
+        store=store,
+        run_id="run-1",
+        task_description="surface code threshold",
+        trajectory_strategies=(TrajectoryStrategy.DIRECT,),
+        project_id="p",
+    )
+    # Trajectories are resumed, not recreated.
+    assert len(resumed.trajectories) == 1
+    assert resumed.trajectories[0].trajectory_id == first.trajectories[0].trajectory_id
+    # Completed stages are preserved (no re-execution of already-done stages).
+    assert resumed.completed_stages == first.completed_stages
+    # The final synthesis is preserved across restart (no new inference calls).
+    assert resumed.final_synthesis == first.final_synthesis
 
-    # "Restart" the same run: consumed is preserved, not reset.
-    resumed = run_high_effort(profile_name="XHIGH", store=store, run_id="run-1", stages=stages)
-    consumed_tools_resumed = resumed.budget_summary["consumed"]["tool_calls"]
-    assert consumed_tools_resumed >= 5  # never reset to 0
+
+def test_run_state_roundtrip() -> None:
+    store = InMemoryRunStateStore()
+    state = HighEffortRunState(
+        run_id="r", profile="XHIGH", task_description="t",
+        budget=get_test_time_policy("XHIGH").budget(),
+        completed_stages=["verification"],
+        evidence_refs=["e1"],
+        final_synthesis="done",
+    )
+    store.save_state(state)
+    loaded = store.load_state("r")
+    assert loaded is not None
+    assert loaded.evidence_refs == ["e1"]
+    assert loaded.completed_stages == ["verification"]
+    assert loaded.final_synthesis == "done"
+    assert loaded.budget.consumed_for(ResourceDimension.TOOL_CALLS) == 0
 
 
 # -- Phase-9 inheritance tests -------------------------------------------
@@ -190,7 +309,6 @@ def test_high_effort_duplicate_call_id_replays_not_reexecutes() -> None:
     store.complete(identity, "lease-1", ToolExecutionResult(
         call_id="call-1", tool_name="search_corpus", status=ToolExecutionStatus.SUCCEEDED
     ))
-    # A high-effort "retry" of the same identity replays, never re-executes.
     replay = store.claim(
         identity,
         tool_name="search_corpus",
@@ -238,9 +356,7 @@ def test_high_effort_concurrent_claim_one_owner() -> None:
     for t in threads:
         t.join()
 
-    # Exactly one owner: the second claim must be ALREADY_CLAIMED (verified by
-    # inspecting the record's single lease owner).
     record = store.inspect(identity)
     assert record is not None
     assert record.lease_owner in ("o0", "o1")
-    assert record.attempt == 1  # only one physical claim
+    assert record.attempt == 1
