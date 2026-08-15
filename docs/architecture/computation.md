@@ -72,10 +72,42 @@ never exposed through MCP. See `ExecutionProfileSpec` in `models.py`.
 ## Resource limits
 
 Every computation is bounded: `max_runtime`, `max_output_bytes`,
-`max_input_bytes`, `max_rows`, `max_memory`. Time and output limits are
-**enforced**; the memory limit is applied **best-effort** via `resource`
-(`RLIMIT_AS`) on POSIX and is documented as such — no hard memory limit is
-claimed on platforms where it cannot be set.
+`max_input_bytes`, `max_rows`, `max_memory`.
+
+- **DuckDB** enforcement is **real**: the query runs on a worker thread and is
+  interrupted at the deadline (`con.interrupt()` → `ExecutionTimeoutError`),
+  and DuckDB's `memory_limit` is set so a query that exceeds it raises
+  `ResourceLimitError`. `max_rows` bounds the returned rows (truncated flag).
+- **Python** time/output limits are enforced by the subprocess; the memory
+  limit is **best-effort** via `resource` (`RLIMIT_AS`) on POSIX and is
+  documented as such — no hard memory limit is claimed where it cannot be set.
+
+---
+
+## Cancellation
+
+Execution is synchronous (there is no background worker to interrupt), so
+`cancel()` is only meaningful for a submitted-but-not-yet-executed computation:
+it records a `CANCELLED` result. If a terminal result already exists, `cancel`
+is a **no-op** and returns the existing result — it never overwrites a
+completed/failed/timed-out outcome.
+
+---
+
+## Python execution (gated)
+
+`CUSTOM_PYTHON` (and the `run_python` tool) is **unavailable by default**:
+`ComputationService`/`ComputationEngine` accept `enable_python_execution=False`
+and raise `UnsupportedOperationError` until hardened isolation (seccomp/
+container) exists. See [`python-sandbox.md`](python-sandbox.md).
+
+---
+
+## Dataset inputs
+
+Inputs resolve only through the corpus security layer (root_id/relative_path or
+document/dataset id). **Artifact-backed dataset inputs are reserved** — an
+`artifact_id` reference raises `DatasetError` rather than silently failing.
 
 ---
 

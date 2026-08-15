@@ -10,10 +10,15 @@ import pytest
 from computation_helpers import build_service, ref
 from qwen_research.computation.models import (
     ComputationOperation,
+    ComputationRequest,
     ComputationStatus,
     ExecutionProfile,
 )
-from qwen_research.domain.errors import ComputationNotFoundError, ComputationValidationError
+from qwen_research.domain.errors import (
+    ComputationNotFoundError,
+    ComputationValidationError,
+    UnsupportedOperationError,
+)
 
 
 def _value(result: Any) -> dict[str, Any]:
@@ -94,7 +99,7 @@ def test_simulate_persists_seed(tmp_path: Path) -> None:
 
 
 def test_custom_python(tmp_path: Path) -> None:
-    service, _, _, _, _ = build_service(tmp_path)
+    service, _, _, _, _ = build_service(tmp_path, enable_python_execution=True)
     result = service.run_python("p", "RESULT = [i * i for i in range(4)]")
     assert result.status is ComputationStatus.COMPLETED
     assert result.value == [0, 1, 4, 9]
@@ -116,7 +121,7 @@ def test_get_result_missing_raises(tmp_path: Path) -> None:
 
 
 def test_code_hash_recorded(tmp_path: Path) -> None:
-    service, _, _, _, _ = build_service(tmp_path)
+    service, _, _, _, _ = build_service(tmp_path, enable_python_execution=True)
     result = service.run_python("p", "RESULT = 1 + 1")
     assert "code_hash" in result.provenance
 
@@ -141,3 +146,68 @@ def test_project_isolation(tmp_path: Path) -> None:
     assert service.get_computation_result("projA", result.computation_id) is not None
     with pytest.raises(ComputationNotFoundError):
         service.get_computation_result("projB", result.computation_id)
+
+
+def test_validate_rejects_missing_required_parameter(tmp_path: Path) -> None:
+    service, _, _, _, data = build_service(tmp_path)
+    # Each operation declares required parameters; a missing one must be
+    # rejected at submit time (before anything is persisted).
+    with pytest.raises(ComputationValidationError):
+        service.run_analysis("p", (), ComputationOperation.CALCULATE, {})
+    with pytest.raises(ComputationValidationError):
+        service.run_analysis("p", (), ComputationOperation.SIMULATE, {}, seed=1,
+                             profile=ExecutionProfile.SIMULATION)
+    with pytest.raises(ComputationValidationError):
+        service.run_analysis(
+            "p", (ref(data, "numbers.csv"),), ComputationOperation.STATISTICS, {}
+        )
+    with pytest.raises(ComputationValidationError):
+        service.run_analysis(
+            "p", (ref(data, "numbers.csv"),), ComputationOperation.AGGREGATE,
+            {"column": "value"},
+        )
+
+
+def test_validate_missing_parameter_persists_nothing(tmp_path: Path) -> None:
+    service, store, _, _, _ = build_service(tmp_path)
+    with pytest.raises(ComputationValidationError):
+        service.run_analysis("p", (), ComputationOperation.CALCULATE, {})
+    # The invalid request was rejected at submit; nothing was persisted.
+    assert store.get_project_computations("p") == []
+
+
+def test_cancel_before_execution_marks_cancelled(tmp_path: Path) -> None:
+    service, _, _, _, data = build_service(tmp_path)
+    request = service.submit(
+        ComputationRequest.create(
+            "p", ComputationOperation.COUNT, input_refs=(ref(data, "numbers.csv"),)
+        )
+    )
+    result = service.cancel(request.computation_id)
+    assert result.status is ComputationStatus.CANCELLED
+    assert service.get_computation_result("p", request.computation_id).status is (
+        ComputationStatus.CANCELLED
+    )
+
+
+def test_cancel_after_completion_is_noop(tmp_path: Path) -> None:
+    service, _, _, _, data = build_service(tmp_path)
+    result = service.run_analysis(
+        "p", (ref(data, "numbers.csv"),), ComputationOperation.COUNT
+    )
+    assert result.status is ComputationStatus.COMPLETED
+    # Cancelling a completed computation must not overwrite its result.
+    cancelled = service.cancel(result.computation_id)
+    assert cancelled.status is ComputationStatus.COMPLETED
+    assert cancelled.value == result.value
+
+
+def test_run_python_unavailable_by_default(tmp_path: Path) -> None:
+    service, _, _, _, _ = build_service(tmp_path)
+    with pytest.raises(UnsupportedOperationError):
+        service.run_python("p", "RESULT = 1")
+    # The CUSTOM_PYTHON operation is also gated through run_analysis.
+    with pytest.raises(UnsupportedOperationError):
+        service.run_analysis(
+            "p", (), ComputationOperation.CUSTOM_PYTHON, {"source": "RESULT = 1"}
+        )

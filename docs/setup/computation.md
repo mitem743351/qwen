@@ -17,15 +17,22 @@ sandbox.
 | `QWEN_RESEARCH_WORKSPACE_ROOT` | output root for computation artifacts (default `workspaces/computation`) |
 | `QWEN_RESEARCH_ENABLE_WRITE` | `"1"` to enable WRITE tools (also unlocks `analyze`) |
 
-With `QWEN_RESEARCH_COMPUTATION_DB` set, five tools become available:
+With `QWEN_RESEARCH_COMPUTATION_DB` set, four tools are usable and one is
+**registered but gated**:
 
 ```text
 describe_dataset         READ      profile a dataset (schema/statistics/preview)
 run_query                ANALYZE   validated, parameterized SQL over approved datasets
 run_analysis             ANALYZE   structured operations (statistics/group/aggregate/…)
 get_computation_result   READ      read a persisted result by id
-run_python               EXECUTE   sandboxed Python (disabled by default)
+run_python               EXECUTE   sandboxed Python — UNAVAILABLE (see below)
 ```
+
+`run_python` is registered (so the schema is stable) but **always raises
+"capability unavailable"** because the service is constructed with
+`enable_python_execution=False`. It will not execute model code until hardened
+isolation (seccomp/container) exists — see
+[`../architecture/python-sandbox.md`](../architecture/python-sandbox.md).
 
 ---
 

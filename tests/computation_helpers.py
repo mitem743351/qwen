@@ -47,6 +47,8 @@ def _write_sqlite(path: Path) -> None:
 
 def build_service(
     tmp_path: Path,
+    *,
+    enable_python_execution: bool = False,
 ) -> tuple[ComputationService, ComputationStore, DatasetResolver, ArtifactStore, Path]:
     """Build a ComputationService over a sample dataset corpus."""
     data = build_data_dir(tmp_path)
@@ -57,7 +59,10 @@ def build_service(
     store.initialize()
     artifacts = ArtifactStore(tmp_path / "artifacts")
     resolver = DatasetResolver(config, artifacts_root=str(tmp_path / "artifacts"))
-    service = ComputationService(store, resolver, artifacts=artifacts)
+    service = ComputationService(
+        store, resolver, artifacts=artifacts,
+        enable_python_execution=enable_python_execution,
+    )
     return service, store, resolver, artifacts, data
 
 

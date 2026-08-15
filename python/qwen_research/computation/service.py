@@ -39,11 +39,17 @@ class ComputationService:
         duckdb: DuckDBBackend | None = None,
         python: PythonExecutor | None = None,
         artifacts: ArtifactStore | None = None,
+        enable_python_execution: bool = False,
     ) -> None:
         self._store = store
         self._resolver = resolver
         self._engine = ComputationEngine(
-            store, resolver, duckdb=duckdb, python=python, artifacts=artifacts
+            store,
+            resolver,
+            duckdb=duckdb,
+            python=python,
+            artifacts=artifacts,
+            enable_python_execution=enable_python_execution,
         )
 
     def initialize(self) -> None:
@@ -148,8 +154,8 @@ class ComputationService:
     def execute(self, computation_id: str) -> ComputationResult:
         return self._engine.execute(computation_id)
 
-    def cancel(self, computation_id: str) -> None:
-        self._engine.cancel(computation_id)
+    def cancel(self, computation_id: str) -> ComputationResult:
+        return self._engine.cancel(computation_id)
 
     def computation_ids_by_project(self) -> dict[str, frozenset[str]]:
         return self._store.computation_ids_by_project()

@@ -110,16 +110,23 @@ assumed safe because "the model wrote it".
 - **SQL.** DuckDB queries run with `enable_external_access = false`; statement
   validation rejects `ATTACH`/`COPY`/`INSTALL`/`LOAD`/`PRAGMA` and file-reading
   functions; values are parameterized; identifiers are validated against schema
-  metadata. SQL cannot read or write arbitrary filesystem locations.
+  metadata. SQL cannot read or write arbitrary filesystem locations. Queries
+  are also bounded by a real timeout (worker-thread interrupt) and DuckDB's
+  `memory_limit` (`ResourceLimitError`).
 - **Python.** Executes in a separate OS subprocess with a restricted builtins
   namespace (no `__import__`, `open`, `eval`, `subprocess`, `socket`), enforced
-  time/output limits, and best-effort memory limits. `run_python` is
-  `EXECUTE`-gated and disabled by default.
+  time/output limits, and best-effort memory limits. `run_python` /
+  `CUSTOM_PYTHON` is **unavailable to model-driven execution** — it raises
+  `UnsupportedOperationError` unless the service is explicitly constructed with
+  `enable_python_execution=True` (the shipped server never sets this). It is
+  additionally `EXECUTE`-gated and disabled by default.
 - **Datasets.** Inputs resolve only through the corpus security layer; arbitrary
-  OS paths are never accepted from MCP. Artifacts are written only inside the
-  configured workspace root (path traversal rejected).
+  OS paths are never accepted from MCP. Artifact-backed dataset inputs are
+  reserved (rejected). Artifacts are written only inside the configured
+  workspace root (path traversal rejected).
 - **Honesty.** The Python sandbox is a restricted execution environment, not a
-  hardened boundary against adversarial introspection (see
+  hardened boundary against adversarial introspection — verified by tests that
+  recover the real builtins and read a file (see
   [`docs/architecture/python-sandbox.md`](docs/architecture/python-sandbox.md)).
 
 ## Hidden chain-of-thought

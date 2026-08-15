@@ -121,3 +121,12 @@ def test_read_outside_corpus_rejected(tmp_path: Path) -> None:
     # corpus security layer.
     with pytest.raises(PathSecurityError):
         resolver.resolve(DatasetReference(root_id="data", relative_path="../secret.csv"))
+
+
+def test_artifact_dataset_input_reserved(tmp_path: Path) -> None:
+    data = build_data_dir(tmp_path)
+    resolver = _resolver(data)
+    from qwen_research.domain.errors import DatasetError
+
+    with pytest.raises(DatasetError, match="reserved"):
+        resolver.resolve(DatasetReference(artifact_id="artifact_123"))

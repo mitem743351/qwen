@@ -56,11 +56,12 @@ def _format_for(path: str, requested: str | None) -> str:
 class DatasetResolver:
     """Resolve :class:`DatasetReference` values to contained filesystem paths.
 
-    Resolution order: ``artifact_id`` (via the workspace/artifacts root),
-    ``dataset_id``/``document_id`` (via the corpus index, which yields a
-    ``root_id`` + ``relative_path``), then ``root_id`` + ``relative_path``
-    directly. All paths pass through :func:`resolve_file`, which enforces root
-    containment and rejects symlink escapes.
+    Resolution order: ``dataset_id``/``document_id`` (via the corpus index,
+    which yields a ``root_id`` + ``relative_path``), then ``root_id`` +
+    ``relative_path`` directly. All paths pass through :func:`resolve_file`,
+    which enforces root containment and rejects symlink escapes.
+    ``artifact_id`` references are **reserved** (not yet implemented) and raise
+    :class:`DatasetError`.
     """
 
     def __init__(
@@ -72,6 +73,8 @@ class DatasetResolver:
     ) -> None:
         self._config = config
         self._index = index
+        # Reserved for future artifact-backed dataset inputs; unused until
+        # artifacts are registered with stable ids.
         self._artifacts_root = artifacts_root
 
     def resolve(self, reference: DatasetReference) -> ResolvedDataset:
@@ -100,9 +103,13 @@ class DatasetResolver:
 
     def _locate(self, reference: DatasetReference) -> tuple[str | None, str | None]:
         if reference.artifact_id is not None:
-            if self._artifacts_root is None:
-                raise DatasetError("artifact datasets require an artifacts root")
-            return None, None  # handled separately; artifact inputs unsupported here
+            # Artifact-backed dataset inputs are RESERVED: computation artifacts
+            # are not yet registered with stable ids, so an ``artifact_id``
+            # cannot be resolved to a dataset path. Reject explicitly rather
+            # than silently failing later.
+            raise DatasetError(
+                "artifact dataset inputs are reserved (not yet implemented)"
+            )
         if reference.document_id is not None or reference.dataset_id is not None:
             doc_id = reference.document_id or reference.dataset_id
             assert doc_id is not None

@@ -32,6 +32,7 @@ from qwen_research.computation.models import (
     ComputationStatus,
     DatasetProfile,
     DatasetReference,
+    ExecutionProfile,
     ResultType,
     profile_spec,
 )
@@ -47,10 +48,27 @@ from qwen_research.domain.errors import (
     ExecutionTimeoutError,
     QueryValidationError,
     ResourceLimitError,
+    UnsupportedOperationError,
 )
 
 #: Rows returned inline; larger results become artifacts with a sample.
 _MAX_INLINE_ROWS = 100
+
+#: Per-operation required parameters, validated at submit time so an invalid
+#: request is rejected before it is persisted or executed.
+_REQUIRED_PARAMS: dict[ComputationOperation, tuple[str, ...]] = {
+    ComputationOperation.CALCULATE: ("expression",),
+    ComputationOperation.CUSTOM_SQL: ("query",),
+    ComputationOperation.CUSTOM_PYTHON: ("source",),
+    ComputationOperation.SIMULATE: ("distribution",),
+    ComputationOperation.AGGREGATE: ("column", "function"),
+    ComputationOperation.GROUP: ("group_by", "column", "function"),
+    ComputationOperation.FILTER: ("predicate",),
+    ComputationOperation.JOIN: ("left_key", "right_key"),
+    ComputationOperation.STATISTICS: ("column",),
+    ComputationOperation.CORRELATION: ("x", "y"),
+    ComputationOperation.REGRESSION: ("x", "y"),
+}
 
 
 @dataclass(frozen=True)
@@ -75,6 +93,7 @@ class ComputationEngine:
         python: PythonExecutor | None = None,
         artifacts: ArtifactStore | None = None,
         registry: ComputationRegistry | None = None,
+        enable_python_execution: bool = False,
     ) -> None:
         self._store = store
         self._resolver = resolver
@@ -82,6 +101,7 @@ class ComputationEngine:
         self._python = python or PythonExecutor()
         self._artifacts = artifacts or ArtifactStore("workspaces/computation")
         self._registry = registry or ComputationRegistry()
+        self._enable_python_execution = enable_python_execution
 
     def submit(self, request: ComputationRequest) -> ComputationRequest:
         """Validate and persist a request in the CREATED state."""
@@ -151,33 +171,66 @@ class ComputationEngine:
         return self._resolver.resolve(reference)
 
     def describe_dataset(
-        self, resolved: ResolvedDataset, *, max_rows: int = 10_000
+        self,
+        resolved: ResolvedDataset,
+        *,
+        max_rows: int = 10_000,
+        time_limit_seconds: float | None = None,
+        max_memory_bytes: int | None = None,
     ) -> DatasetProfile:
-        return self._duckdb.describe_dataset(resolved, max_rows=max_rows)
+        # Bound dataset profiling with the SAFE profile by default so the
+        # direct ``describe_dataset`` (MCP READ) path is also resource-limited.
+        spec = profile_spec(ExecutionProfile.SAFE)
+        return self._duckdb.describe_dataset(
+            resolved,
+            max_rows=max_rows,
+            time_limit_seconds=(
+                time_limit_seconds if time_limit_seconds is not None else spec.time_limit_seconds
+            ),
+            max_memory_bytes=(
+                max_memory_bytes if max_memory_bytes is not None else spec.max_memory_bytes
+            ),
+        )
 
     def list_results(self, project_id: str) -> list[ComputationResult]:
         return self._store.list_results(project_id)
 
-    def cancel(self, computation_id: str) -> None:
+    def cancel(self, computation_id: str) -> ComputationResult:
+        """Cancel a computation that has not yet produced a terminal result.
+
+        Because execution is synchronous (there is no background worker to
+        interrupt), ``cancel`` is only meaningful for a submitted-but-not-yet-
+        executed computation: it records a ``CANCELLED`` result. If a terminal
+        result already exists, cancel is a **no-op** and returns the existing
+        result — it never overwrites a completed/failed/timed-out outcome.
+        """
         request = self._store.get_request(computation_id)
         if request is None:
             raise ComputationNotFoundError(f"computation {computation_id!r} not found")
+        existing = self._store.get_result(request.project_id, computation_id)
+        if existing is not None:
+            return existing
         result = ComputationResult.create(
             request, status=ComputationStatus.CANCELLED, result_type=ResultType.ERROR
         )
         self._store.save_result(result)
+        return result
 
     # -- validation --------------------------------------------------------
 
     def _validate(self, request: ComputationRequest) -> None:
-        if not request.parameters and request.operation in (
-            ComputationOperation.CUSTOM_SQL,
-            ComputationOperation.CUSTOM_PYTHON,
-            ComputationOperation.SIMULATE,
-            ComputationOperation.CALCULATE,
+        if (
+            request.operation is ComputationOperation.CUSTOM_PYTHON
+            and not self._enable_python_execution
         ):
-            # These require parameters (query/source/expression/distribution).
-            pass
+            raise UnsupportedOperationError(
+                "python execution is not available until hardened isolation is implemented"
+            )
+        for key in _REQUIRED_PARAMS.get(request.operation, ()):
+            if key not in request.parameters:
+                raise ComputationValidationError(
+                    f"operation {request.operation.value!r} requires parameter {key!r}"
+                )
         spec = profile_spec(request.execution_profile)
         if request.operation not in spec.allowed_operations:
             raise ComputationValidationError(
@@ -191,34 +244,50 @@ class ComputationEngine:
         spec = profile_spec(request.execution_profile)
         resolved = [self._resolver.resolve(ref) for ref in request.input_refs]
         max_rows = spec.max_rows
+        time_limit = spec.time_limit_seconds
+        max_memory = spec.max_memory_bytes
 
         op = request.operation
         if op is ComputationOperation.DESCRIBE:
-            outcome = self._describe(resolved, max_rows)
+            outcome = self._describe(resolved, max_rows, time_limit, max_memory)
         elif op is ComputationOperation.SUMMARIZE:
-            outcome = self._summarize(resolved, max_rows)
+            outcome = self._summarize(resolved, max_rows, time_limit, max_memory)
         elif op is ComputationOperation.COUNT:
-            outcome = self._count(resolved, max_rows)
+            outcome = self._count(resolved, max_rows, time_limit, max_memory)
         elif op is ComputationOperation.AGGREGATE:
-            outcome = self._aggregate(resolved, request.parameters, max_rows)
+            outcome = self._aggregate(
+                resolved, request.parameters, max_rows, time_limit, max_memory
+            )
         elif op is ComputationOperation.GROUP:
-            outcome = self._group(resolved, request.parameters, max_rows)
+            outcome = self._group(
+                resolved, request.parameters, max_rows, time_limit, max_memory
+            )
         elif op is ComputationOperation.FILTER:
-            outcome = self._filter(resolved, request.parameters, max_rows)
+            outcome = self._filter(
+                resolved, request.parameters, max_rows, time_limit, max_memory
+            )
         elif op is ComputationOperation.JOIN:
-            outcome = self._join(resolved, request.parameters, max_rows)
+            outcome = self._join(
+                resolved, request.parameters, max_rows, time_limit, max_memory
+            )
         elif op is ComputationOperation.STATISTICS:
-            outcome = self._statistics(resolved, request.parameters, max_rows)
+            outcome = self._statistics(
+                resolved, request.parameters, max_rows, time_limit, max_memory
+            )
         elif op is ComputationOperation.CORRELATION:
-            outcome = self._correlation(resolved, request.parameters, max_rows)
+            outcome = self._correlation(
+                resolved, request.parameters, max_rows, time_limit, max_memory
+            )
         elif op is ComputationOperation.REGRESSION:
-            outcome = self._regression(resolved, request.parameters, max_rows)
+            outcome = self._regression(
+                resolved, request.parameters, max_rows, time_limit, max_memory
+            )
         elif op is ComputationOperation.CALCULATE:
             outcome = self._calculate(request.parameters)
         elif op is ComputationOperation.SIMULATE:
             outcome = self._simulate(request)
         elif op is ComputationOperation.CUSTOM_SQL:
-            outcome = self._custom_sql(resolved, request, max_rows)
+            outcome = self._custom_sql(resolved, request, max_rows, time_limit, max_memory)
         elif op is ComputationOperation.CUSTOM_PYTHON:
             outcome = self._custom_python(request, max_rows)
         else:
@@ -248,10 +317,15 @@ class ComputationEngine:
 
     # -- handlers ----------------------------------------------------------
 
-    def _describe(self, resolved: list[ResolvedDataset], max_rows: int) -> OperationOutcome:
+    def _describe(
+        self, resolved: list[ResolvedDataset], max_rows: int, time_limit: float, max_memory: int
+    ) -> OperationOutcome:
         if len(resolved) != 1:
             raise DatasetError("describe requires exactly one dataset")
-        profile = self._duckdb.describe_dataset(resolved[0], max_rows=max_rows)
+        profile = self._duckdb.describe_dataset(
+            resolved[0], max_rows=max_rows,
+            time_limit_seconds=time_limit, max_memory_bytes=max_memory,
+        )
         return OperationOutcome(
             ResultType.STATISTICS,
             _profile_to_dict(profile),
@@ -261,10 +335,15 @@ class ComputationEngine:
             {"dataset_id": profile.dataset_id, "content_hash": profile.content_hash},
         )
 
-    def _summarize(self, resolved: list[ResolvedDataset], max_rows: int) -> OperationOutcome:
+    def _summarize(
+        self, resolved: list[ResolvedDataset], max_rows: int, time_limit: float, max_memory: int
+    ) -> OperationOutcome:
         if len(resolved) != 1:
             raise DatasetError("summarize requires exactly one dataset")
-        profile = self._duckdb.describe_dataset(resolved[0], max_rows=max_rows)
+        profile = self._duckdb.describe_dataset(
+            resolved[0], max_rows=max_rows,
+            time_limit_seconds=time_limit, max_memory_bytes=max_memory,
+        )
         return OperationOutcome(
             ResultType.STATISTICS,
             _profile_to_dict(profile),
@@ -278,8 +357,13 @@ class ComputationEngine:
             {"dataset_id": profile.dataset_id, "content_hash": profile.content_hash},
         )
 
-    def _count(self, resolved: list[ResolvedDataset], max_rows: int) -> OperationOutcome:
-        table = self._duckdb.count(resolved, max_rows=max_rows)
+    def _count(
+        self, resolved: list[ResolvedDataset], max_rows: int, time_limit: float, max_memory: int
+    ) -> OperationOutcome:
+        table = self._duckdb.count(
+            resolved, max_rows=max_rows,
+            time_limit_seconds=time_limit, max_memory_bytes=max_memory,
+        )
         return OperationOutcome(
             ResultType.SCALAR,
             table.rows[0][0] if table.rows else 0,
@@ -290,59 +374,93 @@ class ComputationEngine:
         )
 
     def _aggregate(
-        self, resolved: list[ResolvedDataset], params: dict[str, object], max_rows: int
+        self, resolved: list[ResolvedDataset], params: dict[str, object],
+        max_rows: int, time_limit: float, max_memory: int,
     ) -> OperationOutcome:
         column = _require_str(params, "column")
         function = _require_str(params, "function")
-        table = self._duckdb.aggregate(resolved, column, function, max_rows=max_rows)
+        table = self._duckdb.aggregate(
+            resolved, column, function, max_rows=max_rows,
+            time_limit_seconds=time_limit, max_memory_bytes=max_memory,
+        )
         value = table.rows[0][0] if table.rows else None
         return OperationOutcome(ResultType.SCALAR, value, 0, {}, (), {})
 
     def _group(
-        self, resolved: list[ResolvedDataset], params: dict[str, object], max_rows: int
+        self, resolved: list[ResolvedDataset], params: dict[str, object],
+        max_rows: int, time_limit: float, max_memory: int,
     ) -> OperationOutcome:
         group_by = _require_str(params, "group_by")
         column = _require_str(params, "column")
         function = _require_str(params, "function")
-        table = self._duckdb.group(resolved, group_by, column, function, max_rows=max_rows)
+        table = self._duckdb.group(
+            resolved, group_by, column, function, max_rows=max_rows,
+            time_limit_seconds=time_limit, max_memory_bytes=max_memory,
+        )
         return self._table_outcome(table)
 
     def _filter(
-        self, resolved: list[ResolvedDataset], params: dict[str, object], max_rows: int
+        self, resolved: list[ResolvedDataset], params: dict[str, object],
+        max_rows: int, time_limit: float, max_memory: int,
     ) -> OperationOutcome:
         predicate = _require_str(params, "predicate")
-        table = self._duckdb.filter(resolved, predicate, max_rows=max_rows)
+        table = self._duckdb.filter(
+            resolved, predicate, max_rows=max_rows,
+            time_limit_seconds=time_limit, max_memory_bytes=max_memory,
+        )
         return self._table_outcome(table)
 
     def _join(
-        self, resolved: list[ResolvedDataset], params: dict[str, object], max_rows: int
+        self, resolved: list[ResolvedDataset], params: dict[str, object],
+        max_rows: int, time_limit: float, max_memory: int,
     ) -> OperationOutcome:
         left_key = _require_str(params, "left_key")
         right_key = _require_str(params, "right_key")
-        table = self._duckdb.join(resolved, left_key, right_key, max_rows=max_rows)
+        table = self._duckdb.join(
+            resolved, left_key, right_key, max_rows=max_rows,
+            time_limit_seconds=time_limit, max_memory_bytes=max_memory,
+        )
         return self._table_outcome(table)
 
     def _statistics(
-        self, resolved: list[ResolvedDataset], params: dict[str, object], max_rows: int
+        self, resolved: list[ResolvedDataset], params: dict[str, object],
+        max_rows: int, time_limit: float, max_memory: int,
     ) -> OperationOutcome:
         column = _require_str(params, "column")
-        values = self._duckdb.numeric_column(resolved, column, max_rows=max_rows)
+        values = self._duckdb.numeric_column(
+            resolved, column, max_rows=max_rows,
+            time_limit_seconds=time_limit, max_memory_bytes=max_memory,
+        )
         stats = describe(values)
         return OperationOutcome(ResultType.STATISTICS, stats, 0, {}, (), {"column": column})
 
     def _correlation(
-        self, resolved: list[ResolvedDataset], params: dict[str, object], max_rows: int
+        self, resolved: list[ResolvedDataset], params: dict[str, object],
+        max_rows: int, time_limit: float, max_memory: int,
     ) -> OperationOutcome:
-        x = self._duckdb.numeric_column(resolved, _require_str(params, "x"), max_rows=max_rows)
-        y = self._duckdb.numeric_column(resolved, _require_str(params, "y"), max_rows=max_rows)
+        x = self._duckdb.numeric_column(
+            resolved, _require_str(params, "x"), max_rows=max_rows,
+            time_limit_seconds=time_limit, max_memory_bytes=max_memory,
+        )
+        y = self._duckdb.numeric_column(
+            resolved, _require_str(params, "y"), max_rows=max_rows,
+            time_limit_seconds=time_limit, max_memory_bytes=max_memory,
+        )
         result = pearson_correlation(x, y)
         return OperationOutcome(ResultType.STATISTICS, result, 0, {}, (), {})
 
     def _regression(
-        self, resolved: list[ResolvedDataset], params: dict[str, object], max_rows: int
+        self, resolved: list[ResolvedDataset], params: dict[str, object],
+        max_rows: int, time_limit: float, max_memory: int,
     ) -> OperationOutcome:
-        x = self._duckdb.numeric_column(resolved, _require_str(params, "x"), max_rows=max_rows)
-        y = self._duckdb.numeric_column(resolved, _require_str(params, "y"), max_rows=max_rows)
+        x = self._duckdb.numeric_column(
+            resolved, _require_str(params, "x"), max_rows=max_rows,
+            time_limit_seconds=time_limit, max_memory_bytes=max_memory,
+        )
+        y = self._duckdb.numeric_column(
+            resolved, _require_str(params, "y"), max_rows=max_rows,
+            time_limit_seconds=time_limit, max_memory_bytes=max_memory,
+        )
         result = linear_regression(x, y)
         return OperationOutcome(ResultType.STATISTICS, result, 0, {}, (), {})
 
@@ -382,7 +500,8 @@ class ComputationEngine:
         )
 
     def _custom_sql(
-        self, resolved: list[ResolvedDataset], request: ComputationRequest, max_rows: int
+        self, resolved: list[ResolvedDataset], request: ComputationRequest,
+        max_rows: int, time_limit: float, max_memory: int,
     ) -> OperationOutcome:
         query = _require_str(request.parameters, "query")
         parameters = request.parameters.get("parameters", {})
@@ -394,6 +513,8 @@ class ComputationEngine:
             parameters,
             max_rows=max_rows,
             max_output_bytes=profile_spec(request.execution_profile).max_output_bytes,
+            time_limit_seconds=time_limit,
+            max_memory_bytes=max_memory,
         )
         return self._table_outcome(table, provenance={"query_hash": query_hash(query)})
 

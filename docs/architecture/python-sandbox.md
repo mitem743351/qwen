@@ -1,7 +1,14 @@
 # Python Sandbox
 
 Controlled Python execution for the `CUSTOM_PYTHON` operation (and the
-`run_python` MCP tool, gated by the `EXECUTE` permission).
+`run_python` MCP tool).
+
+> **Gated by default.** Because the isolation below is **not** a hardened
+> security boundary, `run_python` / `CUSTOM_PYTHON` is **unavailable to
+> model-driven execution** unless the service is explicitly constructed with
+> `enable_python_execution=True`. The shipped MCP server never sets this, so
+> `run_python` raises `UnsupportedOperationError` ("capability unavailable")
+> until hardened isolation (seccomp/container) exists.
 
 Module: `python/qwen_research/computation/sandbox.py` + `_worker.py`.
 
@@ -41,8 +48,13 @@ boundary:
   A builtins whitelist is not a security sandbox; seccomp/container isolation
   is future work.
 
-Do not rely on `run_python` to execute adversarial code. It is `EXECUTE`-gated
-and **disabled by default**; prefer `run_analysis` for structured operations.
+This limitation is **verified by tests**: object introspection recovers the
+real `__builtins__` (including `open`/`__import__`) and can read a file, so the
+tests assert the escape *succeeds* rather than pretending the sandbox is secure.
+
+Do not rely on `run_python` to execute adversarial code. It is gated behind
+`enable_python_execution` (off by default) **and** the `EXECUTE` permission;
+prefer `run_analysis` for structured operations.
 
 ---
 
@@ -61,4 +73,6 @@ and **disabled by default**; prefer `run_analysis` for structured operations.
 
 Negative tests assert that `import os`, `open`, `subprocess`, `socket`,
 `eval`, `__import__`, and a timeout are all blocked/raised — behavior is
-verified, not merely configuration.
+verified, not merely configuration. Two additional tests **verify the
+documented limitation**: object introspection recovers the real builtins and
+can read a file, confirming this is not a hardened boundary.
