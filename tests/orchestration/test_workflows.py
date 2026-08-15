@@ -17,7 +17,7 @@ def test_deep_research_workflow(tmp_path: Path) -> None:
         profile="DEEP",
     )
     run = runtime.start_research(plan.plan_id)
-    assert run.status is RunStatus.COMPLETED
+    assert run.status is RunStatus.READY_FOR_SYNTHESIS
     supporting = runtime.get_research_summary(run.run_id)["supporting_evidence"]
     assert isinstance(supporting, int) and supporting >= 1
     # Evidence provenance was persisted to research memory.
@@ -33,12 +33,12 @@ def test_fact_check_workflow(tmp_path: Path) -> None:
         profile="DEEP",
     )
     run = runtime.start_research(plan.plan_id)
-    assert run.status is RunStatus.COMPLETED
+    assert run.status is RunStatus.READY_FOR_SYNTHESIS
     assert run.outputs.get("claims")
     assert run.outputs.get("verification_reports")
     # Verification reports must be present (claim was assessed + verified).
     status = runtime.get_research_status(run.run_id)
-    assert status.status == "completed"
+    assert status.status == "ready_for_synthesis"
 
 
 def test_data_analysis_workflow(tmp_path: Path) -> None:
@@ -55,7 +55,7 @@ def test_data_analysis_workflow(tmp_path: Path) -> None:
         computation=spec,
     )
     run = runtime.start_research(plan.plan_id)
-    assert run.status is RunStatus.COMPLETED
+    assert run.status is RunStatus.READY_FOR_SYNTHESIS
     assert run.outputs.get("dataset_profile") is not None
     assert run.outputs.get("computations")
 
@@ -69,7 +69,7 @@ def test_literature_review_workflow(tmp_path: Path) -> None:
         profile="DEEP",
     )
     run = runtime.start_research(plan.plan_id)
-    assert run.status is RunStatus.COMPLETED
+    assert run.status is RunStatus.READY_FOR_SYNTHESIS
     diversity = run.outputs.get("source_diversity", 0)
     assert isinstance(diversity, int) and diversity >= 2
 
@@ -81,7 +81,7 @@ def test_project_isolation(tmp_path: Path) -> None:
     assert task_a.project_id != task_b.project_id
     # A run from project A must not be visible/listed under project B.
     run_a = runtime.start_research(plan_a.plan_id)
-    assert run_a.status is RunStatus.COMPLETED
+    assert run_a.status is RunStatus.READY_FOR_SYNTHESIS
     assert store.get_run(run_a.run_id) is not None
 
 

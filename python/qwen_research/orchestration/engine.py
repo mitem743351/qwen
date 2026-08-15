@@ -304,17 +304,32 @@ class WorkflowEngine:
         run = dataclasses.replace(
             run, status=status, completed_at=_now(), updated_at=_now()
         )
-        event_type = EventType.COMPLETED if status is RunStatus.COMPLETED else EventType.BLOCKED
+        event_type = (
+            EventType.COMPLETED
+            if status in (RunStatus.READY_FOR_SYNTHESIS, RunStatus.SYNTHESIS_REQUIRED)
+            else EventType.BLOCKED
+        )
         self._record(run.run_id, event_type, status.value)
         return run
 
     def _evaluate_completion(self, run: WorkflowRun) -> RunStatus:
+        """Decide the terminal state.
+
+        A model-free workflow is **never** answer-complete: it ends at
+        ``READY_FOR_SYNTHESIS`` (clean) or ``SYNTHESIS_REQUIRED`` (degraded) —
+        never ``COMPLETED``. Missing required capabilities are surfaced as
+        ``SYNTHESIS_REQUIRED`` with explicit degradation; unmet completion
+        criteria are ``PARTIAL``.
+        """
         plan = self._require_plan(run.plan_id)
         criteria = plan.completion_criteria
         outputs = run.outputs
         evidence = len(as_str_tuple(outputs.get("evidence")))
         sources = outputs.get("evidence_sources", ())
         diversity = len(set(sources)) if isinstance(sources, (list, tuple)) else 0
+        # Missing required capabilities → explicit degraded synthesis state.
+        if run.degradation:
+            return RunStatus.SYNTHESIS_REQUIRED
         if criteria.min_evidence_count and evidence < criteria.min_evidence_count:
             return RunStatus.PARTIAL
         if criteria.min_source_diversity and diversity < criteria.min_source_diversity:
@@ -335,9 +350,7 @@ class WorkflowEngine:
             outputs.get("contradictions")
         ):
             return RunStatus.PARTIAL
-        if run.degradation:
-            return RunStatus.PARTIAL
-        return RunStatus.COMPLETED
+        return RunStatus.READY_FOR_SYNTHESIS
 
     def _next_ready(self, run: WorkflowRun) -> ResearchStage | None:
         statuses = {s.stage_id: s.status for s in run.stages}

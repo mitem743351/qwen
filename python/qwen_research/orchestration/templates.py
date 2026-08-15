@@ -50,7 +50,7 @@ def _deep_research() -> tuple[tuple[ResearchStage, ...], PlanRequirements, Compl
     req = PlanRequirements(
         needs_retrieval=True,
         needs_verification=True,
-        needs_computation=True,
+        needs_computation=False,  # optional COMPUTE (only when a ComputationSpec is given)
         needs_memory=True,
         needs_contradiction_analysis=True,
         needs_artifacts=True,
@@ -159,7 +159,7 @@ def _technical_analysis() -> tuple[tuple[ResearchStage, ...], PlanRequirements, 
     req = PlanRequirements(
         needs_retrieval=True,
         needs_verification=True,
-        needs_computation=True,
+        needs_computation=False,  # optional COMPUTE (only when a ComputationSpec is given)
         needs_memory=True,
         needs_contradiction_analysis=True,
     )

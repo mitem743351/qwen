@@ -73,14 +73,24 @@ class StageStatus(StrEnum):
 
 
 class RunStatus(StrEnum):
-    """Workflow run lifecycle. A failure is never fabricated as completion."""
+    """Workflow run lifecycle.
+
+    ``workflow-complete`` (the deterministic stages finished) is **never**
+    ``answer-complete`` (the question is actually answered). A model-free
+    workflow therefore ends at ``READY_FOR_SYNTHESIS`` (clean) or
+    ``SYNTHESIS_REQUIRED`` (degraded), not ``COMPLETED`` — the latter is the
+    reserved "answer complete" terminal for the future inference phase and is
+    never produced by the deterministic engine.
+    """
 
     CREATED = "created"
     RUNNING = "running"
     PAUSED = "paused"
     WAITING = "waiting"
     BLOCKED = "blocked"
-    COMPLETED = "completed"
+    COMPLETED = "completed"  # answer-complete (reserved; never set in Phase 7)
+    READY_FOR_SYNTHESIS = "ready_for_synthesis"
+    SYNTHESIS_REQUIRED = "synthesis_required"
     PARTIAL = "partial"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -101,6 +111,8 @@ class EventType(StrEnum):
 _TERMINAL_RUN_STATUSES: frozenset[RunStatus] = frozenset(
     {
         RunStatus.COMPLETED,
+        RunStatus.READY_FOR_SYNTHESIS,
+        RunStatus.SYNTHESIS_REQUIRED,
         RunStatus.PARTIAL,
         RunStatus.FAILED,
         RunStatus.CANCELLED,
@@ -200,6 +212,7 @@ class ResearchPlan:
     completion_criteria: CompletionCriteria
     budget: ReasoningBudget
     computation: ComputationSpec | None = None
+    missing_capabilities: tuple[str, ...] = ()
     created_at: datetime = dataclasses.field(default_factory=utc_now)
 
     @classmethod
@@ -215,6 +228,7 @@ class ResearchPlan:
         completion_criteria: CompletionCriteria | None = None,
         budget: ReasoningBudget | None = None,
         computation: ComputationSpec | None = None,
+        missing_capabilities: tuple[str, ...] = (),
     ) -> ResearchPlan:
         return cls(
             plan_id=new_id("plan"),
@@ -227,6 +241,7 @@ class ResearchPlan:
             completion_criteria=completion_criteria or CompletionCriteria(),
             budget=budget or ReasoningBudget(1, 1, 1, 1, 1, 1),
             computation=computation,
+            missing_capabilities=tuple(missing_capabilities),
             created_at=utc_now(),
         )
 
@@ -270,7 +285,9 @@ class WorkflowRun:
             outputs={},
             counters={"evidence_rounds": 0, "verification_rounds": 0, "computation_rounds": 0},
             accounting={},
-            degradation=(),
+            # Seed degradation from capabilities the plan required but which
+            # were unavailable at plan time (explicit, never silent).
+            degradation=tuple(plan.missing_capabilities),
             warnings=(),
             errors=(),
             created_at=now,

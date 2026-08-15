@@ -78,14 +78,14 @@ def test_mcp_orchestration_roundtrip(tmp_path: Path) -> None:
             r = await session.call_tool("start_research", {"plan_id": plan_id})
             run = json.loads(_text(r))
             run_id = run["run_id"]
-            assert run["status"] == "completed"
+            assert run["status"] == "ready_for_synthesis"
 
             # get_research_status
             r = await session.call_tool("get_research_status", {"run_id": run_id})
-            assert json.loads(_text(r))["status"] == "completed"
+            assert json.loads(_text(r))["status"] == "ready_for_synthesis"
 
             # get_research_summary
             r = await session.call_tool("get_research_summary", {"run_id": run_id})
-            assert json.loads(_text(r))["status"] == "completed"
+            assert json.loads(_text(r))["status"] == "ready_for_synthesis"
 
     asyncio.run(run())

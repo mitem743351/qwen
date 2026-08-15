@@ -12,8 +12,7 @@ import dataclasses
 from typing import Any, Protocol, runtime_checkable
 
 from qwen_research.claims.models import ClaimType
-from qwen_research.claims.relationships import ClaimEvidenceRelationship
-from qwen_research.common.ids import ClaimId, EvidenceId
+from qwen_research.common.ids import ClaimId
 from qwen_research.computation.models import ComputationOperation, ExecutionProfile
 from qwen_research.orchestration.models import (
     ResearchPlan,
@@ -27,6 +26,7 @@ from qwen_research.orchestration.models import (
     as_str_tuple,
 )
 from qwen_research.retrieval.models import RetrievalMode, SearchOptions
+from qwen_research.sources.independence import SourceIdentity, count_independent_sources
 from qwen_research.verification.models import VerificationStatus
 
 
@@ -39,11 +39,6 @@ class StageRuntime(Protocol):
     def create_claim(
         self, project_id: str, text: str, *, claim_type: ClaimType = ClaimType.UNKNOWN,
         source_refs: tuple[str, ...] = (),
-    ) -> Any: ...
-
-    def link_claim_evidence(
-        self, project_id: str, claim_id: ClaimId, evidence_id: EvidenceId,
-        relationship: ClaimEvidenceRelationship, rationale: str = "",
     ) -> Any: ...
 
     def verify_claim(self, project_id: str, claim_id: ClaimId) -> Any: ...
@@ -103,6 +98,24 @@ def _claim_ids(outputs: dict[str, object]) -> tuple[str, ...]:
     return as_str_tuple(outputs.get("claims"))
 
 
+def _source_identities(outputs: dict[str, object]) -> list[SourceIdentity]:
+    """Reconstruct Phase-5 ``SourceIdentity`` values from retrieved metadata."""
+    identities: list[SourceIdentity] = []
+    raw = outputs.get("evidence_identities", ())
+    if isinstance(raw, (list, tuple)):
+        for entry in raw:
+            if isinstance(entry, dict):
+                identities.append(
+                    SourceIdentity(
+                        document_id=entry.get("document_id"),
+                        source_id=entry.get("source_id"),
+                        publisher=entry.get("publisher"),
+                        root_id=entry.get("root_id"),
+                    )
+                )
+    return identities
+
+
 class ClassifyExecutor:
     def supports(self, stage_type: StageType) -> bool:
         return stage_type is StageType.CLASSIFY
@@ -136,20 +149,40 @@ class RetrieveExecutor:
         result = context.runtime.search_corpus(
             query, SearchOptions(limit=limit, mode=mode)
         )
+        # Retrieved chunks are *candidates*, not evidence of support: they carry
+        # only retrieval provenance + score, never a support relationship.
         evidence = tuple(c.chunk_id for c in result.chunks)
         sources = {c.document_id for c in result.chunks}
+        # Per-chunk source identities (for SourceIndependence corroboration).
+        identities = tuple(
+            {
+                "document_id": c.document_id,
+                "source_id": c.source_id,
+                "root_id": c.root_id,
+                "publisher": None,
+            }
+            for c in result.chunks
+        )
         degradation = (result.degradation_reason,) if getattr(result, "degraded", False) else ()
         if not evidence:
             return StageResult.completed(
-                {"evidence": (), "evidence_sources": ()},
+                {"evidence": (), "evidence_sources": (), "evidence_identities": ()},
                 metrics={"retrieval_calls": 1, "source_diversity": 0},
-                warnings=("no evidence retrieved for query",),
+                warnings=("no candidate evidence retrieved for query",),
                 degradation=degradation,
             )
         return StageResult.completed(
-            {"evidence": evidence, "evidence_sources": tuple(sorted(sources))},
+            {
+                "evidence": evidence,
+                "evidence_sources": tuple(sorted(sources)),
+                "evidence_identities": identities,
+            },
             references=evidence,
             metrics={"retrieval_calls": 1, "source_diversity": len(sources)},
+            warnings=(
+                "retrieved chunks are candidate evidence only; support assessment "
+                "requires a model (not performed in Phase 7)",
+            ),
             degradation=degradation,
         )
 
@@ -176,29 +209,29 @@ class ClaimExecutor:
 
 
 class AssessEvidenceExecutor:
+    """Mark retrieved chunks as *neutral* candidate evidence.
+
+    Phase 7 has no model-assisted evidence judgement, so this stage **never**
+    creates a claim→evidence link (support/contradiction/qualify) — retrieval
+    cannot manufacture evidence support. It records the retrieved chunks as
+    ``candidate_evidence`` (relevant candidates awaiting real assessment).
+    """
+
     def supports(self, stage_type: StageType) -> bool:
         return stage_type is StageType.ASSESS_EVIDENCE
 
     def execute(self, context: StageExecutionContext) -> StageResult:
-        claims = _claim_ids(context.outputs)
         evidence = _evidence_ids(context.outputs)
-        if not claims or not evidence:
-            return StageResult.skipped("no claims/evidence to assess")
-        links = 0
-        for claim_id in claims:
-            for evidence_id in evidence:
-                context.runtime.link_claim_evidence(
-                    context.project_id,
-                    ClaimId(claim_id),
-                    EvidenceId(evidence_id),
-                    ClaimEvidenceRelationship.SUPPORTS,
-                    "deterministic candidate link (no model assessment in Phase 7)",
-                )
-                links += 1
+        if not evidence:
+            return StageResult.skipped("no candidate evidence to assess")
         return StageResult.completed(
-            {"assessed_links": links},
-            metrics={"links_created": links},
-            warnings=("evidence linked heuristically (deterministic candidate assessment)",),
+            {"candidate_evidence": evidence},
+            references=evidence,
+            metrics={"candidate_evidence_count": len(evidence)},
+            warnings=(
+                "candidate evidence recorded (neutral); no support/contradiction "
+                "links were created — assessment requires a model (future phase)",
+            ),
         )
 
 
@@ -217,14 +250,23 @@ class VerifyExecutor:
             reports.append(report.report_id)
             statuses.append(report.status.value)
         control: dict[str, str] = {}
-        if any(s == VerificationStatus.INSUFFICIENT_EVIDENCE.value for s in statuses):
-            control = {"loop": "retrieve", "reason": "evidence_gap"}
-        elif any(s == VerificationStatus.CONTRADICTED.value for s in statuses):
+        # A CONFIRMED contradiction is structural and may be resolved by more
+        # retrieval; INSUFFICIENT_EVIDENCE, however, cannot be resolved by
+        # re-retrieval in a model-free system (retrieval never manufactures
+        # support), so it is surfaced as a warning, not an evidence-gap loop.
+        if any(s == VerificationStatus.CONTRADICTED.value for s in statuses):
             control = {"loop": "retrieve", "reason": "contradiction"}
+        warnings: tuple[str, ...] = ()
+        if any(s == VerificationStatus.INSUFFICIENT_EVIDENCE.value for s in statuses):
+            warnings = (
+                "verification found insufficient evidence (no model assessment "
+                "performed; support links were never fabricated)",
+            )
         return StageResult.completed(
             {"verification_reports": tuple(reports), "verification_statuses": tuple(statuses)},
             references=tuple(reports),
             metrics={"verification_calls": len(claims)},
+            warnings=warnings,
             control=control,
         )
 
@@ -244,15 +286,22 @@ class ContradictionsExecutor:
 
 
 class CorroborateExecutor:
+    """Count independent sources among candidate evidence.
+
+    Reuses Phase 5 ``SourceIndependence``: same document/source/publisher chunks
+    collapse into one source (via ``count_independent_sources``), so ten chunks
+    from one paper are one source, not ten.
+    """
+
     def supports(self, stage_type: StageType) -> bool:
         return stage_type is StageType.CORROBORATE
 
     def execute(self, context: StageExecutionContext) -> StageResult:
-        sources = context.outputs.get("evidence_sources", ())
-        diversity = len(set(sources)) if isinstance(sources, (list, tuple)) else 0
+        identities = _source_identities(context.outputs)
+        diversity = count_independent_sources(identities)
         return StageResult.completed(
-            {"source_diversity": diversity},
-            metrics={"source_diversity": diversity},
+            {"source_diversity": diversity, "independent_source_count": diversity},
+            metrics={"source_diversity": diversity, "independent_source_count": diversity},
             warnings=() if diversity >= 2 else ("below two-source corroboration threshold",),
         )
 

@@ -24,12 +24,28 @@ ResearchState   = accumulated research knowledge (claims, evidence, memory)
 ## Run lifecycle
 
 ```text
-CREATED → RUNNING → { COMPLETED | PARTIAL | BLOCKED | FAILED | CANCELLED }
+CREATED → RUNNING → { READY_FOR_SYNTHESIS | SYNTHESIS_REQUIRED | PARTIAL
+                      | BLOCKED | FAILED | CANCELLED }
               ↓ PAUSE → PAUSED → RESUME → RUNNING
 ```
 
-`BLOCKED`, `FAILED`, `CANCELLED`, `PARTIAL`, and `COMPLETED` are terminal;
-`PAUSED`/`WAITING` are control states.
+`BLOCKED`, `FAILED`, `CANCELLED`, `PARTIAL`, `SYNTHESIS_REQUIRED`, and
+`READY_FOR_SYNTHESIS` are terminal; `PAUSED`/`WAITING` are control states.
+
+### Workflow-complete ≠ answer-complete
+
+A **model-free** workflow can only ever be *workflow-complete*: it has gathered,
+assessed, verified, and computed everything it deterministically can. It can
+never be *answer-complete* — producing an answer requires synthesis by a model.
+Therefore the deterministic engine terminates at:
+
+- `READY_FOR_SYNTHESIS` — all required stages ran, completion criteria met, no
+  degradation; a `SynthesisRequest` is ready for the future inference runtime.
+- `SYNTHESIS_REQUIRED` — the workflow reached its natural end but a **required
+  capability was missing/degraded**, surfaced explicitly in `run.degradation`.
+
+`COMPLETED` is the reserved *answer-complete* terminal for the future inference
+phase and is **never** produced by the deterministic engine.
 
 ## Stage lifecycle
 

@@ -139,7 +139,7 @@ def test_run_completes_linear_plan(tmp_path: Path) -> None:
     plan = _plan(store, task, _linear(("a", "b", "c")))
     run = engine.create_run(task, plan)
     run = engine.execute_until_blocked(run.run_id)
-    assert run.status is RunStatus.COMPLETED
+    assert run.status is RunStatus.READY_FOR_SYNTHESIS
     assert all(s.status is StageStatus.COMPLETED for s in run.stages)
 
 
@@ -200,7 +200,7 @@ def test_retry_on_transient_failure(tmp_path: Path) -> None:
     plan = _plan(store, task, (stage,))
     run = engine.create_run(task, plan)
     run = engine.execute_until_blocked(run.run_id)
-    assert run.status is RunStatus.COMPLETED
+    assert run.status is RunStatus.READY_FOR_SYNTHESIS
     assert executor.calls == 2
     assert run.stages[0].attempts == 1
 
@@ -298,4 +298,4 @@ def test_no_duplicate_execution_on_rerun(tmp_path: Path) -> None:
     assert executor.calls == 2
     run2 = engine.execute_until_blocked(run.run_id)
     assert executor.calls == 2
-    assert run2.status is RunStatus.COMPLETED
+    assert run2.status is RunStatus.READY_FOR_SYNTHESIS

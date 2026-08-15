@@ -28,12 +28,12 @@ def test_runtime_orchestration_roundtrip(tmp_path: Path) -> None:
     task, plan = runtime.plan_research("what is the surface code threshold", project_id="p")
     assert plan.stages
     run = runtime.start_research(plan.plan_id)
-    assert run.status is RunStatus.COMPLETED
+    assert run.status is RunStatus.READY_FOR_SYNTHESIS
     status = runtime.get_research_status(run.run_id)
-    assert status.status == "completed"
+    assert status.status == "ready_for_synthesis"
     assert status.progress == 1.0
     summary = runtime.get_research_summary(run.run_id)
-    assert summary["status"] == "completed"
+    assert summary["status"] == "ready_for_synthesis"
     assert runtime.get_research_plan(plan.plan_id).plan_id == plan.plan_id
     assert runtime.get_research_events(run.run_id)
 

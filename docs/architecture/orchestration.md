@@ -88,10 +88,14 @@ infinite loop and never a fabricated completion.
 
 ## Failure semantics
 
-`COMPLETED · PARTIAL · BLOCKED · FAILED · CANCELLED · PAUSED · WAITING`. A
-failure is never an empty result and never silently converted to success:
-retrieval degradation → `PARTIAL`; a missing capability → `BLOCKED`; a
-non-retryable stage failure → `FAILED`.
+`READY_FOR_SYNTHESIS · SYNTHESIS_REQUIRED · PARTIAL · BLOCKED · FAILED ·
+CANCELLED · PAUSED · WAITING`. A model-free workflow is **never**
+answer-complete: clean completion ends at `READY_FOR_SYNTHESIS`, while a
+missing **required** capability ends at `SYNTHESIS_REQUIRED` with explicit
+degradation (`COMPLETED` is reserved for the future inference phase). A failure
+is never an empty result and never silently converted to success: a missing
+capability is surfaced, not silently dropped; a non-retryable stage failure →
+`FAILED`.
 
 See [`planning.md`](planning.md), [`workflows.md`](workflows.md),
 [`research-state-machine.md`](research-state-machine.md), and

@@ -41,20 +41,21 @@ which the engine merges into the run.
 | Stage | Integrates via |
 |-------|----------------|
 | `CLASSIFY` / `PLAN` | classification/plan already produced (no-op) |
-| `RETRIEVE` | `runtime.search_corpus` (lexical/hybrid by profile) |
+| `RETRIEVE` | `runtime.search_corpus` (lexical/hybrid by profile) — chunks are **candidates**, not evidence of support |
 | `CLAIM` | `runtime.create_claim` (FACT_CHECK sub-questions) |
-| `ASSESS_EVIDENCE` | `runtime.link_claim_evidence` (deterministic candidate link) |
-| `VERIFY` | `runtime.verify_claim`; signals evidence-gap/contradiction loops |
+| `ASSESS_EVIDENCE` | records **neutral `candidate_evidence`**; never creates claim→evidence links |
+| `VERIFY` | `runtime.verify_claim`; signals structural contradiction loops |
 | `CONTRADICTIONS` | `runtime.get_contradictions` |
-| `CORROBORATE` | deterministic source-diversity count |
+| `CORROBORATE` | Phase-5 `SourceIndependence` (`count_independent_sources`) |
 | `DESCRIBE_DATASET` | `runtime.describe_dataset` |
 | `COMPUTE` | `runtime.run_analysis` (from plan `ComputationSpec`) |
 | `MEMORY` | `runtime.save_research_memory` (idempotent) |
 | `SYNTHESIZE` | `runtime.build_research_context` → `SynthesisDraft` + `SynthesisRequest` |
-| `FINALIZE` | marks run complete |
+| `FINALIZE` | marks the deterministic workflow complete |
 
 No executor constructs DuckDB SQL, duplicates verification rules, or writes raw
-SQL.
+SQL. **Assessment and corroboration are deterministic and model-free** — no
+executor manufactures a claim→evidence `SUPPORTS` relationship from retrieval.
 
 ## Retry policy
 
@@ -71,12 +72,14 @@ artifacts.
 
 ## Loops (bounded)
 
-- **Evidence gap** — `VERIFY` reports `INSUFFICIENT_EVIDENCE` → loop back to `RETRIEVE` (bounded by `max_retrieval_rounds`).
-- **Contradiction** — `VERIFY` reports `CONTRADICTED` → loop back to `RETRIEVE` (bounded by `max_verification_rounds`).
+- **Contradiction** — `VERIFY` reports a `CONFIRMED` contradiction (structural)
+  → loop back to `RETRIEVE` (bounded by `max_verification_rounds`).
 - **Computation gap** — a claim requires calculation → `COMPUTE` (bounded by `max_computation_rounds`).
 
-Loops reset the target stage and its dependents to `PENDING`; exceeding a
-guardrail marks the run `BLOCKED`.
+`INSUFFICIENT_EVIDENCE` is **not** looped in a model-free system: re-retrieving
+cannot manufacture support, so it is surfaced as a warning and left for the
+future synthesis step. Loops reset the target stage and its dependents to
+`PENDING`; exceeding a guardrail marks the run `BLOCKED`.
 
 ## Resource accounting
 

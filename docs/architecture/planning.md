@@ -58,6 +58,10 @@ If a `CapabilityRegistry` is supplied, stage types whose required capability is
 unavailable are dropped **and their dependencies are rewired**, so downstream
 stages never wait on a removed stage. MCP is not the capability registry.
 
+A missing **required** capability is never silent: it is recorded on the plan
+(`missing_capabilities`) and seeded into the run's `degradation`, so the run
+terminates at `SYNTHESIS_REQUIRED` rather than a clean completion.
+
 ## Limitations
 
 Phase 7 planning does **not** understand deep natural-language intent. A future

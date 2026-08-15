@@ -31,7 +31,6 @@ from qwen_research.orchestration.models import (
     WorkflowGuardrails,
     WorkflowRun,
     as_str_tuple,
-    is_terminal_run_status,
 )
 from qwen_research.orchestration.planning import ResearchPlanner
 from qwen_research.orchestration.store import OrchestrationStore
@@ -159,7 +158,9 @@ class OrchestrationService:
         total = len(run.stages)
         done = sum(1 for s in run.stages if s.status.value in ("completed", "skipped"))
         progress = (done / total) if total else 0.0
-        if is_terminal_run_status(run.status) and run.status is RunStatus.COMPLETED:
+        # A clean workflow-complete run is fully progressed; a degraded one
+        # (SYNTHESIS_REQUIRED) reports its actual stage progress.
+        if run.status in (RunStatus.COMPLETED, RunStatus.READY_FOR_SYNTHESIS):
             progress = 1.0
         return ResearchStatus(
             task_id=run.task_id,

@@ -157,8 +157,11 @@ class ResearchPlanner:
         profile = profile or get_profile(task.reasoning_profile)
         budget = self.estimate_budget(profile)
 
-        # Drop capability-gated stages that are unavailable at plan time.
-        stages = self._filter_unavailable(stages, requirements)
+        # Drop capability-gated stages that are unavailable at plan time and
+        # record the *required* missing capabilities explicitly (so the run is
+        # degraded, never silently "complete").
+        stages = self._filter_unavailable(stages)
+        missing = self._missing_capabilities(requirements)
 
         return ResearchPlan.create(
             task.task_id,
@@ -169,12 +172,37 @@ class ResearchPlanner:
             completion_criteria=criteria,
             budget=budget,
             computation=computation,
+            missing_capabilities=missing,
+        )
+
+    def _missing_capabilities(self, requirements: PlanRequirements) -> tuple[str, ...]:
+        """Return the required capabilities that are unavailable.
+
+        This is what turns a missing capability into an explicit degradation
+        on the run (via ``ResearchPlan.missing_capabilities``), rather than a
+        silent drop.
+        """
+        if self._capabilities is None:
+            return ()
+        needed = (
+            ("retrieval", requirements.needs_retrieval),
+            (
+                "verification",
+                requirements.needs_verification or requirements.needs_contradiction_analysis,
+            ),
+            ("computation", requirements.needs_computation),
+            ("memory", requirements.needs_memory),
+            ("artifact", requirements.needs_artifacts),
+        )
+        return tuple(
+            name
+            for name, is_needed in needed
+            if is_needed and not self._capabilities.available(name)
         )
 
     def _filter_unavailable(
         self,
         stages: tuple[ResearchStage, ...],
-        requirements: PlanRequirements,
     ) -> tuple[ResearchStage, ...]:
         if self._capabilities is None:
             return stages
@@ -198,15 +226,19 @@ class ResearchPlanner:
 
 
 def _stage_capability(stage: ResearchStage) -> str | None:
+    """Map a stage type to the capability it requires (None = deterministic).
+
+    ``ASSESS_EVIDENCE`` (mark candidate evidence) and ``CORROBORATE`` (source
+    independence over retrieval metadata) are deterministic Phase-7 operations
+    and need no external service.
+    """
     from qwen_research.orchestration.models import StageType
 
     return {
         StageType.RETRIEVE: "retrieval",
-        StageType.ASSESS_EVIDENCE: "verification",
         StageType.CLAIM: "verification",
         StageType.VERIFY: "verification",
         StageType.CONTRADICTIONS: "verification",
-        StageType.CORROBORATE: "verification",
         StageType.DESCRIBE_DATASET: "computation",
         StageType.COMPUTE: "computation",
         StageType.MEMORY: "memory",

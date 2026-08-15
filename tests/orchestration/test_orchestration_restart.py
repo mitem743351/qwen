@@ -25,7 +25,7 @@ def test_restart_and_resume_idempotent(tmp_path: Path) -> None:
     # --- first process: plan + run to completion ---
     task, plan = runtime.plan_research("what is the surface code threshold", project_id="p")
     run = runtime.start_research(plan.plan_id)
-    assert run.status.value == "completed"
+    assert run.status.value == "ready_for_synthesis"
     memory_before = _count_memory(s["memory_store"])
     claims_before = _count_claims(s["verification_store"])
     assert memory_before >= 1
@@ -42,7 +42,7 @@ def test_restart_and_resume_idempotent(tmp_path: Path) -> None:
     )
 
     loaded = service2.get_run(run.run_id)
-    assert loaded.status.value == "completed"
+    assert loaded.status.value == "ready_for_synthesis"
     assert service2.get_plan(plan.plan_id).plan_id == plan.plan_id
     assert service2.get_events(run.run_id)
 
@@ -71,4 +71,4 @@ def test_pause_then_resume_completes(tmp_path: Path) -> None:
     run = service._engine.resume(run.run_id)  # noqa: SLF001
     assert run.status.value == "running"
     run = service._engine.execute_until_blocked(run.run_id)  # noqa: SLF001
-    assert run.status.value == "completed"
+    assert run.status.value == "ready_for_synthesis"
