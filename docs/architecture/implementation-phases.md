@@ -315,6 +315,28 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
 - **Not yet:** tool **execution** (Phase 9); hybrid escalation (Phase 9);
   XHIGH/EXTREME orchestration (Phase 10); Qwen built-in tool invocation.
 
+## Phase 8.4 — Qwen endpoint control & transient reasoning state ✅ (complete)
+
+- **Objective:** make the endpoint profile control/validate the network
+  endpoint; add transient `reasoning_content` for multi-turn continuation;
+  correct `qwen3.8-max-preview` context to 983,616; prove Token Plan vs
+  standard-endpoint availability are not conflated; prove multi-turn reasoning
+  state is never silently dropped; mark `reasoning_effort` cataloged-only.
+- **Dependencies:** Phase 8.3.
+- **Components:** `_endpoint()` uses the endpoint profile's `base_url` (and
+  rejects a conflicting `api_endpoint`); `Message.reasoning_content` (transient,
+  non-serialized); serializer skips `transient` fields; assistant-message
+  `reasoning_content` emission; `_guard_preserved_thinking` raises on missing
+  reasoning state; `qwen3.8-max-preview` context 983,616; `reasoning_effort`
+  documented as cataloged-not-executed.
+- **Acceptance criteria:** endpoint profile drives the HTTP target; reasoning
+  content carried transiently but never persisted; Token Plan availability
+  tests show it is not standard availability; multi-turn preservation never
+  silently drops state; `reasoning_effort` never emitted.
+- **Not yet:** tool **execution** (Phase 9); hybrid escalation (Phase 9);
+  XHIGH/EXTREME orchestration (Phase 10); Qwen built-in tool invocation;
+  `reasoning_effort` execution.
+
 ## Phase 9 — Hybrid escalation
 
 - **Objective:** HYBRID mode is real.

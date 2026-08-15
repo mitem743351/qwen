@@ -34,6 +34,9 @@ Facts encoded here (and their official sources, verified 2026-08):
   are cataloged, never invoked (execution is a later phase).
 - **reasoning_effort** — explicit reasoning-depth levels (``low``/``medium``/
   ``xhigh``) documented for ``qwen3.8-max-preview`` on the Token Plan endpoint.
+  **Cataloged but NOT yet executed**: the adapter records the capability in
+  ``reasoning_effort_levels`` but never emits ``reasoning_effort`` (its
+  composition with the XHIGH workflow is Phase 10).
 - **lifecycle / availability / plans** — ``GA``/``PUBLIC`` for the standard
   line-up; ``PREVIEW``/``PLAN_RESTRICTED``/``TOKEN_PLAN`` for
   ``qwen3.8-max-preview``.
@@ -207,7 +210,7 @@ QWEN_MODELS: tuple[QwenModelSpec, ...] = (
         availability=ModelAvailability.PLAN_RESTRICTED,
         plans=(AvailabilityPlan.TOKEN_PLAN,),
         api_surfaces=(QwenApiSurface.OPENAI_COMPATIBLE_CHAT, QwenApiSurface.TOKEN_PLAN),
-        context_window=1_000_000,
+        context_window=983_616,
         max_output_tokens=131_072,
         thinking=True,
         thinking_always_enabled=True,
@@ -222,8 +225,9 @@ QWEN_MODELS: tuple[QwenModelSpec, ...] = (
         builtin_web_scraping=True,
         notes=(
             "Official QwenCloud preview; Token Plan only; thinking always "
-            "enabled; reasoning_effort low/medium/xhigh. Structured output is "
-            "not available on the preview endpoint."
+            "enabled; reasoning_effort low/medium/xhigh (cataloged, not yet "
+            "executed). Context 983,616 tokens. Structured output is not "
+            "available on the preview endpoint."
         ),
         source_urls=(
             "https://docs.qwencloud.com/developer-guides/clients-and-developer-tools/qwen-code",

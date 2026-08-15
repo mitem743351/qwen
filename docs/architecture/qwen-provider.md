@@ -63,13 +63,31 @@ The standard DashScope endpoint serves only the PUBLIC (GA) line-up; the Token
 Plan endpoint is the documented channel for `qwen3.8-max-preview`. A model
 appearing in QwenCloud docs is **not** assumed available on every endpoint.
 
+The endpoint profile **controls the network endpoint**: when an endpoint
+profile is configured, its `base_url` is the authority for the HTTP call; a raw
+`api_endpoint` that disagrees with the profile's `base_url` raises a
+`ProviderConfigurationError` rather than being silently ignored.
+
+---
+
+## Transient reasoning_content (multi-turn continuation)
+
+Qwen thinking models return `reasoning_content` on assistant turns. For
+`preserve_thinking` multi-turn continuation this hidden reasoning must be passed
+back on the next request. The provider-neutral `Message` carries a **transient**
+`reasoning_content` field: it is emitted on assistant messages, but it is marked
+`transient` so the serializer never persists it and it never reaches the
+Research Runtime. When `preserve_thinking` is requested and reasoning is on, a
+prior assistant message missing `reasoning_content` raises `InferenceError`
+rather than silently dropping the required reasoning state.
+
 ---
 
 ## Model table (verified snapshot)
 
 | Model | Lifecycle | Availability | Plan | Context | thinking | budget | preserve | structured | tools |
 |-------|-----------|--------------|------|---------|----------|--------|----------|------------|-------|
-| `qwen3.8-max-preview` | **PREVIEW** | **PLAN_RESTRICTED** | Token Plan | 1M | forced | yes | **yes** | **no** | yes |
+| `qwen3.8-max-preview` | **PREVIEW** | **PLAN_RESTRICTED** | Token Plan | 983,616 | forced | yes | **yes** | **no** | yes |
 | `qwen3.7-max` | GA | PUBLIC | — | 1M | hybrid | yes | **yes** | yes | yes |
 | `qwen3.7-plus` | GA | PUBLIC | — | 1M | hybrid | yes | **yes** | yes | yes |
 | `qwen3.6-plus` / `qwen3.5-plus` / `qwen3-max` | GA | PUBLIC | — | varies | hybrid | yes | no | yes | yes |
@@ -82,10 +100,19 @@ Streaming is supported by all listed models. `qwen3.7-max` has a documented
 **65,536** max output; `qwen3.8-max-preview` a **131,072** max output.
 
 `qwen3.8-max-preview` facts (verified): PREVIEW lifecycle, Token Plan only,
-1M context, always-on thinking with `reasoning_effort` `low`/`medium`/`xhigh`,
+**983,616-token** context, always-on thinking with `reasoning_effort`
+`low`/`medium`/`xhigh` (**cataloged but not yet executed** — see below),
 function calling, and built-in tools (web search, code interpreter, web
 scraping). Structured output is **not** available (always-on thinking). Source:
 QwenCloud "Qwen Code" (Token Plan) and "Thinking" guides.
+
+### `reasoning_effort` is cataloged, not executed
+
+`qwen3.8-max-preview` documents `reasoning_effort` (`low`/`medium`/`xhigh`) on
+the Token Plan endpoint. The adapter records this fact
+(`QwenModelSpec.reasoning_effort_levels`) for future use, but **never emits**
+`reasoning_effort` in a request — composing it with the XHIGH workflow is
+Phase 10. Phase 8.3/8.4 only represent the native provider capability honestly.
 
 ---
 

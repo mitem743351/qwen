@@ -51,7 +51,7 @@ def test_qwen_38_max_preview_is_listed_as_preview() -> None:
     assert spec.thinking_always_enabled is True
     assert spec.tool_calling is True
     assert spec.structured_output is False  # always-on thinking → no structured output
-    assert spec.context_window == 1_000_000
+    assert spec.context_window == 983_616
     assert spec.max_output_tokens == 131_072
     assert set(spec.reasoning_effort_levels) == {"low", "medium", "xhigh"}
     assert spec.builtin_web_search is True

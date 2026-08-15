@@ -186,6 +186,10 @@ assumed safe because "the model wrote it".
 
 The system **never** stores, transmits, logs, or exposes hidden
 chain-of-thought. The persistence layer structurally has no field for it.
+Multi-turn continuation carries prior-turn `reasoning_content` only as a
+**transient** in-memory field (`Message.reasoning_content`, marked
+`transient`), which the serializer skips — it is never persisted or returned to
+the Research Runtime.
 
 ## Reporting
 

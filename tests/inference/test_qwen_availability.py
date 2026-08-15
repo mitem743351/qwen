@@ -112,6 +112,33 @@ def test_raise_if_unavailable_unknown_ok() -> None:
         regional.resolve("qwen-regional", region="us").raise_if_unavailable()
 
 
+def test_token_plan_availability_is_not_standard_availability() -> None:
+    """Prove Token Plan availability cannot be mistaken for standard-endpoint."""
+    resolver = QwenModelAvailabilityResolver()
+    token = resolver.resolve("qwen3.8-max-preview", endpoint_profile=TOKEN_PLAN)
+    standard = resolver.resolve("qwen3.8-max-preview", endpoint_profile=STANDARD_DASHSCOPE)
+    assert token.status is AvailabilityStatus.AVAILABLE
+    assert standard.status is AvailabilityStatus.ENDPOINT_UNAVAILABLE
+    # The plan dimension distinguishes them too.
+    assert resolver.resolve(
+        "qwen3.8-max-preview", plan=AvailabilityPlan.TOKEN_PLAN
+    ).status is AvailabilityStatus.AVAILABLE
+    assert resolver.resolve(
+        "qwen3.8-max-preview", plan=AvailabilityPlan.STANDARD
+    ).status is AvailabilityStatus.PLAN_UNAVAILABLE
+
+
+def test_standard_model_not_on_token_plan_endpoint() -> None:
+    """The reverse: a standard model is not exposed by the Token Plan profile."""
+    resolver = QwenModelAvailabilityResolver()
+    assert resolver.resolve(
+        "qwen3.7-max", endpoint_profile=STANDARD_DASHSCOPE
+    ).status is AvailabilityStatus.AVAILABLE
+    assert resolver.resolve(
+        "qwen3.7-max", endpoint_profile=TOKEN_PLAN
+    ).status is AvailabilityStatus.ENDPOINT_UNAVAILABLE
+
+
 def test_endpoint_allowlist_is_positive() -> None:
     endpoint = QwenEndpointProfile(
         endpoint_id="custom",

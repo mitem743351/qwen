@@ -1,6 +1,6 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 8.3 — Qwen model availability & endpoint awareness.
+> **Status:** Phase 8.4 — Qwen endpoint control & transient reasoning state.
 > The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
@@ -12,7 +12,8 @@
 > discovery model-specific and current (2026); Phase 8.2 completes per-model
 > capability coverage; Phase 8.3 makes Qwen model availability and effective
 > capability resolution contextual (model + endpoint + region + plan +
-> inference mode).
+> inference mode); Phase 8.4 makes the endpoint profile drive the network
+> endpoint and adds transient reasoning state for multi-turn continuation.
 > **Audience:** Implementers, code agents, reviewers
 > **Scope:** This document is the stable, binding architecture contract for the
 > "local AI research infrastructure" that extends **Qwen Studio** through MCP.
@@ -547,6 +548,14 @@ See [`docs/architecture/inference.md`](docs/architecture/inference.md) and
 > calling and built-in tools are kept separate (built-in tools cataloged, never
 > invoked); and distinct availability errors replace a blanket
 > `ModelNotFoundError`.
+>
+> **Phase 8.4 (implemented).** The endpoint profile now **controls** the HTTP
+> endpoint (`base_url` is authoritative; a conflicting `api_endpoint` raises);
+> `Message.reasoning_content` carries transient hidden reasoning for
+> `preserve_thinking` multi-turn continuation (marked `transient`, never
+> serialized/persisted); `qwen3.8-max-preview` context corrected to 983,616; a
+> guard raises instead of silently dropping required reasoning state; and
+> `reasoning_effort` is explicitly cataloged-but-not-executed (Phase 10).
 
 ---
 

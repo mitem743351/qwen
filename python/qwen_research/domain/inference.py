@@ -144,13 +144,23 @@ class ToolSpec:
 @serializable
 @dataclasses.dataclass(frozen=True)
 class Message:
-    """A provider-neutral chat message."""
+    """A provider-neutral chat message.
+
+    ``reasoning_content`` is **transient**: it holds the hidden reasoning a
+    provider returned on a prior assistant turn, carried forward *only* for
+    multi-turn continuation (e.g. Qwen ``preserve_thinking``). It is marked
+    ``transient`` so the serializer never persists it — hidden chain-of-thought
+    is never written to disk or returned to the Research Runtime.
+    """
 
     role: MessageRole
     content: str
     name: str | None = None
     tool_call_id: str | None = None
     tool_calls: tuple[ToolCall, ...] = ()
+    reasoning_content: str = dataclasses.field(
+        default="", repr=False, metadata={"transient": True}
+    )
 
 
 @serializable

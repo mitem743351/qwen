@@ -42,9 +42,19 @@ def _qualname(cls: type[Any]) -> str:
 
 
 def to_jsonable(obj: Any) -> Any:
-    """Recursively convert *obj* into JSON-compatible primitives."""
+    """Recursively convert *obj* into JSON-compatible primitives.
+
+    Dataclass fields marked ``metadata={"transient": True}`` are skipped: they
+    represent in-memory-only state (e.g. hidden chain-of-thought carried between
+    turns) that must never be persisted or serialized.
+    """
     if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
-        return to_jsonable(dataclasses.asdict(obj))
+        data: dict[str, Any] = {}
+        for field in dataclasses.fields(obj):
+            if field.metadata.get("transient"):
+                continue
+            data[field.name] = to_jsonable(getattr(obj, field.name))
+        return data
     if isinstance(obj, enum.Enum):
         return obj.value
     if isinstance(obj, _datetime.datetime):

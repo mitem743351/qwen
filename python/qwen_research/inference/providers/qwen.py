@@ -23,6 +23,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from typing import Any
 
 from qwen_research.domain.errors import (
+    InferenceError,
     ModelNotFoundError,
     ProviderAuthError,
     ProviderConfigurationError,
@@ -39,6 +40,7 @@ from qwen_research.domain.inference import (
     InferenceResult,
     InferenceStreamEvent,
     Message,
+    MessageRole,
     ModelInfo,
     ProviderCapabilities,
     ProviderLimits,
@@ -376,11 +378,24 @@ class QwenProvider:
         }
 
     def _endpoint(self) -> str:
-        if not self._config.api_endpoint:
+        profile = self._endpoint_profile()
+        base = profile.base_url if profile is not None else self._config.api_endpoint
+        if not base:
             raise ProviderConfigurationError(
-                f"provider {self._config.provider_id!r} has no api_endpoint configured"
+                f"provider {self._config.provider_id!r} has no api_endpoint or "
+                "endpoint profile configured"
             )
-        return self._config.api_endpoint.rstrip("/") + _CHAT_COMPLETIONS_PATH
+        # The endpoint profile controls the endpoint; if a raw api_endpoint is
+        # also set and disagrees, surface the conflict rather than silently
+        # picking one.
+        if profile is not None and self._config.api_endpoint:
+            configured = self._config.api_endpoint.rstrip("/")
+            if configured and configured != base.rstrip("/"):
+                raise ProviderConfigurationError(
+                    f"api_endpoint {configured!r} conflicts with endpoint profile "
+                    f"{profile.endpoint_id!r} base_url {base.rstrip('/')!r}"
+                )
+        return base.rstrip("/") + _CHAT_COMPLETIONS_PATH
 
     def _model(self, request: InferenceRequest) -> str:
         model = request.inference_policy.model_requirement or self._config.default_model
@@ -431,6 +446,32 @@ class QwenProvider:
         mode = self._thinking_mode(spec, request.inference_policy)
         return self._effective_capabilities(spec, mode)
 
+    def _guard_preserved_thinking(
+        self, request: InferenceRequest, caps: ProviderCapabilities
+    ) -> None:
+        """Refuse to silently drop multi-turn reasoning state.
+
+        When ``preserve_thinking`` is requested and supported, and reasoning is
+        actually on (ENABLED/FORCED), every prior assistant message must carry
+        its transient ``reasoning_content``; otherwise continuing would silently
+        drop the reasoning state Qwen needs for accurate multi-turn
+        continuation.
+        """
+        policy = request.inference_policy
+        if not policy.preserved_thinking or not caps.supports_preserved_thinking:
+            return
+        spec = self._resolve_spec(self._model(request))
+        mode = self._thinking_mode(spec, policy)
+        if mode is ThinkingMode.DISABLED:
+            return
+        for message in request.messages:
+            if message.role is MessageRole.ASSISTANT and not message.reasoning_content:
+                raise InferenceError(
+                    "preserved thinking requested but an assistant message is "
+                    "missing reasoning_content; refusing to silently drop "
+                    "multi-turn reasoning state"
+                )
+
     def _build_request(
         self,
         request: InferenceRequest,
@@ -441,6 +482,7 @@ class QwenProvider:
         policy = request.inference_policy
         model = self._model(request)
         caps = self._effective_caps_for_request(request)
+        self._guard_preserved_thinking(request, caps)
         payload: dict[str, Any] = {
             "model": model,
             "messages": self._messages(request),
@@ -500,6 +542,11 @@ class QwenProvider:
             item["name"] = message.name
         if message.tool_call_id is not None:
             item["tool_call_id"] = message.tool_call_id
+        # Transient hidden reasoning carried forward for multi-turn
+        # continuation (Qwen ``preserve_thinking``); emitted only for assistant
+        # messages that actually carry it.
+        if message.reasoning_content and role == MessageRole.ASSISTANT.value:
+            item["reasoning_content"] = message.reasoning_content
         if message.tool_calls:
             item["tool_calls"] = [
                 {
