@@ -173,7 +173,7 @@ def test_genuine_stale_side_effecting_marks_unknown(tmp_path: Any) -> None:
         ),
     )
     # Side-effecting stale claim must not be auto-reclaimed; mark UNKNOWN.
-    store.mark_unknown(identity, "stale side-effecting execution")
+    store.recover_unknown(identity, "stale side-effecting execution")
     record = store.inspect(identity)
     assert record is not None
     assert record.state is ToolExecutionState.UNKNOWN

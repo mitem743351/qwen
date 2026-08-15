@@ -7,7 +7,7 @@ persistent research memory, verification/citation/provenance, and deterministic
 computation — while Qwen Studio keeps its native conversational and web-search
 capabilities.
 
-> **Current status: Phase 9.5 — Lease heartbeats & long-running ownership.**
+> **Current status: Phase 9.6 — Final reliability closure (Phase 9 complete & frozen).**
 > The architecture (Phases 0, 0.5, 0.75) is the approved baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
@@ -214,8 +214,10 @@ semantics and malformed-tool-argument rejection), Phase 9.2 (multi-tool batch
 integrity, budget-exhaustion semantics, and continuation hardening), and
 Phase 9.3 (tool-execution persistence and crash/restart idempotency),
 Phase 9.4 (transactional tool execution with atomic claims, leases, UNKNOWN
-crash semantics, and call-id conflict rejection), and Phase 9.5 (lease
-heartbeats and long-running tool ownership) are **complete**.
+crash semantics, and call-id conflict rejection), Phase 9.5 (lease heartbeats
+and long-running tool ownership), and Phase 9.6 (final ownership-integrity
+closure and terminal-state immutability) are **complete** — **Phase 9 is now
+frozen**.
 The Research Runtime remains
 provider- and transport-independent; the MCP server is a thin adapter over it,
 now serving hybrid evidence, project-scoped memory, deterministic claim

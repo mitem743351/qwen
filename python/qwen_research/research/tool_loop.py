@@ -20,6 +20,7 @@ Invariants enforced here:
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import hashlib
 import json
@@ -267,6 +268,7 @@ class ToolLoopResult:
 from qwen_research.research.tool_execution import (  # noqa: E402
     ClaimOutcome,
     LeaseHeartbeat,
+    LeaseOwnershipError,
     ToolExecutionIdentity,
     ToolExecutionSemantics,
     ToolExecutionStore,
@@ -895,7 +897,8 @@ def _execute_transactionally(
             executed_call_ids.add(call.call_id)
             return executed
 
-    store.mark_unknown(identity, "stale or ambiguous execution; recovery requires policy")
+    # Recovery authority: a stale side-effecting/unknown claim is marked UNKNOWN.
+    store.recover_unknown(identity, "stale or ambiguous execution; recovery requires policy")
     return _batch_result(
         call, ToolExecutionStatus.UNKNOWN,
         ToolError(ToolErrorCode.UNKNOWN_OUTCOME, "tool outcome unknown after stale claim"),
@@ -956,7 +959,10 @@ def _execute_with_heartbeat(
         ToolExecutionSemantics.DESTRUCTIVE,
         ToolExecutionSemantics.UNKNOWN,
     ):
-        store.mark_unknown(identity, "lease lost during execution")
+        # Owner-guarded: if we no longer own the lease this is a no-op (we must
+        # not mutate a record another worker now owns).
+        with contextlib.suppress(LeaseOwnershipError):
+            store.mark_unknown(identity, lease_id, "lease lost during execution")
         return _batch_result(
             call, ToolExecutionStatus.UNKNOWN,
             ToolError(ToolErrorCode.UNKNOWN_OUTCOME, "lease lost; tool outcome unknown"),
@@ -964,8 +970,15 @@ def _execute_with_heartbeat(
 
     try:
         store.complete(identity, lease_id, executed)
-    except Exception:  # noqa: BLE001 — completion failed → ambiguous
-        store.mark_unknown(identity, "completion failed after execution")
+    except LeaseOwnershipError:
+        # Ownership was transferred/expired; do not mutate, report ambiguity.
+        return _batch_result(
+            call, ToolExecutionStatus.UNKNOWN,
+            ToolError(ToolErrorCode.UNKNOWN_OUTCOME, "completion lost ownership; outcome unknown"),
+        )
+    except Exception:  # noqa: BLE001 — completion persistence failed → ambiguous
+        with contextlib.suppress(LeaseOwnershipError):
+            store.mark_unknown(identity, lease_id, "completion failed after execution")
         return _batch_result(
             call, ToolExecutionStatus.UNKNOWN,
             ToolError(ToolErrorCode.UNKNOWN_OUTCOME, "completion failed; outcome unknown"),

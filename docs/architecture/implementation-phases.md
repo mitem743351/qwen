@@ -464,6 +464,26 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
   XHIGH/EXTREME workflows; multi-agent inference; Qwen built-in web search;
   `reasoning_effort` execution; remote/distributed workers.
 
+## Phase 9.6 — Final reliability closure ✅ (complete / Phase 9 FROZEN)
+
+- **Objective:** close the final ownership-integrity hole (old-owner mutation
+  after lease transfer) and formally freeze the tool-execution subsystem.
+- **Dependencies:** Phase 9.5.
+- **Components:** ownership-aware `mark_unknown(identity, lease_id, reason)`;
+  `recover_unknown(identity, reason)` recovery-authority operation;
+  conditional state mutations (`mark_running`, `complete`, `release`,
+  `mark_unknown`, `heartbeat`) guarded by `lease_id` + active state +
+  `lease_expires_at >= now` with `rowcount == 1` verification;
+  `TerminalStateError`; terminal-state immutability; old-owner race tests;
+  ownership matrix documentation.
+- **Acceptance criteria:** `mark_unknown` is ownership-aware; every
+  owner-sensitive mutation validates lease ownership; terminal states cannot be
+  overwritten by ordinary paths; old owners cannot mutate after reclamation;
+  active owners can still mutate; heartbeat cannot resurrect expired/terminal
+  leases; critical old-owner/new-owner race is tested; terminal immutability is
+  tested; restart replay is tested; Phase 9 marked complete/frozen.
+- **Phase 9 is now FROZEN.** No Phase 9.7 or later 9.x hardening phases.
+
 ## Phase 10 — Advanced XHigh / EXTREME workflows
 
 - **Objective:** high-effort profiles behave as designed.

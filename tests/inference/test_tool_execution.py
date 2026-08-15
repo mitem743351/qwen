@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -111,18 +112,20 @@ def test_crash_after_execution_before_complete_is_unknown(tmp_path: Path) -> Non
         permission="write",
         lease_id="lease-1",
         lease_owner="owner-a",
-        lease_duration_seconds=120.0,
+        lease_duration_seconds=0.01,
     )
     store_a.mark_running(identity, "lease-1")
     # Simulated crash: the external side effect happened, complete() never ran.
     store_a.close()
 
-    # Restart with the same store.
+    # Restart with the same store; the lease has since expired (stale).
+    time.sleep(0.05)
     store_b = SqliteToolExecutionStore(path)
     store_b.initialize()
     record = store_b.inspect(identity)
     assert record is not None
     assert record.state is ToolExecutionState.RUNNING
+    assert store_b.is_stale(identity) is True
     # A new claim on a side-effecting tool must NOT silently re-execute.
     claim = store_b.claim(
         identity,
@@ -138,9 +141,9 @@ def test_crash_after_execution_before_complete_is_unknown(tmp_path: Path) -> Non
         lease_owner="owner-b",
         lease_duration_seconds=120.0,
     )
-    assert claim.outcome is ClaimOutcome.ALREADY_CLAIMED  # active lease, not auto-reclaimed
-    # Recovery policy records UNKNOWN rather than re-executing.
-    store_b.mark_unknown(identity, "crash before completion")
+    assert claim.outcome is ClaimOutcome.STALE  # stale, not auto-reclaimed
+    # Recovery authority records UNKNOWN rather than re-executing.
+    store_b.recover_unknown(identity, "crash before completion")
     record = store_b.inspect(identity)
     assert record is not None
     assert record.state is ToolExecutionState.UNKNOWN

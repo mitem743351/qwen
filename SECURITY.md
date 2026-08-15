@@ -223,6 +223,13 @@ row — it never mutates tool results, arguments, or execution state, and it nev
 resurrects an expired/terminal lease. Heartbeat identifiers and timestamps are
 never exposed to the model or MCP.
 
+Terminal-state immutability (Phase 9.6): terminal execution records cannot be
+overwritten by the ordinary execution path, and a previous owner whose lease was
+reclaimed has no authority to mutate the record — every owner-sensitive mutation
+is a conditional update verified by `rowcount == 1`. Persisted tool results
+remain untrusted DATA and can never alter permissions, lease ownership, workflow
+state, or provider configuration.
+
 ## Hidden chain-of-thought
 
 The system **never** stores, transmits, logs, or exposes hidden

@@ -43,6 +43,14 @@ class LeaseOwnershipError(DomainToolError):
     """A lease operation was attempted by a non-owner or on an expired lease."""
 
 
+class TerminalStateError(DomainToolError):
+    """A terminal execution record was mutated by an ordinary execution path.
+
+    Terminal states are immutable from the ordinary execution owner; only an
+    explicit recovery authority may change recovery-specific states.
+    """
+
+
 class CallIdConflictError(DomainToolError):
     """A call id was reused with different tool/arguments/scope."""
 
@@ -269,7 +277,11 @@ class ToolExecutionStore(Protocol):
         lease_duration_seconds: float,
     ) -> ClaimResult: ...
 
-    def mark_unknown(self, identity: ToolExecutionIdentity, reason: str) -> None: ...
+    def mark_unknown(
+        self, identity: ToolExecutionIdentity, lease_id: str, reason: str
+    ) -> None: ...
+
+    def recover_unknown(self, identity: ToolExecutionIdentity, reason: str) -> None: ...
 
     def inspect(self, identity: ToolExecutionIdentity) -> ToolExecutionRecord | None: ...
 
@@ -558,18 +570,26 @@ class SqliteToolExecutionStore:
         with self._write_lock:
             db.execute("BEGIN IMMEDIATE")
             try:
-                self._require_owned(db, identity, lease_id)
-                db.execute(
+                cursor = db.execute(
                     "UPDATE tool_execution_records SET state = ?, started_at = ? "
-                    "WHERE inference_session_id = ? AND call_id = ?",
+                    "WHERE inference_session_id = ? AND call_id = ? "
+                    "AND lease_id = ? AND state = ? AND lease_expires_at >= ?",
                     (
                         ToolExecutionState.RUNNING.value,
                         _now_iso(),
                         identity.inference_session_id,
                         identity.call_id,
+                        lease_id,
+                        ToolExecutionState.CLAIMED.value,
+                        time.time(),
                     ),
                 )
+                if cursor.rowcount != 1:
+                    db.execute("ROLLBACK")
+                    raise LeaseOwnershipError("mark_running failed: not the current owner")
                 db.execute("COMMIT")
+            except LeaseOwnershipError:
+                raise
             except Exception:
                 db.execute("ROLLBACK")
                 raise
@@ -591,13 +611,15 @@ class SqliteToolExecutionStore:
                     "UPDATE tool_execution_records SET lease_expires_at = ?, "
                     "heartbeat_at = ?, heartbeat_count = heartbeat_count + 1 "
                     "WHERE inference_session_id = ? AND call_id = ? "
-                    "AND lease_id = ? AND state IN ('CLAIMED', 'RUNNING')",
+                    "AND lease_id = ? AND state IN ('claimed', 'running') "
+                    "AND lease_expires_at >= ?",
                     (
                         time.time() + lease_duration_seconds,
                         time.time(),
                         identity.inference_session_id,
                         identity.call_id,
                         lease_id,
+                        time.time(),
                     ),
                 )
                 if cursor.rowcount != 1:
@@ -619,12 +641,13 @@ class SqliteToolExecutionStore:
         with self._write_lock:
             db.execute("BEGIN IMMEDIATE")
             try:
-                self._require_owned(db, identity, lease_id)
                 state = _status_to_state(result.status)
-                db.execute(
+                cursor = db.execute(
                     "UPDATE tool_execution_records SET state = ?, completed_at = ?, "
                     "result_json = ?, error = ? "
-                    "WHERE inference_session_id = ? AND call_id = ?",
+                    "WHERE inference_session_id = ? AND call_id = ? "
+                    "AND lease_id = ? AND state IN ('claimed', 'running') "
+                    "AND lease_expires_at >= ?",
                     (
                         state.value,
                         _now_iso(),
@@ -632,9 +655,18 @@ class SqliteToolExecutionStore:
                         result.error.message if result.error else None,
                         identity.inference_session_id,
                         identity.call_id,
+                        lease_id,
+                        time.time(),
                     ),
                 )
+                if cursor.rowcount != 1:
+                    db.execute("ROLLBACK")
+                    raise LeaseOwnershipError(
+                        "complete failed: lease not owned, expired, or terminal"
+                    )
                 db.execute("COMMIT")
+            except LeaseOwnershipError:
+                raise
             except Exception:
                 db.execute("ROLLBACK")
                 raise
@@ -644,39 +676,103 @@ class SqliteToolExecutionStore:
         with self._write_lock:
             db.execute("BEGIN IMMEDIATE")
             try:
-                self._require_owned(db, identity, lease_id)
-                db.execute(
+                cursor = db.execute(
                     "UPDATE tool_execution_records SET state = ?, lease_id = NULL, "
                     "lease_owner = NULL, lease_expires_at = NULL "
-                    "WHERE inference_session_id = ? AND call_id = ?",
+                    "WHERE inference_session_id = ? AND call_id = ? "
+                    "AND lease_id = ? AND state IN ('claimed', 'running') "
+                    "AND lease_expires_at >= ?",
                     (
                         ToolExecutionState.PENDING.value,
                         identity.inference_session_id,
                         identity.call_id,
+                        lease_id,
+                        time.time(),
                     ),
                 )
+                if cursor.rowcount != 1:
+                    db.execute("ROLLBACK")
+                    raise LeaseOwnershipError("release failed: not the current owner")
                 db.execute("COMMIT")
+            except LeaseOwnershipError:
+                raise
             except Exception:
                 db.execute("ROLLBACK")
                 raise
 
-    def mark_unknown(self, identity: ToolExecutionIdentity, reason: str) -> None:
+    def mark_unknown(
+        self, identity: ToolExecutionIdentity, lease_id: str, reason: str
+    ) -> None:
+        """Owner-guarded: mark an *active owned* execution as ``UNKNOWN``.
+
+        Conditional update requires the current lease id and an active state;
+        a zero-row update means the caller no longer owns the execution and
+        must not mutate it.
+        """
         db = self._db()
         with self._write_lock:
             db.execute("BEGIN IMMEDIATE")
             try:
-                db.execute(
-                    "UPDATE tool_execution_records SET state = ?, completed_at = ?, error = ? "
-                    "WHERE inference_session_id = ? AND call_id = ?",
+                cursor = db.execute(
+                    "UPDATE tool_execution_records SET state = ?, completed_at = ?, "
+                    "error = ? "
+                    "WHERE inference_session_id = ? AND call_id = ? "
+                    "AND lease_id = ? AND state IN ('claimed', 'running') "
+                    "AND lease_expires_at >= ?",
                     (
                         ToolExecutionState.UNKNOWN.value,
                         _now_iso(),
                         reason,
                         identity.inference_session_id,
                         identity.call_id,
+                        lease_id,
+                        time.time(),
                     ),
                 )
+                if cursor.rowcount != 1:
+                    db.execute("ROLLBACK")
+                    raise LeaseOwnershipError(
+                        "mark_unknown failed: lease not owned, expired, or terminal"
+                    )
                 db.execute("COMMIT")
+            except LeaseOwnershipError:
+                raise
+            except Exception:
+                db.execute("ROLLBACK")
+                raise
+
+    def recover_unknown(self, identity: ToolExecutionIdentity, reason: str) -> None:
+        """Recovery authority: mark a *stale* active claim as ``UNKNOWN``.
+
+        Only applies to a stale (expired) ``CLAIMED``/``RUNNING`` record; it
+        never overwrites a live owner's record or a terminal result.
+        """
+        db = self._db()
+        with self._write_lock:
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = db.execute(
+                    "UPDATE tool_execution_records SET state = ?, completed_at = ?, "
+                    "error = ? "
+                    "WHERE inference_session_id = ? AND call_id = ? "
+                    "AND state IN ('claimed', 'running') AND lease_expires_at < ?",
+                    (
+                        ToolExecutionState.UNKNOWN.value,
+                        _now_iso(),
+                        reason,
+                        identity.inference_session_id,
+                        identity.call_id,
+                        time.time(),
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    db.execute("ROLLBACK")
+                    raise TerminalStateError(
+                        "recover_unknown failed: not a stale active claim"
+                    )
+                db.execute("COMMIT")
+            except TerminalStateError:
+                raise
             except Exception:
                 db.execute("ROLLBACK")
                 raise
@@ -912,6 +1008,8 @@ class InMemoryToolExecutionStore:
 
     def mark_running(self, identity: ToolExecutionIdentity, lease_id: str) -> None:
         rec = self._owned(identity, lease_id)
+        if rec["state"] is not ToolExecutionState.CLAIMED:
+            raise TerminalStateError("mark_running failed: record is not CLAIMED")
         rec["state"] = ToolExecutionState.RUNNING
 
     def heartbeat(
@@ -928,22 +1026,39 @@ class InMemoryToolExecutionStore:
         self, identity: ToolExecutionIdentity, lease_id: str, result: ToolExecutionResult
     ) -> None:
         rec = self._owned(identity, lease_id)
+        if rec["state"] not in (ToolExecutionState.CLAIMED, ToolExecutionState.RUNNING):
+            raise TerminalStateError("complete failed: record is terminal")
         rec["state"] = _status_to_state(result.status)
         rec["result"] = result
         rec["error"] = result.error.message if result.error else None
 
     def release(self, identity: ToolExecutionIdentity, lease_id: str) -> None:
         rec = self._owned(identity, lease_id)
+        if rec["state"] not in (ToolExecutionState.CLAIMED, ToolExecutionState.RUNNING):
+            raise TerminalStateError("release failed: record is terminal")
         rec["state"] = ToolExecutionState.PENDING
         rec["lease_id"] = None
         rec["lease_owner"] = None
         rec["lease_expires_at"] = None
 
-    def mark_unknown(self, identity: ToolExecutionIdentity, reason: str) -> None:
+    def mark_unknown(
+        self, identity: ToolExecutionIdentity, lease_id: str, reason: str
+    ) -> None:
+        rec = self._owned(identity, lease_id)
+        if rec["state"] not in (ToolExecutionState.CLAIMED, ToolExecutionState.RUNNING):
+            raise TerminalStateError("mark_unknown failed: record is terminal")
+        rec["state"] = ToolExecutionState.UNKNOWN
+        rec["error"] = reason
+
+    def recover_unknown(self, identity: ToolExecutionIdentity, reason: str) -> None:
         with self._lock:
             rec = self._records.get(self._key(identity))
             if rec is None:
-                return
+                raise TerminalStateError("recover_unknown failed: no record")
+            if rec["state"] not in (ToolExecutionState.CLAIMED, ToolExecutionState.RUNNING):
+                raise TerminalStateError("recover_unknown failed: not active")
+            if not _is_expired(rec["lease_expires_at"]):
+                raise TerminalStateError("recover_unknown failed: lease not stale")
             rec["state"] = ToolExecutionState.UNKNOWN
             rec["error"] = reason
 

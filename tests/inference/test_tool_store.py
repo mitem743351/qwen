@@ -146,7 +146,7 @@ def test_stale_claim_detected_and_reclaimed(store: ToolExecutionStore) -> None:
 def test_mark_unknown_records_ambiguous_outcome(store: ToolExecutionStore) -> None:
     identity = _identity()
     store.claim(identity, **_claim_fields())
-    store.mark_unknown(identity, "crash before completion")
+    store.mark_unknown(identity, "lease-1", "crash before completion")
     record = store.inspect(identity)
     assert record is not None
     assert record.state is ToolExecutionState.UNKNOWN

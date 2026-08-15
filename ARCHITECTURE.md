@@ -1,6 +1,6 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 9.5 — Lease heartbeats & long-running ownership.
+> **Status:** Phase 9.6 — Final reliability closure (Phase 9 complete & frozen).
 > The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
@@ -599,6 +599,14 @@ See [`docs/architecture/inference.md`](docs/architecture/inference.md) and
 > becomes stale and is recovered per tool semantics. A lost lease is never
 > completed/resurrected by the old owner, and side-effecting execution with a
 > lost lease is recorded as `UNKNOWN`.
+>
+> **Phase 9.6 (implemented).** Ownership integrity is closed: `mark_unknown` is
+> ownership-aware, every owner-sensitive mutation is a conditional update
+> verified by `rowcount == 1`, terminal states are immutable from the ordinary
+> execution path, and a previous owner whose lease was reclaimed has zero
+> authority to mutate the record. **Phase 9 is complete and frozen** — atomic
+> claim, lease ownership, heartbeat liveness, terminal integrity, durable
+> replay, explicit `UNKNOWN`, and restart-safe continuation.
 
 ---
 

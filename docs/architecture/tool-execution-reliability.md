@@ -23,6 +23,56 @@ tool-specific recovery policy.
 
 ---
 
+## Terminal-state immutability & old-owner protection (Phase 9.6)
+
+Terminal states (`SUCCEEDED`, `FAILED`, `DENIED`, `INVALID_ARGUMENTS`,
+`TIMEOUT`, `RESOURCE_LIMIT`, `CANCELLED`, `UNKNOWN`, `ABANDONED`) are immutable
+from the ordinary execution owner. Every owner-sensitive mutation
+(`mark_running`, `complete`, `release`, `mark_unknown`, `heartbeat`) is a
+**conditional** SQLite update guarded by `lease_id` + `state IN
+('claimed','running')` + `lease_expires_at >= now`, verified via `rowcount == 1`
+— a zero-row update raises `LeaseOwnershipError` / `TerminalStateError` rather
+than silently succeeding.
+
+`mark_unknown()` is ownership-aware: it requires the current lease id and an
+active owned state. A previous owner whose lease was reclaimed by a newer owner
+has **zero** authority to mutate the record. `recover_unknown()` is a separate
+**recovery authority** operation that only applies to a *stale* active claim —
+it never overwrites a live owner's record or a terminal result.
+
+## Ownership matrix
+
+| Operation          | Current owner | Expired old owner | Recovery authority |
+|--------------------|---------------|-------------------|--------------------|
+| `heartbeat`        | ✅            | ❌                | ❌                 |
+| `mark_running`     | ✅            | ❌                | ❌                 |
+| `complete`         | ✅            | ❌                | only if explicit   |
+| `mark_unknown`     | ✅            | ❌                | ❌                 |
+| `recover_unknown`  | ❌            | —                 | ✅ (stale only)    |
+| `release`          | ✅            | ❌                | explicit           |
+| `reclaim`          | ❌            | —                 | ✅                 |
+
+## Phase 9 guarantees
+
+- atomic ownership claim
+- lease-based ownership
+- heartbeat liveness
+- old-owner mutation prevention
+- terminal-state immutability
+- durable result replay
+- explicit `UNKNOWN` state
+- tool-semantic recovery
+- restart-safe completed calls
+
+## Explicit non-guarantees
+
+- universal exactly-once external side effects
+- distributed coordination
+- cross-host worker safety
+- automatic recovery of ambiguous side effects
+
+---
+
 ## Execution identity
 
 `ToolExecutionIdentity(inference_session_id, call_id)` is the canonical,
