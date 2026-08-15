@@ -449,21 +449,22 @@ class QwenProvider:
     def _guard_preserved_thinking(
         self, request: InferenceRequest, caps: ProviderCapabilities
     ) -> None:
-        """Refuse to silently drop multi-turn reasoning state.
+        """Refuse to silently drop multi-turn reasoning state (model-specific).
 
-        When ``preserve_thinking`` is requested and supported, and reasoning is
-        actually on (ENABLED/FORCED), every prior assistant message must carry
-        its transient ``reasoning_content``; otherwise continuing would silently
-        drop the reasoning state Qwen needs for accurate multi-turn
-        continuation.
+        **Strict** only for thinking-forced models (``qwen3.8-max-preview``):
+        every assistant turn produces reasoning, so a prior assistant message
+        missing its transient ``reasoning_content`` is a definite silent loss
+        and raises. **Permissive** for hybrid models that support
+        ``preserve_thinking`` (``qwen3.7-max`` / ``qwen3.7-plus``): reasoning may
+        not have been produced on a given turn, so missing ``reasoning_content``
+        is carried as-is rather than treated as an error.
         """
         policy = request.inference_policy
         if not policy.preserved_thinking or not caps.supports_preserved_thinking:
             return
         spec = self._resolve_spec(self._model(request))
-        mode = self._thinking_mode(spec, policy)
-        if mode is ThinkingMode.DISABLED:
-            return
+        if not spec.thinking_always_enabled:
+            return  # permissive for hybrid models
         for message in request.messages:
             if message.role is MessageRole.ASSISTANT and not message.reasoning_content:
                 raise InferenceError(
@@ -514,7 +515,29 @@ class QwenProvider:
             payload["response_format"] = {"type": "json_object"}
         elif request.response_format:
             payload["response_format"] = {"type": request.response_format}
+        self._enforce_thinking_control_exclusivity(model, payload)
         return payload
+
+    def _enforce_thinking_control_exclusivity(
+        self, model: str, payload: dict[str, Any]
+    ) -> None:
+        """Enforce the Qwen3.8 invariant on reasoning-depth controls.
+
+        ``reasoning_effort`` and ``thinking_budget`` are mutually exclusive ways
+        to control thinking depth: Qwen does not accept both in one request.
+        This guard is model-aware (only models that catalog ``reasoning_effort``
+        have the constraint) and is enforced on every request payload, so a
+        future ``reasoning_effort`` emitter (Phase 10) can never coexist with a
+        ``thinking_budget``.
+        """
+        spec = self._resolve_spec(model)
+        if not spec.reasoning_effort_levels:
+            return
+        if "reasoning_effort" in payload and "thinking_budget" in payload:
+            raise InferenceError(
+                "reasoning_effort and thinking_budget cannot both be emitted "
+                "for the same request"
+            )
 
     def _tool_definition(self, tool: ToolSpec) -> dict[str, Any]:
         """Map a full :class:`ToolSpec` to a Qwen function-tool definition."""

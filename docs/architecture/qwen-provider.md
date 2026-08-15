@@ -77,9 +77,14 @@ Qwen thinking models return `reasoning_content` on assistant turns. For
 back on the next request. The provider-neutral `Message` carries a **transient**
 `reasoning_content` field: it is emitted on assistant messages, but it is marked
 `transient` so the serializer never persists it and it never reaches the
-Research Runtime. When `preserve_thinking` is requested and reasoning is on, a
-prior assistant message missing `reasoning_content` raises `InferenceError`
-rather than silently dropping the required reasoning state.
+Research Runtime.
+
+Missing-reasoning validation is **model-specific**: **strict** for
+thinking-forced models (`qwen3.8-max-preview` — every assistant turn produces
+reasoning, so a missing `reasoning_content` raises `InferenceError`), and
+**permissive** for hybrid models that support `preserve_thinking`
+(`qwen3.7-max` / `qwen3.7-plus` — reasoning may not have been produced on a
+given turn, so missing `reasoning_content` is carried as-is).
 
 ---
 
@@ -113,6 +118,13 @@ the Token Plan endpoint. The adapter records this fact
 (`QwenModelSpec.reasoning_effort_levels`) for future use, but **never emits**
 `reasoning_effort` in a request — composing it with the XHIGH workflow is
 Phase 10. Phase 8.3/8.4 only represent the native provider capability honestly.
+
+An explicit **Qwen3.8 invariant** is enforced on every request payload:
+`reasoning_effort` and `thinking_budget` are mutually exclusive reasoning-depth
+controls and can never both be emitted (`_enforce_thinking_control_exclusivity`
+raises `InferenceError` otherwise). This guard is model-aware — only models that
+catalog `reasoning_effort` carry the constraint — so a future `reasoning_effort`
+emitter can never coexist with a `thinking_budget`.
 
 ---
 

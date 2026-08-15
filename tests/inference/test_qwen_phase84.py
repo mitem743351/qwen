@@ -131,6 +131,29 @@ def test_preserve_thinking_missing_reasoning_raises() -> None:
         provider.generate(request)
 
 
+def test_preserve_thinking_permissive_for_hybrid_model() -> None:
+    # qwen3.7-max is hybrid (not thinking-forced): a prior assistant turn
+    # without reasoning_content is NOT treated as a silent drop.
+    provider, transport = make_provider(lambda *_: completion_response("ok"))
+    request = InferenceRequest(
+        task_reference=TaskId("task_1"),
+        inference_policy=InferencePolicy(
+            model_requirement="qwen3.7-max",
+            preserved_thinking=True,
+            reasoning=True,
+        ),
+        messages=(
+            Message(role=MessageRole.ASSISTANT, content="prior answer"),
+            Message(role=MessageRole.USER, content="follow up"),
+        ),
+    )
+    result = provider.generate(request)
+    assert result.status == "ok"
+    # reasoning_content is simply not present (carried as-is, no error).
+    body = transport.calls[0][2]
+    assert "reasoning_content" not in body["messages"][0]
+
+
 def test_preserve_thinking_with_reasoning_content_is_ok() -> None:
     provider, transport = make_provider(lambda *_: completion_response("ok"))
     request = InferenceRequest(
@@ -188,3 +211,29 @@ def test_reasoning_effort_levels_are_cataloged() -> None:
     assert spec.reasoning_effort_levels == ("low", "medium", "xhigh")
     # Plain models do not catalog reasoning_effort.
     assert provider._resolve_spec("qwen3.7-max").reasoning_effort_levels == ()
+
+
+def test_reasoning_effort_and_thinking_budget_are_exclusive() -> None:
+    provider, _ = make_provider(lambda *_: completion_response("ok"))
+    # A payload carrying both controls must be rejected for qwen3.8-max-preview.
+    with pytest.raises(InferenceError):
+        provider._enforce_thinking_control_exclusivity(
+            "qwen3.8-max-preview",
+            {"reasoning_effort": "xhigh", "thinking_budget": 500},
+        )
+
+
+def test_reasoning_effort_and_thinking_budget_exclusivity_is_model_aware() -> None:
+    provider, _ = make_provider(lambda *_: completion_response("ok"))
+    # A model without reasoning_effort has no exclusivity constraint.
+    provider._enforce_thinking_control_exclusivity(
+        "qwen3.7-max", {"thinking_budget": 500}
+    )
+    # And a normal request only emits thinking_budget (no reasoning_effort).
+    provider2, transport = make_provider(lambda *_: completion_response("ok"))
+    provider2.generate(
+        _request(model_requirement="qwen3.8-max-preview", reasoning_budget=64)
+    )
+    body = transport.calls[0][2]
+    assert body["thinking_budget"] == 64
+    assert "reasoning_effort" not in body
