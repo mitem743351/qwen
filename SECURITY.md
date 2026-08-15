@@ -206,6 +206,17 @@ is treated as untrusted:
 - **Hidden reasoning** — `reasoning_content` is transient (never persisted or
   logged) even during multi-turn continuation.
 
+## Transactional tool execution (Phase 9.4)
+
+Execution records persist only safe metadata (tool name, argument **hash**,
+statuses, artifact/result references) — never credentials, private prompts,
+hidden reasoning, or large raw tool payloads. Claims are atomic and lease-based;
+only the lease owner can complete an execution. Call-id reuse with a different
+tool/arguments/scope is rejected (`CALL_ID_CONFLICT`), and a crash-ambiguous
+side-effecting outcome is recorded as `UNKNOWN` (never silently retried).
+Tool results remain untrusted data: the store records state and never
+interprets content.
+
 ## Hidden chain-of-thought
 
 The system **never** stores, transmits, logs, or exposes hidden

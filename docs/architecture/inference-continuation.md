@@ -24,6 +24,13 @@ Tool results are wrapped as controlled `role=tool` messages; raw tool output is
 never concatenated into system/developer instructions (it is DATA, not
 AUTHORITY).
 
+### Transactional execution (Phase 9.4)
+
+Each tool call is atomically claimed before execution; a durable terminal
+result is replayed on continuation/restart, and a crash-ambiguous outcome is
+represented as `UNKNOWN` rather than re-executed. See
+[`tool-execution-reliability.md`](tool-execution-reliability.md).
+
 ### Multi-tool batch invariant (Phase 9.2)
 
 Every assistant `tool_calls` message that enters a continuation must have

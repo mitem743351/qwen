@@ -26,7 +26,7 @@ import json
 import time
 from collections.abc import Callable
 from enum import StrEnum
-from typing import Any, Protocol, runtime_checkable
+from typing import Any
 
 from qwen_research.common.ids import TaskId, new_id
 from qwen_research.common.serialization import serializable
@@ -54,6 +54,7 @@ class ToolExecutionStatus(StrEnum):
     UNAVAILABLE = "unavailable"
     RESOURCE_LIMIT = "resource_limit"
     CANCELLED = "cancelled"
+    UNKNOWN = "unknown"
 
 
 class ToolErrorCode(StrEnum):
@@ -65,6 +66,8 @@ class ToolErrorCode(StrEnum):
     RESOURCE_LIMIT = "resource_limit"
     CANCELLED = "cancelled"
     INTERNAL_ERROR = "internal_error"
+    CALL_ID_CONFLICT = "call_id_conflict"
+    UNKNOWN_OUTCOME = "unknown_outcome"
 
 
 class LoopStatus(StrEnum):
@@ -135,6 +138,8 @@ class ToolExecutionResult:
     error: ToolError | None = None
     duration_ms: float | None = None
     provenance: dict[str, str] = dataclasses.field(default_factory=dict)
+    #: "fresh" for a newly-executed result; "replayed" for a reused durable result.
+    source: str = "fresh"
 
 
 @serializable
@@ -164,6 +169,10 @@ class ToolLoopConfig:
     #: Continue the loop after a partially-executed batch (every call already
     #: received an outcome). When False, return ``TOOL_EXECUTION_PARTIAL``.
     continue_after_partial: bool = True
+    #: Lease duration for a tool-execution claim (seconds).
+    lease_duration_seconds: float = 120.0
+    #: Recovery policy for a stale/unknown execution claim.
+    recovery_policy: str = "reclaim_stale_if_safe"
 
 
 @serializable
@@ -232,22 +241,16 @@ class ToolLoopResult:
     error: str | None = None
 
 
-@runtime_checkable
-class ToolExecutionStore(Protocol):
-    """Persists completed tool-execution results for crash/restart idempotency.
-
-    Keyed by ``(inference_session_id, call_id)`` so a resumed workflow reuses a
-    previously-completed result instead of executing the same call twice.
-    """
-
-    def save(
-        self, inference_session_id: str, call_id: str, result: ToolExecutionResult
-    ) -> None: ...
-
-    def get(
-        self, inference_session_id: str, call_id: str
-    ) -> ToolExecutionResult | None: ...
-
+#: The transactional, lease-based tool-execution store (Phase 9.4).
+from qwen_research.research.tool_execution import (  # noqa: E402
+    ClaimOutcome,
+    ToolExecutionIdentity,
+    ToolExecutionSemantics,
+    ToolExecutionStore,
+    ToolRecoveryPolicy,
+    canonical_arguments_hash,
+    semantics_for_permission,
+)
 
 #: Built-in tool-execution profiles.
 READ_ONLY = ToolExecutionProfile(
@@ -391,6 +394,7 @@ def run_tool_loop(
     results: list[ToolExecutionResult] = []
     same_call_counts: dict[str, int] = {}
     executed_call_ids: set[str] = set()
+    executor_instance_id = new_id("executor")
 
     def _emit(event: str) -> None:
         if events is not None:
@@ -447,6 +451,7 @@ def run_tool_loop(
             executed_call_ids=executed_call_ids,
             store=store,
             inference_session_id=session.inference_session_id,
+            executor_instance_id=executor_instance_id,
             emit=_emit,
         )
         results.extend(batch_results)
@@ -639,6 +644,7 @@ def _execute_batch(
     executed_call_ids: set[str],
     store: ToolExecutionStore | None,
     inference_session_id: str,
+    executor_instance_id: str,
     emit: Callable[[str], None],
 ) -> tuple[list[ToolExecutionResult], bool]:
     """Execute a batch of tool calls with preflight + partial-batch policy.
@@ -671,16 +677,7 @@ def _execute_batch(
             emit(ToolLoopEvent.LOOP_LIMIT)
             return results, False
 
-        # Crash/restart idempotency: reuse a previously-completed result.
-        if store is not None:
-            stored = store.get(inference_session_id, call.call_id)
-            if stored is not None:
-                results.append(stored)
-                executed_call_ids.add(call.call_id)
-                emit(ToolLoopEvent.TOOL_COMPLETED)
-                continue
-
-        # Authorization + validation (preflight, no execution).
+        # Authorization + validation (before any claim, no execution).
         preflight_error = _preflight_error(call, tools, profile)
         if preflight_error is not None:
             status = (
@@ -731,22 +728,151 @@ def _execute_batch(
             return results, False
 
         tool = tools.get(call.tool_name)
-        executed = _execute_call(
+        executed = _execute_transactionally(
             call,
             tool,
+            tools=tools,
+            profile=profile,
             project_id=project_id,
             session_id=session_id,
             task_id=task_id,
             run_id=run_id,
+            same_call_counts=same_call_counts,
+            config=config,
+            executed_call_ids=executed_call_ids,
+            store=store,
+            inference_session_id=inference_session_id,
+            executor_instance_id=executor_instance_id,
             emit=emit,
         )
-        same_call_counts[signature] = same_call_counts.get(signature, 0) + 1
-        executed_call_ids.add(call.call_id)
-        if store is not None:
-            store.save(inference_session_id, call.call_id, executed)
         results.append(executed)
 
     return results, True
+
+
+def _execute_transactionally(
+    call: ToolCall,
+    tool: Any,
+    *,
+    tools: ToolRegistry,
+    profile: ToolExecutionProfile,
+    project_id: str,
+    session_id: str,
+    task_id: str | None,
+    run_id: str | None,
+    same_call_counts: dict[str, int],
+    config: ToolLoopConfig,
+    executed_call_ids: set[str],
+    store: ToolExecutionStore | None,
+    inference_session_id: str,
+    executor_instance_id: str,
+    emit: Callable[[str], None],
+) -> ToolExecutionResult:
+    """Execute one call under the transactional claim protocol.
+
+    When ``store`` is ``None`` the call executes directly (no durability layer).
+    Otherwise the call is atomically claimed; a terminal result is replayed, an
+    active lease by another owner prevents execution, a stale claim is recovered
+    only per tool-execution semantics, and a crash-ambiguous outcome is recorded
+    as ``UNKNOWN``.
+    """
+    if store is None:
+        executed = _execute_call(
+            call, tool, project_id=project_id, session_id=session_id,
+            task_id=task_id, run_id=run_id, emit=emit,
+        )
+        same_call_counts[_call_signature(call.tool_name, call.arguments)] = (
+            same_call_counts.get(_call_signature(call.tool_name, call.arguments), 0) + 1
+        )
+        executed_call_ids.add(call.call_id)
+        return executed
+
+    semantics = getattr(tool, "execution_semantics", None) or semantics_for_permission(
+        tool.permission
+    )
+    identity = ToolExecutionIdentity(
+        inference_session_id=inference_session_id, call_id=call.call_id
+    )
+    lease_id = new_id("lease")
+    claim = store.claim(
+        identity,
+        tool_name=call.tool_name,
+        arguments_hash=canonical_arguments_hash(call.arguments),
+        project_id=project_id,
+        session_id=session_id,
+        task_id=task_id,
+        run_id=run_id,
+        execution_semantics=semantics,
+        permission=tool.permission.value,
+        lease_id=lease_id,
+        lease_owner=executor_instance_id,
+        lease_duration_seconds=config.lease_duration_seconds,
+    )
+
+    if claim.outcome is ClaimOutcome.CLAIMED:
+        store.mark_running(identity, lease_id)
+        executed = _execute_call(
+            call, tool, project_id=project_id, session_id=session_id,
+            task_id=task_id, run_id=run_id, emit=emit,
+        )
+        same_call_counts[_call_signature(call.tool_name, call.arguments)] = (
+            same_call_counts.get(_call_signature(call.tool_name, call.arguments), 0) + 1
+        )
+        executed_call_ids.add(call.call_id)
+        store.complete(identity, lease_id, executed)
+        return executed
+
+    if claim.outcome is ClaimOutcome.ALREADY_COMPLETED:
+        emit(ToolLoopEvent.TOOL_COMPLETED)
+        executed_call_ids.add(call.call_id)
+        if claim.result is None:
+            return _batch_result(
+                call, ToolExecutionStatus.UNKNOWN,
+                ToolError(ToolErrorCode.UNKNOWN_OUTCOME, "recorded outcome unknown"),
+            )
+        return dataclasses.replace(claim.result, source="replayed")
+
+    if claim.outcome is ClaimOutcome.ALREADY_CLAIMED:
+        return _batch_result(
+            call, ToolExecutionStatus.CANCELLED,
+            ToolError(ToolErrorCode.CANCELLED, "execution already claimed by another owner"),
+        )
+
+    if claim.outcome is ClaimOutcome.CONFLICT:
+        return _batch_result(
+            call, ToolExecutionStatus.DENIED,
+            ToolError(ToolErrorCode.CALL_ID_CONFLICT, claim.reason or "call id reuse conflict"),
+        )
+
+    # STALE: recover per tool-execution semantics + policy.
+    if config.recovery_policy == ToolRecoveryPolicy.RECLAIM_STALE_IF_SAFE.value and semantics in (
+        ToolExecutionSemantics.READ_ONLY,
+        ToolExecutionSemantics.IDEMPOTENT,
+    ):
+        reclaim = store.reclaim(
+            identity,
+            lease_id=lease_id,
+            lease_owner=executor_instance_id,
+            lease_duration_seconds=config.lease_duration_seconds,
+        )
+        if reclaim.outcome is ClaimOutcome.CLAIMED:
+            store.mark_running(identity, lease_id)
+            executed = _execute_call(
+                call, tool, project_id=project_id, session_id=session_id,
+                task_id=task_id, run_id=run_id, emit=emit,
+            )
+            same_call_counts[_call_signature(call.tool_name, call.arguments)] = (
+                same_call_counts.get(_call_signature(call.tool_name, call.arguments), 0) + 1
+            )
+            executed_call_ids.add(call.call_id)
+            store.complete(identity, lease_id, executed)
+            return executed
+
+    store.mark_unknown(identity, "stale or ambiguous execution; recovery requires policy")
+    return _batch_result(
+        call, ToolExecutionStatus.UNKNOWN,
+        ToolError(ToolErrorCode.UNKNOWN_OUTCOME, "tool outcome unknown after stale claim"),
+    )
 
 
 def _call_signature(tool_name: str, arguments: dict[str, Any]) -> str:

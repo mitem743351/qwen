@@ -416,6 +416,32 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
   XHIGH/EXTREME workflows; multi-agent inference; Qwen built-in web search;
   `reasoning_effort` execution; remote/distributed workers.
 
+## Phase 9.4 — Transactional tool execution & crash-safe idempotency ✅ (complete)
+
+- **Objective:** establish a transactional, lease-based execution protocol
+  around model-requested tool calls with explicit crash/UNKNOWN semantics.
+- **Dependencies:** Phase 9.3.
+- **Components:** `tool_execution.py` (`ToolExecutionState`,
+  `ToolExecutionSemantics`, `ToolRecoveryPolicy`, `ToolExecutionIdentity`,
+  `ClaimResult`, `ToolExecutionRecord`, `ToolExecutionStore` protocol,
+  `SqliteToolExecutionStore` (atomic `BEGIN IMMEDIATE` claims + leases +
+  migration), `InMemoryToolExecutionStore`); `ToolExecutionResult.source`
+  (`fresh`/`replayed`) and `UNKNOWN` status; `ToolExecutionStatus.UNKNOWN` /
+  `ToolErrorCode.CALL_ID_CONFLICT` / `UNKNOWN_OUTCOME`; `run_tool_loop`
+  `lease_duration_seconds` / `recovery_policy`; claim→execute→durable-complete
+  integration in `_execute_batch`; argument-hash / tool-name / project-scope
+  conflict detection.
+- **Acceptance criteria:** atomic claims; exactly one concurrent owner; durable
+  completion prevents re-execution; `UNKNOWN` for crash-ambiguous side effects;
+  semantics-based recovery; deterministic replay; call-id conflict rejection;
+  lease ownership/expiry; attempt accounting; no DB lock held during execution;
+  Phase 9.2 one-result-per-call preserved; workflow restart does not duplicate;
+  concurrency / crash / lease / conflict / restart tests pass; no universal
+  exactly-once claim.
+- **Not yet:** parallel tool execution; automatic escalation heuristics;
+  XHIGH/EXTREME workflows; multi-agent inference; Qwen built-in web search;
+  `reasoning_effort` execution; remote/distributed workers.
+
 ## Phase 10 — Advanced XHigh / EXTREME workflows
 
 - **Objective:** high-effort profiles behave as designed.

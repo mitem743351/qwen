@@ -1,6 +1,6 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 9.3 — Tool-execution persistence & idempotency.
+> **Status:** Phase 9.4 — Transactional tool execution & crash-safe idempotency.
 > The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
@@ -584,6 +584,14 @@ See [`docs/architecture/inference.md`](docs/architecture/inference.md) and
 > `ToolExecutionStore` keyed by `(inference_session_id, call_id)` (in-memory and
 > SQLite backends), and a resumed workflow reuses a completed result instead of
 > executing the same call twice.
+>
+> **Phase 9.4 (implemented).** Tool execution is now **transactional**: each
+> call is atomically claimed under a lease (`BEGIN IMMEDIATE` + primary key),
+> executed, and durably completed. A durable terminal result is replayed, a
+> concurrent claim yields a single owner, a crash-ambiguous side effect is
+> recorded as `UNKNOWN` (never auto-retried), and call-id reuse with different
+> tool/arguments/scope is rejected as `CONFLICT`. The guarantee is at-most-once
+> after durable completion — not universal exactly-once.
 
 ---
 
@@ -706,6 +714,8 @@ Rust library.
 | [tool-loop](docs/architecture/tool-loop.md) | Controlled model ↔ tool-call loop (Phase 9) |
 | [inference-continuation](docs/architecture/inference-continuation.md) | Inference continuation & preserved reasoning state |
 | [hybrid-mode](docs/architecture/hybrid-mode.md) | Hybrid Studio/Gateway boundary contract |
+| [tool-execution-reliability](docs/architecture/tool-execution-reliability.md) | Transactional tool execution, claims, leases, UNKNOWN (Phase 9.4) |
+| [tool-store](docs/architecture/tool-store.md) | Durable tool-execution store (SQLite, atomic claims) |
 | [security](docs/architecture/security.md) | Threat model, boundaries, sandboxing |
 | [architecture-review](docs/architecture/architecture-review.md) | Risks, failure modes, Rust-value analysis |
 | [implementation-phases](docs/architecture/implementation-phases.md) | Phase 0–12 roadmap |

@@ -141,14 +141,16 @@ never executed twice (idempotency).
 `TOOL_EXECUTION_PARTIAL`, `TOOL_BATCH_REJECTED`. A `finish_reason=length` turn
 is **not** a complete final answer — the provider's finish reason is preserved.
 
-## Persistence & idempotency (Phase 9.3)
+## Persistence & idempotency (Phases 9.3–9.4)
 
-Completed tool results may be persisted through a `ToolExecutionStore` keyed by
-`(inference_session_id, call_id)`. A resumed workflow reuses a
-previously-completed result instead of executing the same call twice — the
-`call_id` + `inference_session_id` are the stable idempotency keys. Only safe
-metadata (status, bounded content, error, duration, provenance) is stored;
-hidden reasoning is never persisted.
+Completed tool results are persisted through a `ToolExecutionStore` keyed by
+`(inference_session_id, call_id)`. Phase 9.4 makes execution **transactional**:
+each call is atomically claimed (lease-based), executed, and durably completed.
+A resumed workflow replays a terminal result instead of executing the same call
+twice; a crash-ambiguous outcome is recorded as `UNKNOWN` and never silently
+retried for side-effecting tools. Only safe metadata is stored; hidden
+reasoning is never persisted. See
+[`tool-execution-reliability.md`](tool-execution-reliability.md).
 
 See [`inference-continuation.md`](inference-continuation.md) and
 [`../setup/gateway-inference.md`](../setup/gateway-inference.md).
