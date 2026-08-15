@@ -48,9 +48,14 @@ Each task type maps to a deterministic template (see [`workflows.md`](workflows.
 The planner explicitly identifies `needs_retrieval / needs_verification /
 needs_computation / needs_memory / needs_contradiction_analysis /
 needs_artifacts`, and each plan carries `CompletionCriteria` (minimum evidence
-count, source diversity, verification completed, dataset profiled, result
-persisted, provenance recorded). A task is **not** considered complete merely
-because all stages ran.
+count, minimum independent sources, verification completed, dataset profiled,
+result persisted, provenance recorded). A task is **not** considered complete
+merely because all stages ran.
+
+`min_source_diversity` is explicitly defined as the **minimum number of
+independent sources** (per Phase-5 `SourceIndependence`), **not** a raw
+document count. Two same-publisher documents, or ten chunks from one paper,
+are one independent source. See [`orchestration.md`](orchestration.md).
 
 ## Capability filtering
 

@@ -19,7 +19,7 @@ each other:
 | **Retrieval** | "Was this chunk returned for this query?" | `Retriever` (FTS5 / embedding / hybrid) |
 | **Evidence** | "Which evaluated units bear on this claim, and how?" | `EvidenceRecord` + `ClaimEvidenceLink` |
 | **Source quality** | "What kind of source is this, and how complete is its provenance?" | `SourceQualityAssessor` |
-| **Corroboration** | "Do ≥2 *independent* sources support this?" | `VerificationEngine` (independence heuristic) |
+| **Corroboration** | "Do ≥2 *independent* sources support this?" | `VerificationEngine` (independence heuristic) — the single authoritative `count_independent_sources` |
 | **Verification** | "Does this claim pass the configured deterministic procedures against the current corpus?" | `VerificationReport` |
 
 A claim may be *retrieved* without being *relevant*, *relevant* without
@@ -96,6 +96,15 @@ claims were verified without the full issue lists.
 Dependencies flow downward: `common ← domain ← {claims, evidence, sources,
 contradictions} ← verification ← research ← mcp`. None of these packages import
 MCP, Qwen-API, HTTP, or LLM/embedding libraries.
+
+### One independence definition (Phase 7.2)
+
+`count_independent_sources` (in `sources/`) is the **single authoritative**
+source-independence calculation. The orchestration layer reuses it (via
+`orchestration/diversity.py`) for workflow completion and the `CORROBORATE`
+stage, so `document_count` (distinct documents) and
+`independent_source_count` (independent source identities) can never diverge
+between verification and workflow completion for equivalent evidence.
 
 ---
 

@@ -86,6 +86,31 @@ infinite loop and never a fabricated completion.
 
 ---
 
+## Source diversity (single authoritative definition)
+
+There is **exactly one** definition of source independence across retrieval,
+verification, corroboration, planning, and workflow completion: the Phase-5
+`SourceIndependence` subsystem (`SourceIdentity` → `assess_independence` →
+`count_independent_sources`). Workflow completion consumes the same
+`count_independent_sources` function the verification engine uses — it never
+recomputes a raw `len(set(document_ids))`.
+
+```text
+document_count        = number of distinct documents represented (diagnostic only)
+independent_source_count = number of independent source identities (authoritative)
+```
+
+`min_source_diversity` means "minimum independent sources", so two
+same-publisher documents or ten chunks from one paper never satisfy a
+"two independent sources" requirement. `ResearchStatus` and
+`get_research_summary` expose both `document_count` and
+`independent_source_count` distinctly, and a failed source-diversity criterion
+produces an explicit diagnostic (e.g. "required independent sources: 2, found
+independent sources: 1, documents represented: 2") rather than a misleading
+raw count.
+
+---
+
 ## Failure semantics
 
 `READY_FOR_SYNTHESIS · SYNTHESIS_REQUIRED · PARTIAL · BLOCKED · FAILED ·

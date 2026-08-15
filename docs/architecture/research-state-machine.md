@@ -47,6 +47,16 @@ Therefore the deterministic engine terminates at:
 `COMPLETED` is the reserved *answer-complete* terminal for the future inference
 phase and is **never** produced by the deterministic engine.
 
+### Source diversity in completion
+
+A `min_source_diversity` requirement is evaluated against the Phase-5
+`SourceIndependence` subsystem (`count_independent_sources`), not a raw
+document count. `document_count` (distinct documents) and
+`independent_source_count` (independent source identities) are distinct: only
+the latter satisfies an "independent sources" / "source diversity" /
+"corroboration" requirement, and the two are both reported (for diagnostics)
+via `ResearchStatus` and `get_research_summary`.
+
 ## Stage lifecycle
 
 ```text

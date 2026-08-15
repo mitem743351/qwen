@@ -178,6 +178,9 @@ class CompletionCriteria:
     """Explicit completion conditions — a task is not "done" just because stages ran."""
 
     min_evidence_count: int = 0
+    #: Minimum number of **independent sources** (Phase-5 ``SourceIndependence``),
+    #: *not* distinct documents. Two chunks from one paper are one source; two
+    #: same-publisher papers are one source.
     min_source_diversity: int = 1
     verification_completed: bool = False
     critical_contradictions_resolved: bool = False
@@ -264,6 +267,7 @@ class WorkflowRun:
     degradation: tuple[str, ...]
     warnings: tuple[str, ...]
     errors: tuple[str, ...]
+    completion_notes: tuple[str, ...]
     created_at: datetime
     started_at: datetime | None
     updated_at: datetime
@@ -290,6 +294,7 @@ class WorkflowRun:
             degradation=tuple(plan.missing_capabilities),
             warnings=(),
             errors=(),
+            completion_notes=(),
             created_at=now,
             started_at=None,
             updated_at=now,
@@ -443,6 +448,11 @@ class ResearchStatus:
     degradation: tuple[str, ...]
     unresolved_questions: tuple[str, ...]
     blocking_issues: tuple[str, ...]
+    #: Distinct documents represented (diagnostic only).
+    document_count: int
+    #: Independent sources per Phase-5 SourceIndependence (the authoritative
+    #: diversity metric; satisfies "independent sources" requirements).
+    independent_source_count: int
     started_at: datetime | None
     updated_at: datetime | None
 

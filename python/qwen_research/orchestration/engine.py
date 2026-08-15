@@ -19,6 +19,7 @@ from qwen_research.domain.errors import (
     RunNotFoundError,
     UnsupportedOperationError,
 )
+from qwen_research.orchestration.diversity import source_diversity_from_outputs
 from qwen_research.orchestration.models import (
     EventType,
     ResearchPlan,
@@ -300,9 +301,13 @@ class WorkflowEngine:
     def _settle(self, run: WorkflowRun) -> WorkflowRun:
         if is_terminal_run_status(run.status):
             return run
-        status = self._evaluate_completion(run)
+        status, notes = self._evaluate_completion(run)
         run = dataclasses.replace(
-            run, status=status, completed_at=_now(), updated_at=_now()
+            run,
+            status=status,
+            completion_notes=tuple(notes),
+            completed_at=_now(),
+            updated_at=_now(),
         )
         event_type = (
             EventType.COMPLETED
@@ -312,7 +317,7 @@ class WorkflowEngine:
         self._record(run.run_id, event_type, status.value)
         return run
 
-    def _evaluate_completion(self, run: WorkflowRun) -> RunStatus:
+    def _evaluate_completion(self, run: WorkflowRun) -> tuple[RunStatus, tuple[str, ...]]:
         """Decide the terminal state.
 
         A model-free workflow is **never** answer-complete: it ends at
@@ -320,37 +325,59 @@ class WorkflowEngine:
         never ``COMPLETED``. Missing required capabilities are surfaced as
         ``SYNTHESIS_REQUIRED`` with explicit degradation; unmet completion
         criteria are ``PARTIAL``.
+
+        Source diversity is computed by the **same** Phase-5
+        ``count_independent_sources`` function the verification subsystem uses,
+        so an "independent sources" requirement is met only when the
+        SourceIndependence subsystem says so — never by a raw document count.
         """
         plan = self._require_plan(run.plan_id)
         criteria = plan.completion_criteria
         outputs = run.outputs
         evidence = len(as_str_tuple(outputs.get("evidence")))
-        sources = outputs.get("evidence_sources", ())
-        diversity = len(set(sources)) if isinstance(sources, (list, tuple)) else 0
+        diversity = source_diversity_from_outputs(outputs)
+        notes: list[str] = []
         # Missing required capabilities → explicit degraded synthesis state.
         if run.degradation:
-            return RunStatus.SYNTHESIS_REQUIRED
+            return RunStatus.SYNTHESIS_REQUIRED, ()
         if criteria.min_evidence_count and evidence < criteria.min_evidence_count:
-            return RunStatus.PARTIAL
-        if criteria.min_source_diversity and diversity < criteria.min_source_diversity:
-            return RunStatus.PARTIAL
+            notes.append(
+                f"required evidence: {criteria.min_evidence_count}, found: {evidence}"
+            )
+            return RunStatus.PARTIAL, tuple(notes)
+        if (
+            criteria.min_source_diversity
+            and diversity.independent_source_count < criteria.min_source_diversity
+        ):
+            notes.append(
+                f"required independent sources: {criteria.min_source_diversity}, "
+                f"found independent sources: {diversity.independent_source_count}, "
+                f"documents represented: {diversity.document_count}"
+            )
+            return RunStatus.PARTIAL, tuple(notes)
         if criteria.verification_completed and not outputs.get("verification_reports"):
-            return RunStatus.PARTIAL
+            notes.append("verification required but no verification report produced")
+            return RunStatus.PARTIAL, tuple(notes)
         if criteria.dataset_profiled and not outputs.get("dataset_profile"):
-            return RunStatus.PARTIAL
+            notes.append("dataset profile required but missing")
+            return RunStatus.PARTIAL, tuple(notes)
         if criteria.analysis_completed and not outputs.get("computations"):
-            return RunStatus.PARTIAL
+            notes.append("analysis required but no computation performed")
+            return RunStatus.PARTIAL, tuple(notes)
         if criteria.result_persisted and not (
             outputs.get("computations") or outputs.get("memory_ids")
         ):
-            return RunStatus.PARTIAL
+            notes.append("result persistence required but missing")
+            return RunStatus.PARTIAL, tuple(notes)
         if criteria.provenance_recorded and not outputs.get("memory_ids"):
-            return RunStatus.PARTIAL
+            notes.append("provenance required but no memory entry recorded")
+            return RunStatus.PARTIAL, tuple(notes)
         if criteria.critical_contradictions_resolved and as_str_tuple(
             outputs.get("contradictions")
         ):
-            return RunStatus.PARTIAL
-        return RunStatus.READY_FOR_SYNTHESIS
+            notes.append("critical contradictions unresolved")
+            return RunStatus.PARTIAL, tuple(notes)
+        return RunStatus.READY_FOR_SYNTHESIS, ()
 
     def _next_ready(self, run: WorkflowRun) -> ResearchStage | None:
         statuses = {s.stage_id: s.status for s in run.stages}

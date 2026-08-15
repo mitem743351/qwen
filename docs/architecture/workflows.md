@@ -46,7 +46,7 @@ which the engine merges into the run.
 | `ASSESS_EVIDENCE` | records **neutral `candidate_evidence`**; never creates claim→evidence links |
 | `VERIFY` | `runtime.verify_claim`; signals structural contradiction loops |
 | `CONTRADICTIONS` | `runtime.get_contradictions` |
-| `CORROBORATE` | Phase-5 `SourceIndependence` (`count_independent_sources`) |
+| `CORROBORATE` | Phase-5 `SourceIndependence` (shared `source_diversity_from_outputs` → `count_independent_sources`) |
 | `DESCRIBE_DATASET` | `runtime.describe_dataset` |
 | `COMPUTE` | `runtime.run_analysis` (from plan `ComputationSpec`) |
 | `MEMORY` | `runtime.save_research_memory` (idempotent) |
@@ -56,6 +56,11 @@ which the engine merges into the run.
 No executor constructs DuckDB SQL, duplicates verification rules, or writes raw
 SQL. **Assessment and corroboration are deterministic and model-free** — no
 executor manufactures a claim→evidence `SUPPORTS` relationship from retrieval.
+
+Completion evaluation uses the same `SourceIndependence` helper as the
+`CORROBORATE` stage and the verification engine: `min_source_diversity` is
+satisfied by `independent_source_count` (never by a distinct-document count).
+See [`orchestration.md`](orchestration.md).
 
 ## Retry policy
 

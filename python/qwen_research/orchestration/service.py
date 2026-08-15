@@ -19,6 +19,7 @@ from qwen_research.domain.errors import (
 )
 from qwen_research.domain.reasoning import get_profile
 from qwen_research.orchestration.capabilities import CapabilityRegistry
+from qwen_research.orchestration.diversity import source_diversity_from_outputs
 from qwen_research.orchestration.engine import WorkflowEngine
 from qwen_research.orchestration.models import (
     ComputationSpec,
@@ -162,6 +163,7 @@ class OrchestrationService:
         # (SYNTHESIS_REQUIRED) reports its actual stage progress.
         if run.status in (RunStatus.COMPLETED, RunStatus.READY_FOR_SYNTHESIS):
             progress = 1.0
+        diversity = source_diversity_from_outputs(run.outputs)
         return ResearchStatus(
             task_id=run.task_id,
             run_id=run.run_id,
@@ -171,6 +173,8 @@ class OrchestrationService:
             degradation=run.degradation,
             unresolved_questions=(),
             blocking_issues=run.errors,
+            document_count=diversity.document_count,
+            independent_source_count=diversity.independent_source_count,
             started_at=run.started_at,
             updated_at=run.updated_at,
         )
@@ -179,6 +183,8 @@ class OrchestrationService:
         run = self.get_run(run_id)
         task = self._store.get_task(run.task_id)
         outputs = run.outputs
+        diversity = source_diversity_from_outputs(outputs)
+        plan = self._store.get_plan(run.plan_id)
         return {
             "task_id": run.task_id,
             "run_id": run.run_id,
@@ -186,6 +192,12 @@ class OrchestrationService:
             "title": task.title if task else "",
             "key_claims": len(as_str_tuple(outputs.get("claims"))),
             "supporting_evidence": len(as_str_tuple(outputs.get("evidence"))),
+            "document_count": diversity.document_count,
+            "independent_source_count": diversity.independent_source_count,
+            "min_source_diversity": (
+                plan.completion_criteria.min_source_diversity if plan else None
+            ),
+            "completion_notes": list(run.completion_notes),
             "contradictions": len(as_str_tuple(outputs.get("contradictions"))),
             "verification_summary": list(as_str_tuple(outputs.get("verification_statuses"))),
             "computation_summary": list(as_str_tuple(outputs.get("computations"))),

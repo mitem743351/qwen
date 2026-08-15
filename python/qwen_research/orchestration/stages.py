@@ -14,6 +14,7 @@ from typing import Any, Protocol, runtime_checkable
 from qwen_research.claims.models import ClaimType
 from qwen_research.common.ids import ClaimId
 from qwen_research.computation.models import ComputationOperation, ExecutionProfile
+from qwen_research.orchestration.diversity import source_diversity_from_outputs
 from qwen_research.orchestration.models import (
     ResearchPlan,
     ResearchTask,
@@ -26,7 +27,6 @@ from qwen_research.orchestration.models import (
     as_str_tuple,
 )
 from qwen_research.retrieval.models import RetrievalMode, SearchOptions
-from qwen_research.sources.independence import SourceIdentity, count_independent_sources
 from qwen_research.verification.models import VerificationStatus
 
 
@@ -35,6 +35,8 @@ class StageRuntime(Protocol):
     """The minimal runtime surface stage executors are allowed to touch."""
 
     def search_corpus(self, query: str, options: SearchOptions | None = None) -> Any: ...
+
+    def get_source(self, document_id: str) -> Any: ...
 
     def create_claim(
         self, project_id: str, text: str, *, claim_type: ClaimType = ClaimType.UNKNOWN,
@@ -98,24 +100,6 @@ def _claim_ids(outputs: dict[str, object]) -> tuple[str, ...]:
     return as_str_tuple(outputs.get("claims"))
 
 
-def _source_identities(outputs: dict[str, object]) -> list[SourceIdentity]:
-    """Reconstruct Phase-5 ``SourceIdentity`` values from retrieved metadata."""
-    identities: list[SourceIdentity] = []
-    raw = outputs.get("evidence_identities", ())
-    if isinstance(raw, (list, tuple)):
-        for entry in raw:
-            if isinstance(entry, dict):
-                identities.append(
-                    SourceIdentity(
-                        document_id=entry.get("document_id"),
-                        source_id=entry.get("source_id"),
-                        publisher=entry.get("publisher"),
-                        root_id=entry.get("root_id"),
-                    )
-                )
-    return identities
-
-
 class ClassifyExecutor:
     def supports(self, stage_type: StageType) -> bool:
         return stage_type is StageType.CLASSIFY
@@ -152,14 +136,14 @@ class RetrieveExecutor:
         # Retrieved chunks are *candidates*, not evidence of support: they carry
         # only retrieval provenance + score, never a support relationship.
         evidence = tuple(c.chunk_id for c in result.chunks)
-        sources = {c.document_id for c in result.chunks}
+        publishers = self._resolve_publishers(context, result.chunks)
         # Per-chunk source identities (for SourceIndependence corroboration).
         identities = tuple(
             {
                 "document_id": c.document_id,
                 "source_id": c.source_id,
                 "root_id": c.root_id,
-                "publisher": None,
+                "publisher": publishers.get(c.document_id),
             }
             for c in result.chunks
         )
@@ -174,17 +158,41 @@ class RetrieveExecutor:
         return StageResult.completed(
             {
                 "evidence": evidence,
-                "evidence_sources": tuple(sorted(sources)),
+                "evidence_sources": tuple(sorted({c.document_id for c in result.chunks})),
                 "evidence_identities": identities,
             },
             references=evidence,
-            metrics={"retrieval_calls": 1, "source_diversity": len(sources)},
+            metrics={"retrieval_calls": 1},
             warnings=(
                 "retrieved chunks are candidate evidence only; support assessment "
                 "requires a model (not performed in Phase 7)",
             ),
             degradation=degradation,
         )
+
+    def _resolve_publishers(
+        self, context: StageExecutionContext, chunks: Any
+    ) -> dict[str, str | None]:
+        """Resolve publisher metadata per distinct document (tolerant).
+
+        Publisher is read from existing document metadata (``publisher`` or
+        ``authority``). If it is unavailable, the publisher stays ``None``
+        (UNKNOWN) — it is never invented.
+        """
+        publishers: dict[str, str | None] = {}
+        for chunk in chunks:
+            document_id = getattr(chunk, "document_id", None)
+            if document_id is None or document_id in publishers:
+                continue
+            publisher: str | None = None
+            try:
+                view = context.runtime.get_source(document_id)
+                metadata = getattr(view, "metadata", None) or {}
+                publisher = metadata.get("publisher") or metadata.get("authority")
+            except Exception:  # noqa: BLE001 — unavailable metadata → UNKNOWN
+                publisher = None
+            publishers[document_id] = publisher
+        return publishers
 
 
 class ClaimExecutor:
@@ -288,21 +296,33 @@ class ContradictionsExecutor:
 class CorroborateExecutor:
     """Count independent sources among candidate evidence.
 
-    Reuses Phase 5 ``SourceIndependence``: same document/source/publisher chunks
-    collapse into one source (via ``count_independent_sources``), so ten chunks
-    from one paper are one source, not ten.
+    Reuses Phase 5 ``SourceIndependence`` (via the shared
+    ``source_identities_from`` / ``count_independent_sources`` helper): same
+    document/source/publisher chunks collapse into one source, so ten chunks
+    from one paper are one source, not ten. Reports both ``document_count`` and
+    ``independent_source_count`` distinctly.
     """
 
     def supports(self, stage_type: StageType) -> bool:
         return stage_type is StageType.CORROBORATE
 
     def execute(self, context: StageExecutionContext) -> StageResult:
-        identities = _source_identities(context.outputs)
-        diversity = count_independent_sources(identities)
+        diversity = source_diversity_from_outputs(context.outputs)
         return StageResult.completed(
-            {"source_diversity": diversity, "independent_source_count": diversity},
-            metrics={"source_diversity": diversity, "independent_source_count": diversity},
-            warnings=() if diversity >= 2 else ("below two-source corroboration threshold",),
+            {
+                "source_diversity": diversity.independent_source_count,
+                "document_count": diversity.document_count,
+                "independent_source_count": diversity.independent_source_count,
+            },
+            metrics={
+                "document_count": diversity.document_count,
+                "independent_source_count": diversity.independent_source_count,
+            },
+            warnings=(
+                ()
+                if diversity.independent_source_count >= 2
+                else ("below two-source corroboration threshold",)
+            ),
         )
 
 

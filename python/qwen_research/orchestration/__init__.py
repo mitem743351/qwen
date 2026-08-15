@@ -10,6 +10,12 @@ from qwen_research.orchestration.capabilities import (
     CapabilityRegistry,
     capability_registry_from_runtime,
 )
+from qwen_research.orchestration.diversity import (
+    SourceDiversity,
+    evaluate_source_diversity,
+    source_diversity_from_outputs,
+    source_identities_from,
+)
 from qwen_research.orchestration.engine import WorkflowEngine
 from qwen_research.orchestration.models import (
     CompletionCriteria,
@@ -58,6 +64,7 @@ __all__ = [
     "ResearchTrajectory",
     "RetryPolicy",
     "RunStatus",
+    "SourceDiversity",
     "StageExecutor",
     "StageExecutionContext",
     "StageResult",
@@ -72,5 +79,8 @@ __all__ = [
     "WorkflowGuardrails",
     "WorkflowRun",
     "capability_registry_from_runtime",
+    "evaluate_source_diversity",
     "is_terminal_run_status",
+    "source_diversity_from_outputs",
+    "source_identities_from",
 ]
