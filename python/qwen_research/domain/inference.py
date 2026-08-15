@@ -351,6 +351,10 @@ class InferenceResult:
     value (``stop`` / ``length`` / ``tool_calls`` / ``content_filter`` /
     ``error`` / ``unknown``); ``provider`` is the adapter id. Both are
     informational and default to empty/None for backward compatibility.
+
+    ``reasoning_content`` is **transient**: it carries the provider's hidden
+    reasoning for multi-turn continuation (e.g. Qwen ``preserve_thinking``),
+    marked ``transient`` so the serializer never persists it.
     """
 
     status: str
@@ -366,6 +370,9 @@ class InferenceResult:
     errors: tuple[str, ...] = ()
     finish_reason: str = ""
     provider: str = ""
+    reasoning_content: str = dataclasses.field(
+        default="", repr=False, metadata={"transient": True}
+    )
 
     @property
     def ok(self) -> bool:

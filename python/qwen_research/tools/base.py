@@ -42,12 +42,16 @@ class Tool(Protocol):
 
     ``schema`` is an opaque descriptor (e.g. a JSON-Schema-like mapping); it is
     not tied to MCP. ``permission`` is the class required to execute the tool.
+    ``model_callable`` declares whether a model may *request* this tool through
+    the controlled inference loop (Phase 9) — WRITE/EXECUTE/DESTRUCTIVE tools
+    default to ``False``.
     """
 
     name: str
     description: str
     schema: dict[str, Any]
     permission: ToolPermission
+    model_callable: bool
 
     def execute(self, arguments: dict[str, Any]) -> ToolResult:
         """Execute the tool with the given arguments."""

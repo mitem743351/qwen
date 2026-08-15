@@ -119,5 +119,15 @@ chunks.
 profile, status, usage, finish reason, capability decisions, timestamps,
 retry count) — never secrets, private prompts, or hidden reasoning.
 
-See [`providers.md`](providers.md), [`qwen-provider.md`](qwen-provider.md), and
+## Tool-call loop (Phase 9)
+
+The Inference Runtime performs a single model invocation; it does **not**
+execute tools. The Research Runtime's [`tool-loop.md`](tool-loop.md) drives the
+controlled loop: it calls the Inference Runtime, authorizes/executes any tool
+calls through the internal registry, and continues the same inference session
+with normalized tool results. The provider remains responsible only for HTTP,
+request mapping, response normalization, streaming, and provider errors.
+
+See [`providers.md`](providers.md), [`qwen-provider.md`](qwen-provider.md),
+[`tool-loop.md`](tool-loop.md), and
 [`../setup/inference.md`](../setup/inference.md).

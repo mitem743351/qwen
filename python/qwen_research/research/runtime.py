@@ -67,8 +67,14 @@ from qwen_research.research.state import (
     InMemoryTaskStore,
 )
 from qwen_research.research.synthesis import synthesis_to_inference
+from qwen_research.research.tool_loop import (
+    ToolExecutionProfile,
+    ToolLoopConfig,
+    ToolLoopResult,
+)
 from qwen_research.retrieval.interface import Retriever
 from qwen_research.retrieval.models import DocumentView, SearchOptions, SearchResult
+from qwen_research.tools.registry import ToolRegistry
 from qwen_research.verification.models import (
     EvidenceAssessment,
     VerificationReport,
@@ -108,6 +114,7 @@ class InMemoryResearchRuntime:
         self._computation = computation
         self._orchestration = orchestration
         self._inference = inference
+        self._model_tools: ToolRegistry | None = None
 
     # -- sessions ---------------------------------------------------------
 
@@ -438,6 +445,50 @@ class InMemoryResearchRuntime:
         """
         request = synthesis_to_inference(synthesis, policy=policy)
         return self.invoke_inference(request)
+
+    def model_tool_registry(self) -> ToolRegistry:
+        """Return the internal model-callable tool registry (lazy-built)."""
+        if self._model_tools is None:
+            from qwen_research.research.model_tools import build_model_tool_registry
+
+            self._model_tools = build_model_tool_registry(self)
+        return self._model_tools
+
+    def run_tool_loop(
+        self,
+        request: InferenceRequest,
+        *,
+        profile: ToolExecutionProfile | None = None,
+        config: ToolLoopConfig | None = None,
+        project_id: str = "default",
+        session_id: str = "",
+        task_id: TaskId | None = None,
+        run_id: str | None = None,
+    ) -> ToolLoopResult:
+        """Run the controlled model ↔ tool loop (Phase 9 GATEWAY_INFERENCE).
+
+        The model may request tools; this runtime authorizes and executes them
+        through the internal registry and continues the same inference session.
+        """
+        from qwen_research.research.tool_loop import (
+            DEFAULT_MODEL_PROFILE,
+        )
+        from qwen_research.research.tool_loop import (
+            run_tool_loop as _run_tool_loop,
+        )
+
+        profile = profile or DEFAULT_MODEL_PROFILE
+        return _run_tool_loop(
+            request,
+            invoke=self.invoke_inference,
+            tools=self.model_tool_registry(),
+            profile=profile,
+            config=config,
+            project_id=project_id,
+            session_id=session_id,
+            task_id=task_id,
+            run_id=run_id,
+        )
 
     # -- deterministic computation (Phase 6) -------------------------------
 

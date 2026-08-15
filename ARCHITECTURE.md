@@ -1,6 +1,6 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 8.4 — Qwen endpoint control & transient reasoning state.
+> **Status:** Phase 9 — Controlled tool-calling loop, continuation, and hybrid boundary.
 > The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
@@ -13,7 +13,9 @@
 > capability coverage; Phase 8.3 makes Qwen model availability and effective
 > capability resolution contextual (model + endpoint + region + plan +
 > inference mode); Phase 8.4 makes the endpoint profile drive the network
-> endpoint and adds transient reasoning state for multi-turn continuation.
+> endpoint and adds transient reasoning state for multi-turn continuation;
+> Phase 9 adds the controlled model ↔ tool-call loop and the hybrid
+> Studio/Gateway boundary contract.
 > **Audience:** Implementers, code agents, reviewers
 > **Scope:** This document is the stable, binding architecture contract for the
 > "local AI research infrastructure" that extends **Qwen Studio** through MCP.
@@ -556,6 +558,15 @@ See [`docs/architecture/inference.md`](docs/architecture/inference.md) and
 > serialized/persisted); `qwen3.8-max-preview` context corrected to 983,616; a
 > guard raises instead of silently dropping required reasoning state; and
 > `reasoning_effort` is explicitly cataloged-but-not-executed (Phase 10).
+>
+> **Phase 9 (implemented).** The controlled tool-call loop
+> (`research/tool_loop.py`) lets Qwen request tools that the Research Runtime
+> authorizes and executes through the internal registry, then continues the
+> same inference session with normalized tool results. The model never owns the
+> capability boundary: permissions, project/session scope, loop budgets,
+> repeated-call guards, and tool-result limits are all runtime-enforced. The
+> hybrid Studio/Gateway boundary contract (`research/hybrid.py`) is defined but
+> automatic escalation is not implemented.
 
 ---
 
@@ -675,6 +686,9 @@ Rust library.
 | [inference-runtime](docs/architecture/inference-runtime.md) | Provider-neutral Inference Runtime (Phase 8) |
 | [providers](docs/architecture/providers.md) | Provider abstraction & configuration |
 | [qwen-provider](docs/architecture/qwen-provider.md) | Qwen backend adapter |
+| [tool-loop](docs/architecture/tool-loop.md) | Controlled model ↔ tool-call loop (Phase 9) |
+| [inference-continuation](docs/architecture/inference-continuation.md) | Inference continuation & preserved reasoning state |
+| [hybrid-mode](docs/architecture/hybrid-mode.md) | Hybrid Studio/Gateway boundary contract |
 | [security](docs/architecture/security.md) | Threat model, boundaries, sandboxing |
 | [architecture-review](docs/architecture/architecture-review.md) | Risks, failure modes, Rust-value analysis |
 | [implementation-phases](docs/architecture/implementation-phases.md) | Phase 0–12 roadmap |

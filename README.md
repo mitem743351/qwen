@@ -7,7 +7,7 @@ persistent research memory, verification/citation/provenance, and deterministic
 computation — while Qwen Studio keeps its native conversational and web-search
 capabilities.
 
-> **Current status: Phase 8.4 — Qwen endpoint control & transient reasoning state.**
+> **Current status: Phase 9 — Controlled tool-calling loop, continuation, and hybrid boundary.**
 > The architecture (Phases 0, 0.5, 0.75) is the approved baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
@@ -17,8 +17,9 @@ capabilities.
 > provider-neutral Inference Runtime with a Qwen backend; Phases 8.1–8.4 make
 > Qwen capability discovery model-specific, current (2026), verified against
 > official docs, endpoint/plan/region aware, and endpoint-controlled with
-> transient multi-turn reasoning state. Still **no** LLM verification, hybrid
-> escalation, XHIGH orchestration, or dashboard.
+> transient multi-turn reasoning state. Phase 9 adds the controlled model ↔
+> tool-call loop and the hybrid Studio/Gateway boundary. Still **no** LLM
+> verification, automatic hybrid escalation, XHIGH orchestration, or dashboard.
 
 ## What this is
 
@@ -126,6 +127,13 @@ Phase 8 (inference runtime + Qwen):
 - [`docs/architecture/qwen-provider.md`](docs/architecture/qwen-provider.md) — Qwen backend adapter (model-specific capability discovery, `thinking_budget`, schema validation)
 - [`docs/setup/inference.md`](docs/setup/inference.md) — enabling inference
 
+Phase 9 (controlled tool loop + hybrid boundary):
+
+- [`docs/architecture/tool-loop.md`](docs/architecture/tool-loop.md) — controlled model ↔ tool-call loop
+- [`docs/architecture/inference-continuation.md`](docs/architecture/inference-continuation.md) — continuation & preserved reasoning state
+- [`docs/architecture/hybrid-mode.md`](docs/architecture/hybrid-mode.md) — hybrid Studio/Gateway boundary contract
+- [`docs/setup/gateway-inference.md`](docs/setup/gateway-inference.md) — enabling gateway inference
+
 Full architecture docs:
 
 | Area | Document |
@@ -196,10 +204,12 @@ stream-idle semantics), Phase 8.2 (per-model `preserve_thinking` /
 structured-output / tool-calling / streaming and `qwen3.7-max` pinned to
 official docs), Phase 8.3 (contextual model availability — endpoint /
 region / plan / inference mode — with `qwen3.8-max-preview` represented as an
-official Token-Plan preview and distinct availability errors), and Phase 8.4
+official Token-Plan preview and distinct availability errors), Phase 8.4
 (endpoint-profile-driven HTTP endpoint, transient `reasoning_content` for
 multi-turn continuation, and `qwen3.8-max-preview` context corrected to
-983,616) are **complete**.
+983,616), and Phase 9 (controlled model ↔ tool-call loop with authorization,
+schema validation, continuation, loop budgets, repeated-call guards, and the
+hybrid Studio/Gateway boundary contract) are **complete**.
 The Research Runtime remains
 provider- and transport-independent; the MCP server is a thin adapter over it,
 now serving hybrid evidence, project-scoped memory, deterministic claim

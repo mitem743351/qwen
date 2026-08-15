@@ -32,6 +32,7 @@ class SearchCorpusTool:
         "required": ["query"],
     }
     permission = ToolPermission.READ
+    model_callable = True
 
     def __init__(self, runtime: ResearchRuntime) -> None:
         self._runtime = runtime
@@ -61,6 +62,7 @@ class GetSourceTool:
         "required": ["document_id"],
     }
     permission = ToolPermission.READ
+    model_callable = True
 
     def __init__(self, runtime: ResearchRuntime) -> None:
         self._runtime = runtime

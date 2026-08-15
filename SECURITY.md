@@ -182,6 +182,30 @@ assumed safe because "the model wrote it".
   No unsafe operator override is invisible — the diagnostic records the
   capability source (catalog vs operator override vs provider discovery).
 
+## Tool-call loop (Phase 9)
+
+Model-generated executable requests are the new attack surface. Every tool call
+is treated as untrusted:
+
+- **Schema validation** — arguments validated against the tool schema before
+  execution (shared validator, no second system).
+- **Permission enforcement** — profile-gated (`allowed_permissions` +
+  `allowed_tools`); WRITE/EXECUTE/DESTRUCTIVE disabled by default; `run_python`
+  never model-callable.
+- **Trusted scope** — the runtime injects `project_id`/`session_id`/`task_id`/
+  `run_id`; a model-supplied scope is overwritten, never trusted.
+- **Resource limits** — hard turn/call/time/context budgets and a
+  repeated-call guard (`max_same_call`) prevent infinite or pathological loops.
+- **Tool-result limits** — output serialized with a size cap and treated as
+  DATA, never AUTHORITY; prompt injection in tool/document output cannot change
+  application policy.
+- **Safe error normalization** — `ToolError` codes never expose filesystem
+  paths, stack traces, credentials, or SQL.
+- **No arbitrary chaining** — every individual call passes the same
+  authorization; the loop is not a privilege-escalation mechanism.
+- **Hidden reasoning** — `reasoning_content` is transient (never persisted or
+  logged) even during multi-turn continuation.
+
 ## Hidden chain-of-thought
 
 The system **never** stores, transmits, logs, or exposes hidden

@@ -83,6 +83,7 @@ class _EchoTool:
     description = "echo a value"
     schema = {"type": "object", "properties": {"value": {"type": "string"}}}
     permission = ToolPermission.READ
+    model_callable = True
 
     def execute(self, arguments: dict) -> ToolResult:
         return ToolResult.success({"echo": arguments.get("value")})

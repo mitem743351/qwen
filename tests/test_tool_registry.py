@@ -14,6 +14,7 @@ class EchoTool:
     description = "Echo arguments back."
     schema = {"type": "object", "properties": {"value": {"type": "string"}}}
     permission = ToolPermission.READ
+    model_callable = True
 
     def execute(self, arguments: dict) -> ToolResult:
         return ToolResult.success({"echo": arguments.get("value")})
@@ -62,6 +63,7 @@ def test_invoke_normalizes_failures() -> None:
         description = "raises"
         schema: dict = {}
         permission = ToolPermission.READ
+        model_callable = True
 
         def execute(self, arguments: dict) -> ToolResult:
             raise RuntimeError("boom")

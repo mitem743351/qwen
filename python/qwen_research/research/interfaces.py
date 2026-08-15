@@ -263,6 +263,18 @@ class ResearchRuntime(Protocol):
         policy: InferencePolicy | None = None,
     ) -> InferenceResult: ...
 
+    def run_tool_loop(
+        self,
+        request: InferenceRequest,
+        *,
+        profile: Any | None = None,
+        config: Any | None = None,
+        project_id: str = "default",
+        session_id: str = "",
+        task_id: TaskId | None = None,
+        run_id: str | None = None,
+    ) -> Any: ...
+
     def run_workflow(self, workflow_id: WorkflowId, task_id: TaskId) -> WorkflowResult: ...
 
     def get_state(self, task_id: TaskId) -> ResearchState: ...

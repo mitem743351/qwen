@@ -337,16 +337,29 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
   XHIGH/EXTREME orchestration (Phase 10); Qwen built-in tool invocation;
   `reasoning_effort` execution.
 
-## Phase 9 — Hybrid escalation
+## Phase 9 — Controlled tool-calling loop, continuation, and hybrid boundary ✅ (complete)
 
-- **Objective:** HYBRID mode is real.
-- **Dependencies:** Phase 2, 5, 8.
-- **Components:** `EscalationRequest`/`EscalationResult` handoff; session
-  handoff; context transfer; state synchronization between Studio-native and
-  Research-Runtime paths.
-- **Acceptance criteria:** an escalated task moves cleanly from Studio context
-  into the Research Runtime and back with intact provenance.
-- **Not yet:** automatic escalation heuristics (escalation stays explicit).
+- **Objective:** move from a single inference call to controlled model ↔
+  Research Runtime interaction; establish the first explicit hybrid boundary.
+- **Dependencies:** Phase 1–8.
+- **Components:** `research/tool_loop.py` (`ToolExecutionRequest`/`Result`,
+  `ToolError`, `ToolExecutionProfile` (READ_ONLY/ANALYSIS/RESEARCH),
+  `ToolLoopConfig`, `LoopAccounting`, `InferenceSession`/`Conversation`,
+  `run_tool_loop`, authorization + argument validation + repeated-call guard);
+  `research/model_tools.py` (model-callable tool registry, `run_python`
+  excluded); `research/hybrid.py` (`EscalationRequest`/`Result`,
+  `validate_transfer`); `Tool.model_callable` flag; Research Runtime
+  `run_tool_loop`; transient `reasoning_content` on `InferenceResult`.
+- **Acceptance criteria:** tool calls normalized, authorized, validated, and
+  executed through the internal registry; the provider never executes tools;
+  same inference session continues; hidden reasoning stays transient; hard
+  loop limits; repeated-call guard; bounded/artifactized tool results; trusted
+  project/session scope; default profile excludes WRITE/EXECUTE/DESTRUCTIVE;
+  end-to-end fake-provider tool loop works; hybrid contract defined without
+  automatic escalation.
+- **Not yet:** automatic escalation heuristics; XHIGH/EXTREME workflows;
+  parallel model trajectories; multi-agent inference; Qwen built-in web search;
+  `reasoning_effort` execution; remote/distributed workers.
 
 ## Phase 10 — Advanced XHigh / EXTREME workflows
 

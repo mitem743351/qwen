@@ -625,6 +625,8 @@ class QwenProvider:
             finish_reason=finish.value,
             warnings=tuple(warnings),
             provider=self._config.provider_id,
+            # Transient hidden reasoning, carried for multi-turn continuation.
+            reasoning_content=message.get("reasoning_content") or "",
         )
 
     def _parse_json_content(self, content: str) -> dict[str, Any]:
