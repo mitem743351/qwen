@@ -217,6 +217,12 @@ side-effecting outcome is recorded as `UNKNOWN` (never silently retried).
 Tool results remain untrusted data: the store records state and never
 interprets content.
 
+Lease heartbeats (Phase 9.5) are an internal liveness mechanism: the heartbeat
+thread only renews `lease_expires_at` / `heartbeat_at` on the owner's execution
+row — it never mutates tool results, arguments, or execution state, and it never
+resurrects an expired/terminal lease. Heartbeat identifiers and timestamps are
+never exposed to the model or MCP.
+
 ## Hidden chain-of-thought
 
 The system **never** stores, transmits, logs, or exposes hidden

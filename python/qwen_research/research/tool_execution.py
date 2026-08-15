@@ -29,6 +29,7 @@ import json
 import sqlite3
 import threading
 import time
+from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -189,6 +190,8 @@ class ToolExecutionRecord:
     completed_at: str | None
     result: ToolExecutionResult | None
     error: str | None
+    heartbeat_at: float | None = None
+    heartbeat_count: int = 0
 
 
 def _status_to_state(status: ToolExecutionStatus) -> ToolExecutionState:
@@ -300,7 +303,7 @@ class SqliteToolExecutionStore:
     provides ownership during the long-running work.
     """
 
-    _SCHEMA_VERSION = 1
+    _SCHEMA_VERSION = 2
 
     def __init__(self, path: str | Path) -> None:
         self._path = str(path)
@@ -343,6 +346,8 @@ class SqliteToolExecutionStore:
                     lease_id TEXT,
                     lease_owner TEXT,
                     lease_expires_at REAL,
+                    heartbeat_at REAL,
+                    heartbeat_count INTEGER NOT NULL DEFAULT 0,
                     attempt INTEGER NOT NULL,
                     started_at TEXT,
                     completed_at TEXT,
@@ -356,7 +361,19 @@ class SqliteToolExecutionStore:
                 "VALUES ('schema_version', ?)",
                 (str(self._SCHEMA_VERSION),),
             )
+            self._migrate_heartbeat_columns(db)
             self._migrate_legacy(db)
+
+    def _migrate_heartbeat_columns(self, db: sqlite3.Connection) -> None:
+        """Add heartbeat columns to a Phase 9.4 (v1) table, idempotently."""
+        columns = {row[1] for row in db.execute("PRAGMA table_info(tool_execution_records)")}
+        if "heartbeat_at" not in columns:
+            db.execute("ALTER TABLE tool_execution_records ADD COLUMN heartbeat_at REAL")
+        if "heartbeat_count" not in columns:
+            db.execute(
+                "ALTER TABLE tool_execution_records "
+                "ADD COLUMN heartbeat_count INTEGER NOT NULL DEFAULT 0"
+            )
 
     def _migrate_legacy(self, db: sqlite3.Connection) -> None:
         """Migrate the Phase 9.3 ``tool_executions`` cache, preserving results."""
@@ -560,21 +577,37 @@ class SqliteToolExecutionStore:
     def heartbeat(
         self, identity: ToolExecutionIdentity, lease_id: str, lease_duration_seconds: float
     ) -> None:
+        """Renew the lease from *now* (short transaction; conditional update).
+
+        Raises :class:`LeaseOwnershipError` unless exactly one active row owned
+        by ``lease_id`` was extended — a lost/expired/terminal lease is never
+        resurrected.
+        """
         db = self._db()
         with self._write_lock:
             db.execute("BEGIN IMMEDIATE")
             try:
-                self._require_owned(db, identity, lease_id)
-                db.execute(
-                    "UPDATE tool_execution_records SET lease_expires_at = ? "
-                    "WHERE inference_session_id = ? AND call_id = ?",
+                cursor = db.execute(
+                    "UPDATE tool_execution_records SET lease_expires_at = ?, "
+                    "heartbeat_at = ?, heartbeat_count = heartbeat_count + 1 "
+                    "WHERE inference_session_id = ? AND call_id = ? "
+                    "AND lease_id = ? AND state IN ('CLAIMED', 'RUNNING')",
                     (
                         time.time() + lease_duration_seconds,
+                        time.time(),
                         identity.inference_session_id,
                         identity.call_id,
+                        lease_id,
                     ),
                 )
+                if cursor.rowcount != 1:
+                    db.execute("ROLLBACK")
+                    raise LeaseOwnershipError(
+                        "heartbeat failed: lease not owned, expired, or terminal"
+                    )
                 db.execute("COMMIT")
+            except LeaseOwnershipError:
+                raise
             except Exception:
                 db.execute("ROLLBACK")
                 raise
@@ -761,6 +794,8 @@ class SqliteToolExecutionStore:
             lease_id=row["lease_id"],
             lease_owner=row["lease_owner"],
             lease_expires_at=row["lease_expires_at"],
+            heartbeat_at=row["heartbeat_at"],
+            heartbeat_count=row["heartbeat_count"],
             attempt=row["attempt"],
             started_at=row["started_at"],
             completed_at=row["completed_at"],
@@ -883,7 +918,11 @@ class InMemoryToolExecutionStore:
         self, identity: ToolExecutionIdentity, lease_id: str, lease_duration_seconds: float
     ) -> None:
         rec = self._owned(identity, lease_id)
+        if rec["state"] not in (ToolExecutionState.CLAIMED, ToolExecutionState.RUNNING):
+            raise LeaseOwnershipError("heartbeat failed: lease is not active")
         rec["lease_expires_at"] = time.time() + lease_duration_seconds
+        rec["heartbeat_at"] = time.time()
+        rec["heartbeat_count"] = rec.get("heartbeat_count", 0) + 1
 
     def complete(
         self, identity: ToolExecutionIdentity, lease_id: str, result: ToolExecutionResult
@@ -928,6 +967,8 @@ class InMemoryToolExecutionStore:
                 lease_id=rec["lease_id"],
                 lease_owner=rec["lease_owner"],
                 lease_expires_at=rec["lease_expires_at"],
+                heartbeat_at=rec.get("heartbeat_at"),
+                heartbeat_count=rec.get("heartbeat_count", 0),
                 attempt=rec["attempt"],
                 started_at=None,
                 completed_at=None,
@@ -964,3 +1005,105 @@ def _now_iso() -> str:
     from qwen_research.common.timestamps import utc_now
 
     return utc_now().isoformat()
+
+
+class LeaseHealth(StrEnum):
+    """Liveness of an execution lease (internal; never exposed to the model)."""
+
+    ALIVE = "alive"
+    LOST = "lost"
+
+
+class LeaseHeartbeat:
+    """A lightweight local heartbeat controller for a long-running execution.
+
+    Spawns a daemon thread that renews the lease at ``heartbeat_interval``
+    (monotonic clock for scheduling; wall-clock UTC for persisted timestamps).
+    A bounded retry tolerates transient SQLite contention; after that the lease
+    is ``LOST`` and the owning execution transaction is notified via
+    ``on_failure`` (it must not keep assuming ownership).
+
+    The heartbeat thread only renews lease ownership/expiration — it never
+    touches tool results, arguments, or execution state. ``stop()`` signals and
+    joins the worker with a bounded timeout so no orphan thread survives.
+    """
+
+    def __init__(
+        self,
+        store: ToolExecutionStore,
+        identity: ToolExecutionIdentity,
+        lease_id: str,
+        *,
+        lease_duration_seconds: float,
+        heartbeat_interval_seconds: float,
+        retries: int = 3,
+        retry_backoff_seconds: float = 0.05,
+        on_failure: Callable[[str], None] | None = None,
+    ) -> None:
+        self._store = store
+        self._identity = identity
+        self._lease_id = lease_id
+        self._lease_duration = lease_duration_seconds
+        self._interval = heartbeat_interval_seconds
+        self._retries = retries
+        self._backoff = retry_backoff_seconds
+        self._on_failure = on_failure
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._lock = threading.Lock()
+        self._health = LeaseHealth.ALIVE
+        self.heartbeat_count = 0
+        self.heartbeat_failures = 0
+
+    @property
+    def lost(self) -> bool:
+        with self._lock:
+            return self._health is LeaseHealth.LOST
+
+    def start(self) -> None:
+        if self._thread is not None:
+            return
+        self._thread = threading.Thread(target=self._run, daemon=True, name="lease-heartbeat")
+        self._thread.start()
+
+    def stop(self, *, timeout: float = 5.0) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=timeout)
+
+    def _run(self) -> None:
+        # Monotonic scheduling: system clock adjustments do not disrupt the loop.
+        next_beat = time.monotonic() + self._interval
+        while not self._stop.is_set():
+            delay = next_beat - time.monotonic()
+            if delay > 0:
+                self._stop.wait(delay)
+                if self._stop.is_set():
+                    return
+            if not self._heartbeat_once():
+                return
+            next_beat = time.monotonic() + self._interval
+
+    def _heartbeat_once(self) -> bool:
+        for attempt in range(self._retries):
+            try:
+                self._store.heartbeat(self._identity, self._lease_id, self._lease_duration)
+                with self._lock:
+                    self.heartbeat_count += 1
+                return True
+            except LeaseOwnershipError:
+                break  # ownership lost — no point retrying
+            except Exception:  # noqa: BLE001 — transient DB contention
+                with self._lock:
+                    self.heartbeat_failures += 1
+                if attempt < self._retries - 1:
+                    time.sleep(self._backoff * (2 ** attempt))
+        self._mark_lost("heartbeat renewal failed")
+        return False
+
+    def _mark_lost(self, reason: str) -> None:
+        with self._lock:
+            if self._health is not LeaseHealth.LOST:
+                self._health = LeaseHealth.LOST
+        if self._on_failure is not None:
+            self._on_failure(reason)

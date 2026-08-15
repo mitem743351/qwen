@@ -37,7 +37,12 @@ is_stale(identity)          → bool
   `INSERT` as two independent operations.
 - No database lock is held during tool execution; the lease (with a
   configurable `lease_duration_seconds`, default 120 s) owns the window.
-- `schema_version` is tracked in `tool_execution_meta`.
+- `heartbeat()` is a conditional `BEGIN IMMEDIATE` update
+  (`… WHERE lease_id = ? AND state IN ('CLAIMED','RUNNING')`), verifies
+  `rowcount == 1`, and records `heartbeat_at` / `heartbeat_count` on the same
+  row. It never resurrects an expired/terminal lease.
+- `schema_version` is tracked in `tool_execution_meta` (now `2`, with an
+  idempotent v1 → v2 migration adding the heartbeat columns).
 
 ### Migration
 

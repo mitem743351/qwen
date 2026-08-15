@@ -442,6 +442,28 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
   XHIGH/EXTREME workflows; multi-agent inference; Qwen built-in web search;
   `reasoning_effort` execution; remote/distributed workers.
 
+## Phase 9.5 — Lease heartbeats & long-running ownership ✅ (complete)
+
+- **Objective:** close the liveness gap — an active long-running execution must
+  stay owned (not become falsely stale) via periodic lease renewal.
+- **Dependencies:** Phase 9.4.
+- **Components:** `LeaseHeartbeat` background-thread controller (monotonic
+  scheduling, bounded retry, `LOST` state); conditional `heartbeat()` with
+  `heartbeat_at` / `heartbeat_count` and `rowcount == 1` verification;
+  `heartbeat_interval_seconds` config + validation; `LEASE_*` events;
+  schema v2 with idempotent heartbeat-column migration; `_execute_with_heartbeat`
+  integration (start → execute → stop → complete; lease-loss → `UNKNOWN` for
+  side-effecting).
+- **Acceptance criteria:** long tools renew their lease; active heartbeating
+  execution cannot be falsely reclaimed; expired/non-heartbeating execution
+  becomes stale; stale read-only reclaims (policy) while side-effecting → UNKNOWN;
+  lost lease cannot be completed/resurrected; completion/heartbeat races resolve
+  to one terminal state; heartbeat threads join cleanly; tool vs lease timeout
+  remain distinct; batch calls get independent leases.
+- **Not yet:** parallel tool execution; automatic escalation heuristics;
+  XHIGH/EXTREME workflows; multi-agent inference; Qwen built-in web search;
+  `reasoning_effort` execution; remote/distributed workers.
+
 ## Phase 10 — Advanced XHigh / EXTREME workflows
 
 - **Objective:** high-effort profiles behave as designed.

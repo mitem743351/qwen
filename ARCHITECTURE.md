@@ -1,6 +1,6 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 9.4 — Transactional tool execution & crash-safe idempotency.
+> **Status:** Phase 9.5 — Lease heartbeats & long-running ownership.
 > The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
@@ -592,6 +592,13 @@ See [`docs/architecture/inference.md`](docs/architecture/inference.md) and
 > recorded as `UNKNOWN` (never auto-retried), and call-id reuse with different
 > tool/arguments/scope is rejected as `CONFLICT`. The guarantee is at-most-once
 > after durable completion — not universal exactly-once.
+>
+> **Phase 9.5 (implemented).** Long-running executions renew their lease via a
+> heartbeat thread (`LeaseHeartbeat`): an active, heartbeating execution stays
+> owned and cannot be falsely reclaimed; an expired, non-heartbeating execution
+> becomes stale and is recovered per tool semantics. A lost lease is never
+> completed/resurrected by the old owner, and side-effecting execution with a
+> lost lease is recorded as `UNKNOWN`.
 
 ---
 

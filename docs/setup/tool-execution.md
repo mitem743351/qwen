@@ -11,6 +11,7 @@ Enabling durable, crash-safe tool execution for the gateway tool loop.
 | Field | Default | Meaning |
 |-------|---------|---------|
 | `lease_duration_seconds` | `120.0` | Tool-execution claim lease duration |
+| `heartbeat_interval_seconds` | `30.0` | Lease renewal interval (must be `< lease_duration_seconds`) |
 | `recovery_policy` | `"reclaim_stale_if_safe"` | Stale-claim recovery (`reclaim_stale_if_safe` / `fail_on_unknown`) |
 
 A `ToolExecutionStore` is passed to `run_tool_loop(..., store=…)`. The
@@ -35,6 +36,13 @@ result = run_tool_loop(
 
 The `inference_session_id` is the stable identity; a workflow restart reusing it
 replays completed tool results instead of re-executing.
+
+Long-running tools stay leased via the heartbeat: the loop starts a
+`LeaseHeartbeat` thread after `mark_running`, renews the lease every
+`heartbeat_interval_seconds` (scheduled on a monotonic clock), and stops it
+before `complete()`. A heartbeat failure marks the lease `LOST`; a
+side-effecting tool is then recorded as `UNKNOWN` rather than falsely committed
+as owned.
 
 ---
 

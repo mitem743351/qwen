@@ -11,13 +11,15 @@ Module: `python/qwen_research/research/tool_execution.py`.
 The system does **not** claim universal exactly-once execution. The accurate
 guarantee is:
 
-> For a successfully claimed call whose completion has been durably recorded,
-> the runtime reuses that result and does not execute the call again for the
-> same inference-session/call identity.
+> **A live execution remains claim-owned while its lease is renewed. An
+> execution whose lease expires without successful renewal becomes recoverable
+> according to its tool execution semantics and recovery policy. Durable
+> terminal results are replayable; ambiguous side-effecting executions are
+> represented as UNKNOWN rather than silently retried.**
 
-A crash after an external side effect but before durable completion is
-represented as `UNKNOWN` — never as `SUCCEEDED` and never silently retried for
-side-effecting tools.
+The actual guarantee is: atomic claim + exclusive lease ownership +
+heartbeat-based liveness + durable completion + explicit `UNKNOWN` crash state +
+tool-specific recovery policy.
 
 ---
 
@@ -62,6 +64,40 @@ Only the holder of the active `lease_id` may `mark_running`, `heartbeat`,
 `complete`, or `release`; a wrong/expired owner raises `LeaseOwnershipError`.
 The SQLite transaction is **short** (claim, then commit); no database lock is
 held during actual tool execution — the lease provides ownership.
+
+## Lease liveness & heartbeats (Phase 9.5)
+
+A live execution renews its lease via a **heartbeat**: a local daemon thread
+(`LeaseHeartbeat`) extends `lease_expires_at = now + lease_duration` at a
+configurable `heartbeat_interval` (default `lease/4`; recommended ≤ `lease/3`).
+The key invariant:
+
+> An active execution with a valid heartbeat remains owned by its executor and
+> does not become reclaimable merely because the original lease duration
+> elapsed.
+
+`heartbeat()` is a conditional, short SQLite transaction: it updates the row
+only where `lease_id` matches and `state IN ('CLAIMED','RUNNING')`, verifies
+`rowcount == 1`, and otherwise raises `LeaseOwnershipError` — a lost/expired/
+terminal lease is never resurrected. Each heartbeat also records `heartbeat_at`
+and increments `heartbeat_count` on the same execution row (no write
+amplification beyond the record update).
+
+- Scheduling uses a **monotonic** clock; persisted timestamps remain wall-clock
+  UTC.
+- Heartbeat failures retry a bounded number of times (tolerating SQLite
+  contention); after that the lease is `LOST` and the owning transaction stops
+  assuming ownership.
+- On `LOST`: a read-only/idempotent execution may still complete; a
+  side-effecting/unknown execution is recorded as `UNKNOWN` (never falsely
+  committed as owned).
+- The heartbeat is stopped before `complete()`; a heartbeat firing after a
+  terminal result is a no-op (terminal states reject it).
+
+The lease timeout and the tool timeout are **distinct**: the lease says "how
+long ownership stays valid without renewal", the tool timeout says "stop/limit
+the operation". A tool may run longer than the lease as long as heartbeats keep
+it alive.
 
 ---
 

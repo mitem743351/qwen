@@ -94,6 +94,13 @@ class ToolLoopEvent(StrEnum):
     CONTINUATION_STARTED = "continuation_started"
     CONTINUATION_COMPLETED = "continuation_completed"
     LOOP_LIMIT = "loop_limit"
+    LEASE_ACQUIRED = "lease_acquired"
+    LEASE_HEARTBEAT = "lease_heartbeat"
+    LEASE_HEARTBEAT_RETRY = "lease_heartbeat_retry"
+    LEASE_RENEWAL_FAILED = "lease_renewal_failed"
+    LEASE_LOST = "lease_lost"
+    LEASE_RECLAIMED = "lease_reclaimed"
+    LEASE_RELEASED = "lease_released"
 
 
 @serializable
@@ -171,8 +178,23 @@ class ToolLoopConfig:
     continue_after_partial: bool = True
     #: Lease duration for a tool-execution claim (seconds).
     lease_duration_seconds: float = 120.0
+    #: Interval between lease heartbeats (seconds). Must satisfy
+    #: ``0 < heartbeat_interval_seconds < lease_duration_seconds``.
+    heartbeat_interval_seconds: float = 30.0
     #: Recovery policy for a stale/unknown execution claim.
     recovery_policy: str = "reclaim_stale_if_safe"
+
+    def __post_init__(self) -> None:
+        from qwen_research.domain.errors import ConfigurationError
+
+        if self.lease_duration_seconds <= 0:
+            raise ConfigurationError("lease_duration_seconds must be positive")
+        if self.heartbeat_interval_seconds <= 0:
+            raise ConfigurationError("heartbeat_interval_seconds must be positive")
+        if self.heartbeat_interval_seconds >= self.lease_duration_seconds:
+            raise ConfigurationError(
+                "heartbeat_interval_seconds must be less than lease_duration_seconds"
+            )
 
 
 @serializable
@@ -244,6 +266,7 @@ class ToolLoopResult:
 #: The transactional, lease-based tool-execution store (Phase 9.4).
 from qwen_research.research.tool_execution import (  # noqa: E402
     ClaimOutcome,
+    LeaseHeartbeat,
     ToolExecutionIdentity,
     ToolExecutionSemantics,
     ToolExecutionStore,
@@ -811,15 +834,17 @@ def _execute_transactionally(
 
     if claim.outcome is ClaimOutcome.CLAIMED:
         store.mark_running(identity, lease_id)
-        executed = _execute_call(
-            call, tool, project_id=project_id, session_id=session_id,
+        emit(ToolLoopEvent.LEASE_ACQUIRED)
+        executed = _execute_with_heartbeat(
+            call, tool, identity=identity, lease_id=lease_id,
+            store=store, config=config, semantics=semantics,
+            project_id=project_id, session_id=session_id,
             task_id=task_id, run_id=run_id, emit=emit,
         )
         same_call_counts[_call_signature(call.tool_name, call.arguments)] = (
             same_call_counts.get(_call_signature(call.tool_name, call.arguments), 0) + 1
         )
         executed_call_ids.add(call.call_id)
-        store.complete(identity, lease_id, executed)
         return executed
 
     if claim.outcome is ClaimOutcome.ALREADY_COMPLETED:
@@ -857,15 +882,17 @@ def _execute_transactionally(
         )
         if reclaim.outcome is ClaimOutcome.CLAIMED:
             store.mark_running(identity, lease_id)
-            executed = _execute_call(
-                call, tool, project_id=project_id, session_id=session_id,
+            emit(ToolLoopEvent.LEASE_RECLAIMED)
+            executed = _execute_with_heartbeat(
+                call, tool, identity=identity, lease_id=lease_id,
+                store=store, config=config, semantics=semantics,
+                project_id=project_id, session_id=session_id,
                 task_id=task_id, run_id=run_id, emit=emit,
             )
             same_call_counts[_call_signature(call.tool_name, call.arguments)] = (
                 same_call_counts.get(_call_signature(call.tool_name, call.arguments), 0) + 1
             )
             executed_call_ids.add(call.call_id)
-            store.complete(identity, lease_id, executed)
             return executed
 
     store.mark_unknown(identity, "stale or ambiguous execution; recovery requires policy")
@@ -873,6 +900,77 @@ def _execute_transactionally(
         call, ToolExecutionStatus.UNKNOWN,
         ToolError(ToolErrorCode.UNKNOWN_OUTCOME, "tool outcome unknown after stale claim"),
     )
+
+
+def _execute_with_heartbeat(
+    call: ToolCall,
+    tool: Any,
+    *,
+    identity: ToolExecutionIdentity,
+    lease_id: str,
+    store: ToolExecutionStore,
+    config: ToolLoopConfig,
+    semantics: ToolExecutionSemantics,
+    project_id: str,
+    session_id: str,
+    task_id: str | None,
+    run_id: str | None,
+    emit: Callable[[str], None],
+) -> ToolExecutionResult:
+    """Execute a claimed call, keeping the lease alive via a heartbeat thread.
+
+    A short tool may complete before the first heartbeat; a long tool renews
+    its lease so it is not falsely reclaimed. On heartbeat failure the lease is
+    treated as LOST: a read-only/idempotent execution may still complete, while
+    a side-effecting/unknown execution is recorded as ``UNKNOWN`` (never falsely
+    committed as owned). The heartbeat is stopped before completion, and a
+    heartbeat firing after completion is a no-op (terminal states reject it).
+    """
+    lease_lost = False
+
+    def on_failure(_reason: str) -> None:
+        nonlocal lease_lost
+        lease_lost = True
+        emit(ToolLoopEvent.LEASE_LOST)
+
+    heartbeat = LeaseHeartbeat(
+        store,
+        identity,
+        lease_id,
+        lease_duration_seconds=config.lease_duration_seconds,
+        heartbeat_interval_seconds=config.heartbeat_interval_seconds,
+        on_failure=on_failure,
+    )
+    heartbeat.start()
+    try:
+        executed = _execute_call(
+            call, tool, project_id=project_id, session_id=session_id,
+            task_id=task_id, run_id=run_id, emit=emit,
+        )
+    finally:
+        heartbeat.stop()
+        emit(ToolLoopEvent.LEASE_RELEASED)
+
+    if lease_lost and semantics in (
+        ToolExecutionSemantics.SIDE_EFFECTING,
+        ToolExecutionSemantics.DESTRUCTIVE,
+        ToolExecutionSemantics.UNKNOWN,
+    ):
+        store.mark_unknown(identity, "lease lost during execution")
+        return _batch_result(
+            call, ToolExecutionStatus.UNKNOWN,
+            ToolError(ToolErrorCode.UNKNOWN_OUTCOME, "lease lost; tool outcome unknown"),
+        )
+
+    try:
+        store.complete(identity, lease_id, executed)
+    except Exception:  # noqa: BLE001 — completion failed → ambiguous
+        store.mark_unknown(identity, "completion failed after execution")
+        return _batch_result(
+            call, ToolExecutionStatus.UNKNOWN,
+            ToolError(ToolErrorCode.UNKNOWN_OUTCOME, "completion failed; outcome unknown"),
+        )
+    return executed
 
 
 def _call_signature(tool_name: str, arguments: dict[str, Any]) -> str:
