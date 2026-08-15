@@ -33,6 +33,7 @@ from qwen_research.domain.errors import (
     StructuredOutputError,
 )
 from qwen_research.domain.inference import (
+    AvailabilityPlan,
     FinishReason,
     InferenceRequest,
     InferenceResult,
@@ -43,11 +44,19 @@ from qwen_research.domain.inference import (
     ProviderLimits,
     StreamEventType,
     StructuredOutputSpec,
+    ThinkingMode,
     ToolCall,
     ToolSpec,
 )
 from qwen_research.inference.config import ProviderConfig
 from qwen_research.inference.models import ProviderErrorStatus, ProviderHealth
+from qwen_research.inference.providers.qwen_availability import (
+    ModelDiagnostic,
+    QwenEndpointProfile,
+    QwenModelAvailabilityResolver,
+    resolve_endpoint_profile,
+    resolve_plan,
+)
 from qwen_research.inference.providers.qwen_models import (
     QWEN_MODEL_TABLE,
     QwenModelSpec,
@@ -102,13 +111,21 @@ def _raise_for_status(status: int, body: bytes, model: str) -> None:
     raise ProviderUnavailableError(f"qwen unexpected response (HTTP {status}): {detail}")
 
 
+def _capability_flags(caps: ProviderCapabilities) -> dict[str, bool]:
+    """Flatten a :class:`ProviderCapabilities` into named booleans for diagnostics."""
+    import dataclasses
+
+    return {f.name: bool(getattr(caps, f.name)) for f in dataclasses.fields(caps)}
+
+
 class QwenProvider:
     """A production provider adapter for the Qwen OpenAI-compatible API.
 
-    Capability discovery is model-specific: ``capabilities``/``limits``/
-    ``model_info`` resolve the requested model against the (operator-
-    overridable) :mod:`qwen_models` catalog rather than advertising one blanket
-    for the whole family.
+    Capability discovery is model-specific **and** contextual: ``capabilities``
+    resolves the requested model against the (operator-overridable)
+    :mod:`qwen_models` catalog *and* the endpoint/plan/inference-mode context,
+    so a model that exists in the catalog is not assumed to be available (or
+    equally capable) on every DashScope endpoint.
     """
 
     def __init__(
@@ -118,6 +135,7 @@ class QwenProvider:
         transport: HttpTransport | None = None,
         credential_resolver: Callable[[str], str | None] | None = None,
         model_catalog: Mapping[str, QwenModelSpec] | None = None,
+        endpoint_profiles: Mapping[str, QwenEndpointProfile] | None = None,
     ) -> None:
         self._config = config
         self._transport = transport or UrllibHttpTransport()
@@ -127,6 +145,10 @@ class QwenProvider:
         self._catalog: dict[str, QwenModelSpec] = dict(
             model_catalog if model_catalog is not None else QWEN_MODEL_TABLE
         )
+        self._endpoint_profiles: dict[str, QwenEndpointProfile] = dict(endpoint_profiles or {})
+        self._resolver = QwenModelAvailabilityResolver(
+            self._catalog, self._endpoint_profiles or None
+        )
 
     # -- InferenceProvider surface ----------------------------------------
 
@@ -134,8 +156,32 @@ class QwenProvider:
         model = model or self._config.default_model or ""
         return resolve_spec(model, self._catalog)
 
-    def capabilities(self, model: str | None = None) -> ProviderCapabilities:
-        spec = self._resolve_spec(model)
+    def _endpoint_profile(self) -> QwenEndpointProfile | None:
+        return resolve_endpoint_profile(
+            self._config.endpoint_profile, self._endpoint_profiles or None
+        )
+
+    def _plan(self) -> AvailabilityPlan | None:
+        return resolve_plan(self._config.plan)
+
+    def _region(self) -> str | None:
+        return self._config.region or None
+
+    def _thinking_mode(
+        self, spec: QwenModelSpec, policy: Any | None
+    ) -> ThinkingMode:
+        if spec.thinking_always_enabled:
+            return ThinkingMode.FORCED
+        if policy is not None and (
+            policy.reasoning or policy.reasoning_budget is not None
+        ):
+            return ThinkingMode.ENABLED
+        return ThinkingMode.DISABLED
+
+    def _effective_capabilities(
+        self, spec: QwenModelSpec, mode: ThinkingMode
+    ) -> ProviderCapabilities:
+        thinking_on = mode in (ThinkingMode.ENABLED, ThinkingMode.FORCED)
         return ProviderCapabilities(
             supports_reasoning=spec.thinking,
             supports_reasoning_budget=spec.thinking_budget,
@@ -144,15 +190,39 @@ class QwenProvider:
             supports_top_p=True,
             supports_preserved_thinking=spec.preserve_thinking,
             supports_tool_calling=spec.tool_calling,
-            supports_structured_output=spec.structured_output,
+            # Structured output is unavailable while thinking is on.
+            supports_structured_output=spec.structured_output and not thinking_on,
             supports_streaming=spec.streaming,
             supports_parallel_generation=False,
-            supports_context_caching=False,
+            supports_context_caching=spec.context_caching,
         )
+
+    def capabilities(
+        self,
+        model: str | None = None,
+        *,
+        thinking_mode: ThinkingMode | None = None,
+        endpoint_profile: QwenEndpointProfile | None = None,
+        plan: AvailabilityPlan | None = None,
+    ) -> ProviderCapabilities:
+        """Effective capabilities for a model in a context.
+
+        ``thinking_mode`` gates mode-dependent flags (structured output is off
+        while thinking is on). ``endpoint_profile`` / ``plan`` are contextual
+        selectors: their *availability* effect is enforced by the resolver
+        before dispatch (``_check_availability``); capability flags are
+        model + mode derived.
+        """
+        spec = self._resolve_spec(model)
+        mode = thinking_mode or self._thinking_mode(spec, None)
+        return self._effective_capabilities(spec, mode)
 
     def limits(self, model: str | None = None) -> ProviderLimits:
         spec = self._resolve_spec(model)
-        return ProviderLimits(max_output_tokens=spec.max_output_tokens)
+        return ProviderLimits(
+            max_output_tokens=spec.max_output_tokens,
+            max_reasoning_budget=spec.max_thinking_tokens,
+        )
 
     def model_info(self, model: str | None = None) -> ModelInfo:
         model = model or self._config.default_model
@@ -161,6 +231,10 @@ class QwenProvider:
             provider=self._config.provider_id,
             model=model,
             context_window=spec.context_window,
+            lifecycle=spec.lifecycle,
+            availability=spec.availability,
+            plans=spec.plans,
+            regions=spec.regions,
         )
 
     def models(self) -> tuple[ModelInfo, ...]:
@@ -173,8 +247,43 @@ class QwenProvider:
                 provider=self._config.provider_id,
                 model=name,
                 context_window=spec.context_window,
+                lifecycle=spec.lifecycle,
+                availability=spec.availability,
+                plans=spec.plans,
+                regions=spec.regions,
             )
             for name, spec in sorted(models.items())
+        )
+
+    def diagnose(
+        self,
+        model: str | None = None,
+        *,
+        thinking_mode: ThinkingMode | None = None,
+        endpoint_profile: QwenEndpointProfile | None = None,
+        plan: AvailabilityPlan | None = None,
+        region: str | None = None,
+        capability_source: str = "catalog",
+    ) -> ModelDiagnostic:
+        """Return a structured diagnostic for a model in a context."""
+        model = model or self._config.default_model
+        spec = self._resolve_spec(model)
+        mode = thinking_mode or self._thinking_mode(spec, None)
+        caps = self._effective_capabilities(spec, mode)
+        endpoint = endpoint_profile or self._endpoint_profile()
+        plan = plan or self._plan()
+        region = region or self._region()
+        return ModelDiagnostic(
+            model=model,
+            lifecycle=spec.lifecycle,
+            availability=spec.availability,
+            endpoint_id=endpoint.endpoint_id if endpoint else "",
+            region=region or "",
+            plan=plan,
+            thinking_mode=mode,
+            capability_source=capability_source,
+            effective_capabilities=_capability_flags(caps),
+            notes=spec.notes,
         )
 
     def generate(self, request: InferenceRequest) -> InferenceResult:
@@ -215,6 +324,7 @@ class QwenProvider:
         Uses the transport's incremental ``stream`` path so the configured
         ``stream_idle_seconds`` is a genuine idle timeout between chunks.
         """
+        self._check_availability(self._model(request))
         body = self._build_request(request, stream=True)
         response = self._transport.stream(
             self._endpoint(),
@@ -281,13 +391,29 @@ class QwenProvider:
             )
         return model
 
+    def _check_availability(self, model: str) -> None:
+        """Raise a distinct error if *model* is unavailable in this context.
+
+        Unknown models are permitted (conservative capabilities); endpoint /
+        plan / region / deprecated cases raise their typed errors.
+        """
+        result = self._resolver.resolve(
+            model,
+            endpoint_profile=self._endpoint_profile(),
+            plan=self._plan(),
+            region=self._region(),
+        )
+        result.raise_if_unavailable(unknown_ok=True)
+
     def _generate(
         self, request: InferenceRequest, *, structured: StructuredOutputSpec | None = None
     ) -> InferenceResult:
+        model = self._model(request)
+        self._check_availability(model)
         body = self._build_request(request, stream=False, structured=structured)
         response = self._post(body)
         if response.status != 200:
-            _raise_for_status(response.status, response.body, self._model(request))
+            _raise_for_status(response.status, response.body, model)
         return self._normalize(
             json.loads(response.body.decode("utf-8")), request, structured=structured
         )
@@ -300,6 +426,11 @@ class QwenProvider:
             timeout_seconds=self._config.timeout.request_seconds,
         )
 
+    def _effective_caps_for_request(self, request: InferenceRequest) -> ProviderCapabilities:
+        spec = self._resolve_spec(self._model(request))
+        mode = self._thinking_mode(spec, request.inference_policy)
+        return self._effective_capabilities(spec, mode)
+
     def _build_request(
         self,
         request: InferenceRequest,
@@ -309,7 +440,7 @@ class QwenProvider:
     ) -> dict[str, Any]:
         policy = request.inference_policy
         model = self._model(request)
-        caps = self.capabilities(model)
+        caps = self._effective_caps_for_request(request)
         payload: dict[str, Any] = {
             "model": model,
             "messages": self._messages(request),

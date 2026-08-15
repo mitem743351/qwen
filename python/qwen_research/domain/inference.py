@@ -60,6 +60,54 @@ class StreamEventType(StrEnum):
     ERROR = "error"
 
 
+class ModelLifecycle(StrEnum):
+    """Provider-neutral model release lifecycle."""
+
+    GA = "ga"
+    PREVIEW = "preview"
+    DEPRECATED = "deprecated"
+    RETIRED = "retired"
+    UNKNOWN = "unknown"
+
+
+class ModelAvailability(StrEnum):
+    """How a model is exposed (independent of its lifecycle)."""
+
+    PUBLIC = "public"
+    PLAN_RESTRICTED = "plan_restricted"
+    REGION_RESTRICTED = "region_restricted"
+    ENDPOINT_RESTRICTED = "endpoint_restricted"
+    PRIVATE = "private"
+    UNKNOWN = "unknown"
+
+
+class AvailabilityPlan(StrEnum):
+    """Provider-neutral availability/billing plan identifiers.
+
+    Qwen's ``TOKEN_PLAN`` is mapped here without leaking its billing
+    implementation into the domain model.
+    """
+
+    STANDARD = "standard"
+    TOKEN_PLAN = "token_plan"
+    ENTERPRISE = "enterprise"
+    UNKNOWN = "unknown"
+
+
+class ThinkingMode(StrEnum):
+    """The effective thinking/reasoning mode for a model invocation.
+
+    - ``ENABLED``  — thinking is on for this invocation (hybrid model).
+    - ``DISABLED`` — thinking is off (non-thinking mode).
+    - ``FORCED``   — thinking is always on for this model; it cannot be
+      disabled (thinking-only models).
+    """
+
+    ENABLED = "enabled"
+    DISABLED = "disabled"
+    FORCED = "forced"
+
+
 @serializable
 @dataclasses.dataclass(frozen=True)
 class ToolCall:
@@ -212,11 +260,15 @@ class ProviderLimits:
 @serializable
 @dataclasses.dataclass(frozen=True)
 class ModelInfo:
-    """Static identity information about a model."""
+    """Static identity and availability information about a model."""
 
     provider: str
     model: str
     context_window: int | None = None
+    lifecycle: ModelLifecycle = ModelLifecycle.UNKNOWN
+    availability: ModelAvailability = ModelAvailability.UNKNOWN
+    plans: tuple[AvailabilityPlan, ...] = ()
+    regions: tuple[str, ...] = ()
 
 
 @serializable

@@ -289,6 +289,32 @@ explicit **not-yet** items. Phase 1 must not begin until Phase 0 (and the
 - **Not yet:** tool **execution** (Phase 9); hybrid escalation (Phase 9);
   XHIGH/EXTREME orchestration (Phase 10).
 
+## Phase 8.3 — Qwen model availability & endpoint awareness ✅ (complete)
+
+- **Objective:** make Qwen model availability and capability resolution
+  contextual (model + endpoint + region + plan + inference mode) rather than
+  globally hard-coded.
+- **Dependencies:** Phase 8.2.
+- **Components:** `QwenModelSpec` extended (aliases, lifecycle, availability,
+  plans, regions, surfaces, input/thinking bounds, `thinking_always_enabled`,
+  `parallel_tool_calling`, `context_caching`, built-in tools,
+  `reasoning_effort_levels`, notes, source URLs); `qwen_availability.py`
+  (`QwenApiSurface`, `QwenEndpointProfile`, `AvailabilityStatus`/`Result`,
+  `QwenModelAvailabilityResolver`, `ModelDiagnostic`, standard + Token Plan
+  endpoint profiles); provider `capabilities(model, thinking_mode=…)` /
+  `limits` / `model_info` / `diagnose`; distinct availability errors
+  (`UnknownModelError`, `ModelPlanUnavailableError`, `ModelRegionUnavailableError`,
+  `ModelEndpointUnavailableError`, `EndpointCapabilityError`); `qwen3.8-max-preview`
+  cataloged as PREVIEW / PLAN_RESTRICTED / Token Plan; `ModelRegistry` plan/region
+  filtering; runtime passes inference-mode intent into negotiation.
+- **Acceptance criteria:** availability contextual; `qwen3.8-max-preview`
+  represented (not removed); Token Plan / endpoint / region restrictions
+  represented; effective capabilities depend on model + mode; function calling
+  vs built-in tools kept separate; unknown models usable conservatively;
+  distinct availability errors; capability-matrix regression test passes.
+- **Not yet:** tool **execution** (Phase 9); hybrid escalation (Phase 9);
+  XHIGH/EXTREME orchestration (Phase 10); Qwen built-in tool invocation.
+
 ## Phase 9 — Hybrid escalation
 
 - **Objective:** HYBRID mode is real.

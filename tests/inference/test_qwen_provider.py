@@ -13,6 +13,7 @@ from inference_helpers import (
 from qwen_research.common.ids import TaskId
 from qwen_research.domain.errors import (
     ModelNotFoundError,
+    ModelPlanUnavailableError,
     ProviderAuthError,
     ProviderCredentialError,
     ProviderRateLimitError,
@@ -20,11 +21,13 @@ from qwen_research.domain.errors import (
     StructuredOutputError,
 )
 from qwen_research.domain.inference import (
+    AvailabilityPlan,
     InferencePolicy,
     InferenceRequest,
     Message,
     MessageRole,
     StreamEventType,
+    ThinkingMode,
     ToolSpec,
 )
 
@@ -293,3 +296,66 @@ def test_structured_output_wrong_type_rejected() -> None:
     }
     with pytest.raises(StructuredOutputError):
         provider.structured_output(_request(structured_output=True), schema)
+
+
+def test_thinking_mode_gates_structured_output() -> None:
+    provider, _ = make_provider(lambda *_: completion_response("ok"))
+    # Hybrid model: structured output available when thinking is off (default).
+    assert provider.capabilities("qwen3.7-max").supports_structured_output is True
+    # ... and unavailable when thinking is enabled for the invocation.
+    thinking = provider.capabilities("qwen3.7-max", thinking_mode=ThinkingMode.ENABLED)
+    assert thinking.supports_structured_output is False
+    # Thinking-only model: always forced → no structured output.
+    assert provider.capabilities("qwen3.8-max-preview").supports_structured_output is False
+
+
+def test_builtin_tools_are_separate_from_function_calling() -> None:
+    provider, _ = make_provider(lambda *_: completion_response("ok"))
+    # function calling (application-defined tools) is a generic capability.
+    assert provider.capabilities("qwen3.8-max-preview").supports_tool_calling is True
+    # built-in provider-hosted tools are catalog facts, not generic capabilities.
+    spec = provider._resolve_spec("qwen3.8-max-preview")
+    assert spec.builtin_web_search is True
+    assert spec.builtin_code_interpreter is True
+    assert spec.builtin_web_scraping is True
+    # A model without built-in tools advertises none.
+    plain = provider._resolve_spec("qwen3.7-max")
+    assert plain.builtin_web_search is False
+    assert plain.builtin_code_interpreter is False
+
+
+def test_diagnose_reports_context() -> None:
+    provider, _ = make_provider(lambda *_: completion_response("ok"))
+    diag = provider.diagnose(
+        "qwen3.8-max-preview",
+        endpoint_profile=None,
+        plan=AvailabilityPlan.TOKEN_PLAN,
+    )
+    rendered = diag.render()
+    assert "qwen3.8-max-preview" in rendered
+    assert "PREVIEW" in rendered
+    assert "PLAN_RESTRICTED" in rendered
+    assert "TOKEN_PLAN" in rendered
+    assert "FORCED" in rendered
+    assert "reasoning = APPLY" in rendered
+
+
+def test_availability_check_raises_distinct_error() -> None:
+    from inference_helpers import FakeQwenTransport
+    from qwen_research.inference.config import ProviderConfig
+    from qwen_research.inference.providers.qwen import QwenProvider
+
+    transport = FakeQwenTransport(lambda *_: completion_response("ok"))
+    provider = QwenProvider(
+        ProviderConfig(
+            provider_id="qwen",
+            api_endpoint="https://example.invalid/compatible-mode/v1",
+            credential_env="TEST_QWEN_API_KEY",
+            default_model="qwen3.8-max-preview",
+            plan="standard",
+        ),
+        transport=transport,
+        credential_resolver=lambda name: "test-key",
+    )
+    with pytest.raises(ModelPlanUnavailableError):
+        provider.generate(_request())

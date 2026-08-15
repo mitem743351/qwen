@@ -44,11 +44,20 @@ leak into the generic `InferencePolicy`.
 `InferencePolicy.model_requirement` is authoritative. The provider maps a
 generic requirement to a Qwen model id; an unknown model raises
 `ModelNotFoundError` (no silent substitution). Capability discovery is
-**model-specific**: each provider exposes a `models()` catalog and
-`capabilities(model)`/`limits(model)`/`model_info(model)` resolve per model
-against a static, operator-overridable table (for Qwen:
-`qwen_models.QWEN_MODELS`). `ModelRegistry` caches model metadata with a TTL so
-a task does not trigger a network call each time.
+**model-specific and contextual**: each provider exposes a `models()` catalog
+and `capabilities(model, thinking_mode=…)`/`limits(model)`/`model_info(model)`
+resolve per model — and per endpoint/plan/inference-mode for Qwen — against a
+static, operator-overridable table. `ModelRegistry` caches model metadata with
+a TTL so a task does not trigger a network call each time, and can filter by
+plan/region/availability.
+
+Availability is **not** global: a model id exists in the catalog, but whether
+it is reachable depends on the endpoint, region, and plan. Qwen resolves this
+via `QwenModelAvailabilityResolver` (see
+[`qwen-provider.md`](qwen-provider.md)), raising distinct errors
+(`UnknownModelError`, `ModelPlanUnavailableError`,
+`ModelRegionUnavailableError`, `ModelEndpointUnavailableError`) rather than
+collapsing everything into `ModelNotFoundError`.
 
 ---
 

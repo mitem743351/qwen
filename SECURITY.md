@@ -171,6 +171,16 @@ assumed safe because "the model wrote it".
 - **Structured-output validation (Phase 8.1).** Provider output is validated
   against the requested JSON Schema before being returned; non-conforming
   output raises `StructuredOutputError` instead of being accepted.
+- **Built-in tools are cataloged, never invoked (Phase 8.3).** Qwen built-in
+  web search / code interpreter / web scraping are recorded in the catalog as
+  provider-native facts but are **never** invoked and are **never** exposed as
+  if they were MCP tools. Only the Research Runtime's own tool permission model
+  (Phase 9+) may execute tools.
+- **Availability resolution is honest (Phase 8.3).** A model is not assumed
+  available on every endpoint; the provider resolves model + endpoint + region
+  + plan and raises distinct errors rather than silently substituting a model.
+  No unsafe operator override is invisible — the diagnostic records the
+  capability source (catalog vs operator override vs provider discovery).
 
 ## Hidden chain-of-thought
 

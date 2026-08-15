@@ -18,6 +18,7 @@ from qwen_research.domain.inference import (
     ModelInfo,
     ProviderCapabilities,
     ProviderLimits,
+    ThinkingMode,
 )
 
 
@@ -25,14 +26,19 @@ from qwen_research.domain.inference import (
 class InferenceProvider(Protocol):
     """Provider-neutral model invocation surface.
 
-    Capability discovery is **model-specific**: ``capabilities``/``limits``/
-    ``model_info`` accept an optional model id (defaulting to the provider's
-    default model) so a multi-model provider can advertise per-model facts
-    instead of a single blanket for the whole family.
+    Capability discovery is **model-specific and contextual**: ``capabilities``
+    accepts an optional model id plus an optional inference-mode intent so a
+    provider can advertise the *effective* capabilities for that invocation
+    (e.g. structured output may be unavailable while thinking is enabled).
     """
 
-    def capabilities(self, model: str | None = None) -> ProviderCapabilities:
-        """Advertise what the (selected) model actually supports."""
+    def capabilities(
+        self,
+        model: str | None = None,
+        *,
+        thinking_mode: ThinkingMode | None = None,
+    ) -> ProviderCapabilities:
+        """Advertise what the (selected) model actually supports in this context."""
         ...
 
     def limits(self, model: str | None = None) -> ProviderLimits:

@@ -334,7 +334,38 @@ class ProviderUnavailableError(InferenceError):
 
 
 class ModelNotFoundError(InferenceError):
-    """The requested model is unknown to the provider."""
+    """The provider API reported that the requested model does not exist."""
+
+
+class UnknownModelError(InferenceError):
+    """The requested model id is not in the (operator-overridable) model catalog.
+
+    Distinct from :class:`ModelNotFoundError`: this is raised from static
+    catalog knowledge, before any provider API call, when the catalog is the
+    authority. Unknown models may still be usable when configuration permits
+    (conservative capabilities), so this is raised only when the caller requires
+    a known model.
+    """
+
+
+class ModelUnavailableError(InferenceError):
+    """Base class: a model exists but is not available in this context."""
+
+
+class ModelPlanUnavailableError(ModelUnavailableError):
+    """The model exists but is not available under the configured plan."""
+
+
+class ModelRegionUnavailableError(ModelUnavailableError):
+    """The model exists but is not available in the configured region."""
+
+
+class ModelEndpointUnavailableError(ModelUnavailableError):
+    """The model exists but is not exposed by the configured endpoint/surface."""
+
+
+class EndpointCapabilityError(InferenceError):
+    """The configured endpoint/surface does not support a requested capability."""
 
 
 class StructuredOutputError(InferenceError):

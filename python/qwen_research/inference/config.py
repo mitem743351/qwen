@@ -41,13 +41,21 @@ class TimeoutConfig:
 @serializable
 @dataclasses.dataclass(frozen=True)
 class ProviderConfig:
-    """Generic provider configuration (no credential values)."""
+    """Generic provider configuration (no credential values).
+
+    ``endpoint_profile`` / ``region`` / ``plan`` are optional context selectors
+    that scope model availability and effective capabilities; when empty the
+    provider falls back to its default endpoint profile / plan.
+    """
 
     provider_id: str
     enabled: bool = True
     api_endpoint: str = ""
     credential_env: str = ""
     default_model: str = ""
+    endpoint_profile: str = ""
+    region: str = ""
+    plan: str = ""
     timeout: TimeoutConfig = dataclasses.field(default_factory=TimeoutConfig)
     retry: RetryConfig = dataclasses.field(default_factory=RetryConfig)
 

@@ -28,6 +28,7 @@ from qwen_research.domain.inference import (
     ModelInfo,
     ProviderCapabilities,
     StructuredOutputSpec,
+    ThinkingMode,
     negotiate,
 )
 from qwen_research.inference.config import RetryConfig
@@ -103,7 +104,9 @@ class InferenceRuntime:
         route = self._router.select(request.inference_policy, provider_id=provider_id)
         negotiation = negotiate(
             request.inference_policy,
-            route.provider.capabilities(route.model),
+            route.provider.capabilities(
+                route.model, thinking_mode=_thinking_mode_for_policy(request.inference_policy)
+            ),
             route.provider.limits(route.model),
         )
         # Re-seat the policy to only what the provider actually receives.
@@ -134,7 +137,9 @@ class InferenceRuntime:
         route = self._router.select(request.inference_policy, provider_id=provider_id)
         negotiation = negotiate(
             request.inference_policy,
-            route.provider.capabilities(route.model),
+            route.provider.capabilities(
+                route.model, thinking_mode=_thinking_mode_for_policy(request.inference_policy)
+            ),
             route.provider.limits(route.model),
         )
         request = _with_policy(request, negotiation.provider_policy)
@@ -166,7 +171,9 @@ class InferenceRuntime:
         profile: str = "",
     ) -> InferenceResult:
         route = self._router.select(request.inference_policy, provider_id=provider_id)
-        capabilities = route.provider.capabilities(route.model)
+        capabilities = route.provider.capabilities(
+            route.model, thinking_mode=_thinking_mode_for_policy(request.inference_policy)
+        )
         if not capabilities.supports_structured_output:
             # Structured output is workflow-emulatable; the Research Runtime may
             # post-validate, but this runtime will not fabricate native support.
@@ -250,6 +257,19 @@ class InferenceRuntime:
 
 def _with_policy(request: InferenceRequest, policy: InferencePolicy) -> InferenceRequest:
     return dataclasses.replace(request, inference_policy=policy)
+
+
+def _thinking_mode_for_policy(policy: InferencePolicy) -> ThinkingMode | None:
+    """Return the thinking-mode intent implied by a policy (or ``None``).
+
+    ``None`` lets the provider derive its own default (FORCED for thinking-only
+    models, DISABLED otherwise). ``ENABLED`` is returned when reasoning or a
+    reasoning budget is requested, so the provider can gate mode-dependent
+    capabilities (e.g. structured output) accordingly.
+    """
+    if policy.reasoning or policy.reasoning_budget is not None:
+        return ThinkingMode.ENABLED
+    return None
 
 
 def _now() -> datetime:

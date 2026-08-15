@@ -71,9 +71,12 @@ ReasoningProfile → InferencePolicy → negotiate() → NegotiationResult
 The provider receives only parameters it actually supports; emulated
 capabilities are never emitted as fake native parameters (Phase 1.2 preserved).
 `InferencePolicy.model_requirement` remains the single model-selection
-authority. Negotiation is now fed **model-specific** capabilities and limits
-(`provider.capabilities(model)` / `provider.limits(model)`), so a reasoning
-budget is applied natively on models that support it and emulated elsewhere.
+authority. Negotiation is now fed **effective** capabilities and limits
+(`provider.capabilities(model, thinking_mode=…)` / `provider.limits(model)`),
+computed from the model + endpoint + plan + inference mode, so a reasoning
+budget is applied natively on models that support it, structured output is
+gated off while thinking is on, and everything else is emulated or degraded
+honestly.
 
 ---
 

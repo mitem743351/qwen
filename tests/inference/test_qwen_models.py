@@ -1,9 +1,14 @@
-"""Model-specific capability discovery for the Qwen adapter (Phases 8.1/8.2)."""
+"""Model-specific capability discovery for the Qwen adapter (Phases 8.1–8.3)."""
 
 from __future__ import annotations
 
 from inference_helpers import completion_response, make_provider
-from qwen_research.domain.inference import ModelInfo
+from qwen_research.domain.inference import (
+    AvailabilityPlan,
+    ModelAvailability,
+    ModelInfo,
+    ModelLifecycle,
+)
 from qwen_research.inference.providers.qwen_models import (
     QWEN_MODEL_TABLE,
     QWEN_MODELS,
@@ -37,8 +42,25 @@ def test_qwen_37_max_documented_capabilities() -> None:
     assert spec.streaming is True
 
 
-def test_qwen_38_max_is_not_listed() -> None:
-    # qwen3.8-max was removed as unverified (see catalog maintenance note).
+def test_qwen_38_max_preview_is_listed_as_preview() -> None:
+    spec = QWEN_MODEL_TABLE["qwen3.8-max-preview"]
+    assert spec.lifecycle is ModelLifecycle.PREVIEW
+    assert spec.availability is ModelAvailability.PLAN_RESTRICTED
+    assert spec.plans == (AvailabilityPlan.TOKEN_PLAN,)
+    assert spec.thinking is True
+    assert spec.thinking_always_enabled is True
+    assert spec.tool_calling is True
+    assert spec.structured_output is False  # always-on thinking → no structured output
+    assert spec.context_window == 1_000_000
+    assert spec.max_output_tokens == 131_072
+    assert set(spec.reasoning_effort_levels) == {"low", "medium", "xhigh"}
+    assert spec.builtin_web_search is True
+    assert spec.builtin_code_interpreter is True
+    assert spec.builtin_web_scraping is True
+
+
+def test_qwen_38_max_ga_is_not_listed() -> None:
+    # Only the *preview* id is cataloged; the GA id is not asserted.
     assert "qwen3.8-max" not in QWEN_MODEL_TABLE
     assert "qwen3.8-max" not in {s.model for s in QWEN_MODELS}
 
@@ -133,3 +155,32 @@ def test_operator_can_override_catalog() -> None:
     caps = overridden.capabilities()
     assert caps.supports_reasoning_budget is True
     assert overridden.model_info().context_window is None
+
+
+def test_capability_matrix() -> None:
+    """Effective capability matrix for the documented Qwen line-up.
+
+    Only facts verified against official docs are asserted. ``structured`` is
+    the non-thinking-mode value (``capabilities()`` defaults thinking OFF for
+    hybrid models, FORCED for thinking-only models).
+    """
+    provider, _ = make_provider(lambda *_: completion_response("ok"))
+    matrix = {
+        # model: (thinking, budget, preserve_thinking, structured, tool_calling)
+        "qwen3.8-max-preview": (True, True, True, False, True),
+        "qwen3.7-max": (True, True, True, True, True),
+        "qwen3.7-plus": (True, True, True, True, True),
+        "qwen3.6-plus": (True, True, False, True, True),
+        "qwen3.6-flash": (True, True, False, True, True),
+        "qwen3.5-plus": (True, True, False, True, True),
+        "qwen3.5-flash": (True, True, False, True, True),
+        "qwen3-max": (True, True, False, True, True),
+    }
+    for model, (thinking, budget, preserve, structured, tools) in matrix.items():
+        caps = provider.capabilities(model)
+        assert caps.supports_reasoning is thinking, model
+        assert caps.supports_reasoning_budget is budget, model
+        assert caps.supports_preserved_thinking is preserve, model
+        assert caps.supports_structured_output is structured, model
+        assert caps.supports_tool_calling is tools, model
+        assert caps.supports_streaming is True, model

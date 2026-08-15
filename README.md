@@ -7,17 +7,17 @@ persistent research memory, verification/citation/provenance, and deterministic
 computation — while Qwen Studio keeps its native conversational and web-search
 capabilities.
 
-> **Current status: Phase 8.2 — Qwen catalog model-specificity & verification.**
+> **Current status: Phase 8.3 — Qwen model availability & endpoint awareness.**
 > The architecture (Phases 0, 0.5, 0.75) is the approved baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
 > persistent structured memory; Phase 5 adds the deterministic evidence-integrity
 > and verification foundation; Phase 6 adds the deterministic computation layer;
 > Phase 7 adds the deterministic orchestration layer; Phase 8 adds the real
-> provider-neutral Inference Runtime with a Qwen backend; Phase 8.1/8.2 make
-> Qwen capability discovery model-specific, current (2026), and verified against
-> official docs. Still **no** LLM verification, hybrid escalation, XHIGH
-> orchestration, or dashboard.
+> provider-neutral Inference Runtime with a Qwen backend; Phases 8.1–8.3 make
+> Qwen capability discovery model-specific, current (2026), verified against
+> official docs, and endpoint/plan/region aware. Still **no** LLM verification,
+> hybrid escalation, XHIGH orchestration, or dashboard.
 
 ## What this is
 
@@ -191,10 +191,12 @@ Phase 5 (evidence integrity and verification foundation), Phase 6
 orchestration and workflow execution), Phase 8 (provider-neutral inference
 runtime + Qwen backend), Phase 8.1 (model-specific Qwen capability discovery,
 `thinking_budget`, full tool schemas, structured-output schema validation, and
-stream-idle semantics), and Phase 8.2 (per-model `preserve_thinking` /
-structured-output / tool-calling / streaming, unverified `qwen3.8-max` removed,
-and `qwen3.7-max` pinned to official docs) are **complete**. The Research
-Runtime remains
+stream-idle semantics), Phase 8.2 (per-model `preserve_thinking` /
+structured-output / tool-calling / streaming and `qwen3.7-max` pinned to
+official docs), and Phase 8.3 (contextual model availability — endpoint /
+region / plan / inference mode — with `qwen3.8-max-preview` represented as an
+official Token-Plan preview and distinct availability errors) are **complete**.
+The Research Runtime remains
 provider- and transport-independent; the MCP server is a thin adapter over it,
 now serving hybrid evidence, project-scoped memory, deterministic claim
 verification, bounded computation, deterministic research workflows, and a

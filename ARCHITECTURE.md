@@ -1,6 +1,6 @@
 # Architecture — Qwen Research System
 
-> **Status:** Phase 8.2 — Qwen catalog model-specificity & verification.
+> **Status:** Phase 8.3 — Qwen model availability & endpoint awareness.
 > The architecture (Phases 0, 0.5, 0.75) is the stable baseline; Phases 1–1.2
 > established and hardened the core contracts; Phases 2–3 added the MCP server
 > and lexical corpus retrieval; Phase 4 adds semantic + hybrid retrieval and
@@ -10,8 +10,9 @@
 > Research Runtime to real model providers (beginning with Qwen) through a
 > strict provider-neutral inference boundary; Phase 8.1 makes Qwen capability
 > discovery model-specific and current (2026); Phase 8.2 completes per-model
-> capability coverage (preserve_thinking / structured output / tool calling /
-> streaming) and pins the catalog to official docs.
+> capability coverage; Phase 8.3 makes Qwen model availability and effective
+> capability resolution contextual (model + endpoint + region + plan +
+> inference mode).
 > **Audience:** Implementers, code agents, reviewers
 > **Scope:** This document is the stable, binding architecture contract for the
 > "local AI research infrastructure" that extends **Qwen Studio** through MCP.
@@ -536,6 +537,16 @@ See [`docs/architecture/inference.md`](docs/architecture/inference.md) and
 > without structured output/tool calling; the unverified `qwen3.8-max` entry was
 > removed; and `qwen3.7-max` is pinned against official docs (1M context,
 > 65,536 max output) with a documented catalog-maintenance process.
+>
+> **Phase 8.3 (implemented).** Model availability is now **contextual**
+> (model + endpoint + region + plan + inference mode) via `qwen_availability.py`
+> (`QwenEndpointProfile`, `QwenModelAvailabilityResolver`, `ModelDiagnostic`);
+> `qwen3.8-max-preview` is represented as an official PREVIEW / Token-Plan-only
+> model (not removed, not fabricated); effective capabilities gate
+> mode-dependent flags (structured output off while thinking is on); function
+> calling and built-in tools are kept separate (built-in tools cataloged, never
+> invoked); and distinct availability errors replace a blanket
+> `ModelNotFoundError`.
 
 ---
 

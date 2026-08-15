@@ -2,8 +2,9 @@
 
 The first production provider adapter.
 
-Module: `python/qwen_research/inference/providers/qwen.py`; model catalog in
-`python/qwen_research/inference/providers/qwen_models.py`.
+Modules: `python/qwen_research/inference/providers/qwen.py` (adapter),
+`qwen_models.py` (catalog), `qwen_availability.py` (endpoint profiles +
+availability resolver + diagnostics).
 
 ---
 
@@ -14,55 +15,77 @@ The adapter targets the Qwen **OpenAI-compatible** chat-completions API:
 - **Endpoint** — `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`
   (international) or `https://dashscope.aliyuncs.com/compatible-mode/v1` (CN).
 - **Auth** — `Authorization: Bearer <DASHSCOPE_API_KEY>` (key via the
-  `DASHSCOPE_API_KEY` environment variable).
+  `DASHSCOPE_API_KEY` environment variable). The Token Plan preview uses its own
+  credential (e.g. `BAILIAN_TOKEN_PLAN_API_KEY`) — the credential env name is
+  config, never a hard-coded assumption.
 - **Models** — the Qwen3.x flagships (`qwen3.7-max`, `qwen3.7-plus`,
   `qwen3.6-plus`, …), the Qwen2.5-era aliases (`qwen-max`, `qwen-plus`,
-  `qwen-turbo`, `qwen-flash`), and the reasoning-only `qwq-*` models. The full
-  line-up lives in `qwen_models.py`.
+  `qwen-turbo`, `qwen-flash`), the reasoning-only `qwq-*` models, and the
+  official preview `qwen3.8-max-preview` (Token Plan only).
 - **Request** — `/chat/completions` with `model`, `messages`, `temperature`,
   `top_p`, `max_tokens`, `stream`, `tools` (full function schemas),
   `response_format`, `enable_thinking`, and — on the models that support them —
   a numeric `thinking_budget` and `preserve_thinking`.
-- **Streaming** — SSE chunks with `choices[0].delta.content`, `finish_reason`,
-  and `usage` (with `stream_options.include_usage`); read incrementally with a
-  real `stream_idle_seconds` idle timeout.
-- **Finish reasons** — `stop`, `length`, `tool_calls`, `content_filter`.
-- **Usage** — `prompt_tokens`, `completion_tokens`, `total_tokens`.
 
 Only documented parameters are emitted; no undocumented parameters are
 hard-coded.
 
 ---
 
-## Model-specific capability discovery
+## Model vs endpoint vs region vs plan vs inference mode
 
-Capability discovery is **per model**, not a single blanket for the family.
-`qwen_models.py` maps each model id to a `QwenModelSpec`
-(`context_window`, `max_output_tokens`, `thinking`, `thinking_budget`,
-`preserve_thinking`, `structured_output`, `tool_calling`, `streaming`); the
-adapter's `capabilities(model)` / `limits(model)` / `model_info(model)` resolve
-against it. Unknown model ids resolve conservatively (no reasoning, unknown
-context) rather than assuming a capability.
+A model id alone does **not** determine availability or capability. The chain
+is:
 
-| Model | Context | thinking | budget | preserve_thinking | structured output | tool calling |
-|-------|---------|----------|--------|-------------------|-------------------|--------------|
-| `qwen3.7-max` | 1M | yes | **yes** | **yes** | yes | yes |
-| `qwen3.7-plus` | 1M | yes | **yes** | **yes** | yes | yes |
-| `qwen3.6-plus` / `qwen3.5-plus` / `qwen3-max` | varies | yes | **yes** | no | yes | yes |
-| `qwen-plus` | 128K | yes (hybrid) | **yes** | no | yes | yes |
-| `qwen-max` | 32K | yes (hybrid) | no | no | yes | yes |
-| `qwen-turbo` / `qwen-flash` | 128K | no | no | no | yes | yes |
-| `qwq-plus` / `qwq-32b` | 128K | yes (always) | no | no | **no** | **no** |
+```text
+Model identity
+  + endpoint / API surface
+  + region
+  + plan
+  + inference mode (thinking)
+        ↓
+Effective availability + effective capabilities
+```
+
+- **`QwenModelSpec`** (catalog) records per-model facts: lifecycle, availability
+  class, plans, regions, surfaces, context/output/thinking bounds, and each
+  capability flag.
+- **`QwenEndpointProfile`** records per-endpoint facts: base URL, region, API
+  surface, the plans it serves, and a model allowlist.
+- **`QwenModelAvailabilityResolver.resolve(model, endpoint, plan, region)`**
+  returns an `AvailabilityResult` (AVAILABLE / PLAN_UNAVAILABLE /
+  REGION_UNAVAILABLE / ENDPOINT_UNAVAILABLE / MODEL_UNKNOWN / DEPRECATED).
+- **`capabilities(model, thinking_mode=…)`** returns the *effective*
+  capabilities for the invocation, gating mode-dependent flags (structured
+  output is unavailable while thinking is on).
+
+The standard DashScope endpoint serves only the PUBLIC (GA) line-up; the Token
+Plan endpoint is the documented channel for `qwen3.8-max-preview`. A model
+appearing in QwenCloud docs is **not** assumed available on every endpoint.
+
+---
+
+## Model table (verified snapshot)
+
+| Model | Lifecycle | Availability | Plan | Context | thinking | budget | preserve | structured | tools |
+|-------|-----------|--------------|------|---------|----------|--------|----------|------------|-------|
+| `qwen3.8-max-preview` | **PREVIEW** | **PLAN_RESTRICTED** | Token Plan | 1M | forced | yes | **yes** | **no** | yes |
+| `qwen3.7-max` | GA | PUBLIC | — | 1M | hybrid | yes | **yes** | yes | yes |
+| `qwen3.7-plus` | GA | PUBLIC | — | 1M | hybrid | yes | **yes** | yes | yes |
+| `qwen3.6-plus` / `qwen3.5-plus` / `qwen3-max` | GA | PUBLIC | — | varies | hybrid | yes | no | yes | yes |
+| `qwen-plus` | GA | PUBLIC | — | 128K | hybrid | yes | no | yes | yes |
+| `qwen-max` | GA | PUBLIC | — | 32K | hybrid | no | no | yes | yes |
+| `qwen-turbo` / `qwen-flash` | GA | PUBLIC | — | 128K | no | no | no | yes | yes |
+| `qwq-plus` / `qwq-32b` | GA | PUBLIC | — | 128K | forced | no | no | **no** | **no** |
 
 Streaming is supported by all listed models. `qwen3.7-max` has a documented
-**65,536** max output tokens.
+**65,536** max output; `qwen3.8-max-preview` a **131,072** max output.
 
-The catalog is **operator-overridable** (`QwenProvider(..., model_catalog=…)`).
-
-> **Note:** `qwen3.8-max` was deliberately **removed** from the catalog: at the
-> time of this snapshot it was only available in preview / via the Token Plan
-> and its capability matrix had not been confirmed against official docs. See
-> "Catalog maintenance" below.
+`qwen3.8-max-preview` facts (verified): PREVIEW lifecycle, Token Plan only,
+1M context, always-on thinking with `reasoning_effort` `low`/`medium`/`xhigh`,
+function calling, and built-in tools (web search, code interpreter, web
+scraping). Structured output is **not** available (always-on thinking). Source:
+QwenCloud "Qwen Code" (Token Plan) and "Thinking" guides.
 
 ---
 
@@ -70,14 +93,15 @@ The catalog is **operator-overridable** (`QwenProvider(..., model_catalog=…)`)
 
 | Capability | Advertised | Notes |
 |-----------|-----------|-------|
-| reasoning | model-specific | `enable_thinking`; hybrid vs thinking-only per model |
+| reasoning | model-specific | `enable_thinking`; hybrid vs forced per model |
 | reasoning budget | model-specific | numeric `thinking_budget` on Qwen3-era thinking models |
-| preserved thinking | model-specific | `preserve_thinking` on `qwen3.7-max`/`qwen3.7-plus` only |
+| preserved thinking | model-specific | `preserve_thinking` on `qwen3.7-max`/`qwen3.7-plus`/`qwen3.8-max-preview` |
 | max output tokens | supported | `max_tokens` |
 | temperature / top_p | supported | — |
-| tool calling | model-specific | full function schemas; **not** on thinking-only `qwq-*` |
-| structured output | model-specific | `response_format` json_object; validated against the requested schema; **not** in thinking mode / on `qwq-*` |
-| streaming | supported | SSE, incremental read with idle timeout (all chat models) |
+| tool calling | model-specific | application-defined function schemas; **not** on thinking-only `qwq-*` |
+| built-in tools | cataloged, **not invoked** | `qwen3.8-max-preview` web search / code interpreter / web scraping; distinct from function calling |
+| structured output | model **and mode** specific | unavailable while thinking is on; validated against the requested schema |
+| streaming | supported | SSE, incremental read with idle timeout |
 | parallel generation / context caching | unsupported | — |
 
 Unsupported required capabilities are `REJECT`ed by negotiation; unsupported
@@ -85,27 +109,29 @@ optional ones `DEGRADE`/`EMULATE`.
 
 ---
 
-## Request mapping
+## Structured-output semantics
 
-`InferenceRequest` (and its prepared `messages`) is mapped to the Qwen request
-shape inside `QwenProvider._build_request`. Provider-specific field names
-(`max_tokens`, `enable_thinking`, `thinking_budget`, `preserve_thinking`,
-`response_format`) never leave the adapter. Full `ToolSpec` definitions (name,
-description, argument JSON Schema) are passed through — tool **execution**
-remains a later phase.
+Three distinct notions are kept separate:
 
-## Response normalization
+- **JSON_MODE** — `response_format={"type":"json_object"}` forces valid JSON.
+- **STRUCTURED_OUTPUT** — JSON plus conformance to a requested JSON Schema.
+- **SCHEMA_VALIDATION** — the adapter re-validates the reply against the schema
+  and raises `StructuredOutputError` on mismatch.
 
-`InferenceResult` carries normalized `content`, `structured_output`,
-`tool_calls_structured`, `usage`, `finish_reason`, and `provider`. A
-`finish_reason = length` result is marked with a warning, never "complete".
+The effective `supports_structured_output` capability is gated by inference
+mode: it is `False` while thinking is on (or for thinking-only models), matching
+Qwen's documented behavior.
 
-## Structured-output validation
+---
 
-When a schema is requested, the adapter validates the returned JSON **against
-that schema** (a bounded, dependency-free JSON Schema subset: `type`,
-`properties`, `required`, `items`, `enum`, `const`). Non-conforming output
-raises `StructuredOutputError` instead of being returned as valid.
+## Diagnostics
+
+`QwenProvider.diagnose(model, thinking_mode=…, plan=…, endpoint_profile=…)`
+returns a `ModelDiagnostic` (model, lifecycle, availability, endpoint, region,
+plan, thinking mode, capability source, effective capability flags, notes).
+This is the debugging surface for capability negotiation.
+
+---
 
 ## Hidden reasoning
 
@@ -121,19 +147,25 @@ is never surfaced to the domain model.
 
 `qwen_models.py` is a **snapshot**, not a live query, and must be re-verified
 against the official QwenCloud / Alibaba Model Studio model pages whenever the
-line-up changes. The maintenance process is:
+line-up changes. The maintenance rule is:
+
+```text
+Official model documentation → catalog update → tests updated → capability behavior verified
+```
 
 1. **Re-verify each field** against official docs (QwenCloud "Thinking",
-   "Structured output", and Model Studio "Use deep thinking models via API" /
-   API reference), not third-party summaries.
+   "Structured output", "Qwen Code" (Token Plan), and Model Studio "Use deep
+   thinking models via API" / API reference), not third-party summaries.
 2. **Prefer conservative values** — leave a capability `False` (or a bound
    `None`) rather than asserting something unconfirmed.
-3. **Remove unverified entries** — e.g. `qwen3.8-max` was removed because its
-   capability matrix was only preview / not confirmed (Phase 8.2).
-4. **Update the tests** in `tests/inference/test_qwen_models.py`, especially
-   `test_qwen_37_max_documented_capabilities`, to pin the documented facts.
+3. **Do not infer new-model capabilities** by copying a previous model's spec
+   unless that approximation is explicitly recorded.
+4. **Update the tests** in `tests/inference/test_qwen_models.py`
+   (`test_capability_matrix`, `test_qwen_37_max_documented_capabilities`,
+   `test_qwen_38_max_preview_is_listed_as_preview`) to pin the facts.
+5. **Record `source_urls`** on each spec, and use only official docs as the
+   authority (third-party sources are supplemental evidence only).
 
-A model's `thinking` / `thinking_budget` / `preserve_thinking` /
-`structured_output` / `tool_calling` / `streaming` flags all flow through
-`QwenProvider.capabilities(model)` into capability negotiation, so an incorrect
-catalog entry is an incorrect negotiation claim — keep it honest.
+A model's flags flow through `QwenProvider.capabilities()` into capability
+negotiation, so an incorrect catalog entry is an incorrect negotiation claim —
+keep it honest.
